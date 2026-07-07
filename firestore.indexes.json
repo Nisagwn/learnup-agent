@@ -1,0 +1,126 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "grade", "order": "ASCENDING" },
+        { "fieldPath": "sub_topic", "order": "ASCENDING" },
+        { "fieldPath": "difficulty", "order": "ASCENDING" },
+        { "fieldPath": "random_seed", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "grade", "order": "ASCENDING" },
+        { "fieldPath": "topic", "order": "ASCENDING" },
+        { "fieldPath": "random_seed", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "topic", "order": "ASCENDING" },
+        { "fieldPath": "verified", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "teacherId", "order": "ASCENDING" },
+        { "fieldPath": "verified", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "srs_cards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subject", "order": "ASCENDING" },
+        { "fieldPath": "consecutiveCorrect", "order": "ASCENDING" },
+        { "fieldPath": "lastReviewedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "srs_cards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "consecutiveCorrect", "order": "ASCENDING" },
+        { "fieldPath": "nextReviewAt", "order": "ASCENDING" }
+      ]
+    },
+
+    {
+      "collectionGroup": "user_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "teacherId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "user_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "user_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isCorrect", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "difficulty", "order": "ASCENDING" },
+        { "fieldPath": "grade", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "difficulty", "order": "ASCENDING" },
+        { "fieldPath": "grade", "order": "ASCENDING" },
+        { "fieldPath": "verified", "order": "ASCENDING" },
+        { "fieldPath": "random_seed", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "difficulty", "order": "ASCENDING" },
+        { "fieldPath": "grade", "order": "ASCENDING" },
+        { "fieldPath": "topic", "order": "ASCENDING" },
+        { "fieldPath": "verified", "order": "ASCENDING" },
+        { "fieldPath": "random_seed", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "questions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "grade", "order": "ASCENDING" },
+        { "fieldPath": "category", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

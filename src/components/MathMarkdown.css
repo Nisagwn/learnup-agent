@@ -1,0 +1,37 @@
+/* AI üretilen soru metinleri — LaTeX formül render stili (Quantum Neon teması) */
+.math-content {
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.math-content--inline {
+  display: inline;
+}
+
+/* react-markdown blok <p> üretir; gereksiz boşlukları temizle */
+.math-content p {
+  margin: 0;
+  color: inherit;
+}
+.math-content p + p {
+  margin-top: 0.5rem;
+}
+
+/* KaTeX formülleri — açık temada okunur koyu, çevre metinle uyumlu.
+   (Eski koyu-tema cyan+glow açık zeminde okunmuyordu.) */
+.math-content .katex {
+  color: inherit;
+}
+/* Koyu temada: turkuaz neon parıltı geri gelir */
+:root[data-theme='dark'] .math-content .katex {
+  color: #A5F3FC;
+  text-shadow: 0 0 10px rgba(103, 232, 249, 0.4);
+}
+
+/* Blok (display) formüller — uzun ifadeler taşmasın, kayarak görünsün */
+.math-content .katex-display {
+  margin: 0.6rem 0;
+  padding: 0.2rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
