@@ -1,0 +1,41 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables (API keys - GİZLİ, commit ETME!)
+.env
+.env.local
+.env.production
+functions/.env
+
+# Secrets & Service Accounts
+serviceAccountKey*.json
+serviceAccountKey(3).json
+serviceAccountKey(3)*.json
+scratch_list.js
+test_firestore.*
+seed_emulator.cjs
+
+.vercel
+

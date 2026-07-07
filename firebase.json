@@ -1,0 +1,22 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "_comment_functions": "KASITLI OLARAK KALDIRILDI — Cloud Functions bu (web) reposundan DEPLOY EDİLMEZ. Canlı backend (29 fonksiyon) tek otorite olan AYRI mobil repodan yönetilir. 'functions' bloğunu buraya geri EKLEME; aksi halde 'firebase deploy' canlı fonksiyonları silebilir/üzerine yazabilir. Bkz. functions/README_DO_NOT_DEPLOY.md",
+  "emulators": {
+    "functions": {
+      "host": "127.0.0.1",
+      "port": 5001
+    },
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8088
+    },
+    "ui": {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 4001
+    }
+  }
+}

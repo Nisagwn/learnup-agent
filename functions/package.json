@@ -1,0 +1,27 @@
+{
+  "name": "functions",
+  "description": "DEPLOY ETME — canlı backend mobil repodan yönetilir. Bu klasör yalnız REFERANS/yereldir; buradan deploy 29 canlı fonksiyonu silme riski taşır.",
+  "_WARNING_DO_NOT_DEPLOY": "Cloud Functions bu web reposundan DEPLOY EDİLMEZ. Canlı backend tek otorite olan AYRI mobil repodan yönetilir. firebase.json'da 'functions' bloğu kasıtlı kaldırıldı. Bkz. README_DO_NOT_DEPLOY.md",
+  "scripts": {
+    "lint": "eslint .",
+    "shell": "firebase functions:shell",
+    "deploy": "node -e \"console.error('\\n⛔ DEPLOY ETME: Cloud Functions bu web reposundan deploy edilmez. Canlı backend AYRI mobil repodan yönetilir; buradan deploy 29 fonksiyonu silebilir. Bkz. README_DO_NOT_DEPLOY.md\\n'); process.exit(1)\"",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.0.0",
+    "groq-sdk": "^1.1.2"
+  },
+  "devDependencies": {
+    "eslint": "^8.51.0",
+    "eslint-config-google": "^0.14.0",
+    "firebase-functions-test": "^3.1.0"
+  },
+  "private": true
+}

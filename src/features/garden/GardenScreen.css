@@ -1,0 +1,221 @@
+/* ============================================================
+   Bahçe / Orman — Hay Day tarzı interaktif sahne
+   ============================================================ */
+/* .content-area'ya portal'lanır → absolute inset:0 ile barın ALTINDAKİ içerik alanını
+   tam doldurur (bar arkasına geçmez), app-container padding/max-width'i aşar. */
+.gp-root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+  background-color: #1b3b2a;
+}
+.gp-root--inline { position: absolute; }
+
+/* Coin chip — altın pil (oyun HUD) */
+.gp-coin {
+  position: absolute; top: 16px; left: 16px; z-index: 20;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: linear-gradient(135deg, #FBBF24, #F59E0B);
+  color: #3b2a06; font-weight: 900; font-size: 16px;
+  padding: 10px 18px; border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 5px 16px rgba(245, 158, 11, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* Boş orman ipucu */
+.gp-empty {
+  position: absolute; inset: 0; z-index: 12;
+  display: flex; align-items: center; justify-content: center; pointer-events: none;
+}
+.gp-empty-card {
+  background: rgba(15, 23, 42, 0.78); color: #fff;
+  border-radius: 16px; padding: 18px 22px; max-width: 320px; text-align: center;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+.gp-empty-title { font-size: 17px; font-weight: 800; margin-bottom: 6px; }
+.gp-empty-text { font-size: 12.5px; line-height: 1.5; opacity: 0.9; }
+.gp-empty-arrow {
+  position: absolute; right: 26px; bottom: 80px; font-size: 40px; color: #fff;
+  animation: gpBounce 1.2s ease-in-out infinite;
+}
+@keyframes gpBounce { 0%,100% { transform: translate(0,0); } 50% { transform: translate(6px,6px); } }
+
+/* Edit mode üst ipucu */
+.gp-edit-hint {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 20;
+  background: rgba(15, 23, 42, 0.85); color: #fff; font-size: 12px; font-weight: 600;
+  padding: 8px 14px; border-radius: 14px; white-space: nowrap;
+}
+
+/* Çöp kutusu */
+.gp-trash {
+  position: absolute; left: 18px; bottom: 24px; z-index: 25;
+  width: 76px; height: 76px; border-radius: 50%;
+  background: #DC2626; color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-size: 26px; box-shadow: 0 6px 20px rgba(220, 38, 38, 0.4);
+  animation: gpTrashPulse 1.6s ease-in-out infinite;
+}
+.gp-trash--hover { background: #B91C1C; transform: scale(1.22); animation: none; }
+.gp-trash-label { font-size: 8.5px; font-weight: 900; letter-spacing: 0.04em; margin-top: 2px; }
+@keyframes gpTrashPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+
+/* Edit "BİTTİ" */
+.gp-done {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 25;
+  background: linear-gradient(135deg, #16A34A, #22C55E); color: #fff;
+  border: none; cursor: pointer; font-weight: 900; font-size: 14px;
+  padding: 12px 28px; border-radius: 999px; box-shadow: 0 6px 20px rgba(22, 163, 74, 0.45);
+}
+
+/* FAB'lar — daha büyük, oyun tarzı cam butonlar */
+.gp-fabs {
+  position: absolute; right: 18px; bottom: 24px; z-index: 25;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.gp-fab {
+  width: 56px; height: 56px; border-radius: 28px; cursor: pointer;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(15, 23, 42, 0.55); color: #fff; font-size: 26px;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(8px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.gp-fab:hover { transform: translateY(-3px) scale(1.06); background: rgba(15, 23, 42, 0.72); }
+.gp-fab:active { transform: scale(0.95); }
+
+/* Edit mode bitki vurgusu (transform inline'da; burada drop-shadow nabzı) */
+.gp-plant--edit { animation: gpEditGlow 1.4s ease-in-out infinite; }
+.gp-plant--drag { animation: none; }
+@keyframes gpEditGlow {
+  0%,100% { filter: drop-shadow(0 0 0 rgba(34,197,94,0)); }
+  50% { filter: drop-shadow(0 0 6px rgba(34,197,94,0.7)); }
+}
+
+/* Envanterden sürüklenen ghost */
+.gp-ghost {
+  position: fixed; z-index: 200; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.4)); opacity: 0.92;
+}
+
+/* ── Oyun paneli (Market / Ağıl / Aksiyon) — ortada, çerçeveli, pop-in ── */
+.gp-panel-backdrop {
+  position: absolute; inset: 0; z-index: 60;
+  background: rgba(8, 20, 14, 0.55);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  animation: gpFade 0.18s ease-out;
+}
+/* Ağıldan sürüklerken: panel + backdrop görünmez olur (bahçe görünür), ama mount kalır */
+.gp-panel-backdrop--dim { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; pointer-events: none; }
+.gp-panel-backdrop--dim .gp-panel { opacity: 0.12; transform: scale(0.96); transition: opacity 0.15s ease, transform 0.15s ease; }
+@keyframes gpFade { from { opacity: 0; } to { opacity: 1; } }
+
+.gp-panel {
+  width: 100%; max-width: 560px;
+  background: var(--bg-panel, #fff); color: var(--text-primary, #0f172a);
+  border-radius: 22px; overflow: hidden;
+  border: 1px solid var(--border-color, #e2e8f0);
+  box-shadow: 0 24px 60px -12px rgba(0,0,0,0.55), 0 0 0 6px rgba(255,255,255,0.05);
+  display: flex; flex-direction: column;
+  animation: gpPanelPop 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes gpPanelPop { from { transform: scale(0.9) translateY(10px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+
+.gp-panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; color: #fff;
+  background: linear-gradient(135deg, var(--accent-primary, #10B981), var(--accent-secondary, #34D399));
+}
+.gp-panel-titles { min-width: 0; }
+.gp-panel-title { font-family: 'Outfit', sans-serif; font-size: 17px; font-weight: 800; line-height: 1.1; }
+.gp-panel-sub { font-size: 11.5px; opacity: 0.92; margin-top: 2px; }
+.gp-panel-head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.gp-panel-coin {
+  display: inline-flex; align-items: center; gap: 5px; font-weight: 900; font-size: 13px;
+  background: rgba(0,0,0,0.22); padding: 5px 11px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.3);
+}
+.gp-panel-close {
+  width: 32px; height: 32px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(255,255,255,0.22); color: #fff; display: grid; place-items: center;
+  transition: background 0.15s ease;
+}
+.gp-panel-close:hover { background: rgba(255,255,255,0.36); }
+.gp-panel-body { overflow-y: auto; padding: 16px; }
+
+.gp-empty-note { font-size: 12.5px; color: var(--text-secondary, #64748b); padding: 16px 4px; text-align: center; }
+
+/* Envanter */
+.gp-inv-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.gp-chip {
+  font-size: 11.5px; font-weight: 700; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-color, #e2e8f0); background: var(--bg-soft, transparent); color: var(--text-secondary, #475569);
+}
+.gp-chip--on { background: var(--accent-primary, #10B981); border-color: var(--accent-primary, #10B981); color: #fff; }
+.gp-inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 10px; }
+.gp-inv-item {
+  position: relative; border: 1.5px solid; border-radius: 14px; padding: 10px 6px 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: grab; touch-action: none;
+}
+.gp-inv-count {
+  position: absolute; top: 4px; right: 5px; font-size: 10px; font-weight: 900;
+  background: rgba(15, 23, 42, 0.78); color: #fff; padding: 1px 6px; border-radius: 999px;
+}
+.gp-inv-name { font-size: 10.5px; font-weight: 700; text-align: center; line-height: 1.1; }
+.gp-inv-more { display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--text-secondary, #64748b); }
+
+/* Market */
+.gp-mk-group { margin-bottom: 16px; }
+.gp-mk-grouptitle { font-size: 12px; font-weight: 800; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+.gp-mk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.gp-mk-item {
+  border: 1.5px solid; border-radius: 14px; padding: 10px 6px; cursor: pointer; background: var(--bg-soft, transparent);
+  display: flex; flex-direction: column; align-items: center; gap: 5px; transition: transform 0.12s ease;
+}
+.gp-mk-item:hover:not(:disabled) { transform: translateY(-2px); }
+.gp-mk-item--off { opacity: 0.45; cursor: not-allowed; }
+.gp-mk-name { font-size: 11px; font-weight: 700; text-align: center; line-height: 1.15; color: var(--text-primary, #0f172a); }
+.gp-mk-price { font-size: 11.5px; font-weight: 900; color: var(--text-secondary, #475569); display: inline-flex; align-items: center; gap: 3px; }
+
+/* PlantAction */
+.gp-pa-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 14px; }
+.gp-pa-label { font-size: 13px; font-weight: 700; color: var(--text-secondary, #475569); }
+.gp-pa-scale { display: flex; align-items: center; gap: 12px; }
+.gp-pa-stepper {
+  width: 34px; height: 34px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--border-color, #e2e8f0); background: var(--bg-soft, transparent); color: var(--text-primary, #0f172a);
+  display: flex; align-items: center; justify-content: center;
+}
+.gp-pa-stepper:disabled { opacity: 0.4; cursor: not-allowed; }
+.gp-pa-scaleval { font-size: 14px; font-weight: 800; min-width: 44px; text-align: center; }
+
+/* Boyut slider'ı — hassas sürükle-boyutlandır (0.01 adım) */
+.gp-pa-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 6px; margin: 2px 0 16px;
+  border-radius: 999px; cursor: pointer; touch-action: none;
+  background: var(--border-color, #e2e8f0);
+}
+.gp-pa-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent-primary, #4D7C0F); border: 3px solid #fff;
+  box-shadow: 0 2px 6px rgba(28, 25, 23, 0.25); cursor: pointer;
+}
+.gp-pa-slider::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent-primary, #4D7C0F); border: 3px solid #fff;
+  box-shadow: 0 2px 6px rgba(28, 25, 23, 0.25); cursor: pointer;
+}
+.gp-pa-slider:focus-visible { outline: none; }
+.gp-pa-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-primary-soft, rgba(77, 124, 15, 0.22)); }
+.gp-pa-slider:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 4px var(--accent-primary-soft, rgba(77, 124, 15, 0.22)); }
+.gp-pa-remove {
+  width: 100%; border: none; cursor: pointer; border-radius: 12px; padding: 12px;
+  background: rgba(220, 38, 38, 0.12); color: #DC2626; font-weight: 800; font-size: 13.5px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.gp-pa-remove:hover { background: rgba(220, 38, 38, 0.18); }
