@@ -1,0 +1,50 @@
+# Supabase CLI yapılandırması. `supabase link --project-ref wkcbsynsfgthjvqeikvs` ile bağla.
+project_id = "wkcbsynsfgthjvqeikvs"
+
+[functions.get-ai-response]
+verify_jwt = false            # sohbet proxy'si; herkese açık çağrılabilir
+
+[functions.generate-questions]
+verify_jwt = true
+
+[functions.generate-targeted-set]
+verify_jwt = true
+
+[functions.record-answer]
+verify_jwt = true
+
+[functions.submit-answer]
+verify_jwt = true
+
+[functions.ensure-daily-state]
+verify_jwt = true
+
+[functions.claim-quest-reward]
+verify_jwt = true
+
+[functions.use-streak-freeze]
+verify_jwt = true
+
+[functions.save-ai-questions]
+verify_jwt = true
+
+[functions.submit-assignment]
+verify_jwt = true
+
+[functions.submit-targeted-assignment]
+verify_jwt = true
+
+[functions.purchase-garden-item]
+verify_jwt = true
+
+[functions.plant-seed]
+verify_jwt = true
+
+[functions.move-plant]
+verify_jwt = true
+
+[functions.remove-plant]
+verify_jwt = true
+
+[functions.delete-account]
+verify_jwt = true
