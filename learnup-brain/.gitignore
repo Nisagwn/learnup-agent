@@ -1,0 +1,30 @@
+# bağımlılıklar
+node_modules/
+
+# derleme çıktısı
+dist/
+
+# ORTAM (SECRET — service-role key, JWT secret, API anahtarları)
+.env
+.env.local
+.env.*.local
+# .env.example izlenir (secret içermez)
+
+# loglar
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# işletim sistemi / editör
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# test / coverage
+coverage/
+.nyc_output/
