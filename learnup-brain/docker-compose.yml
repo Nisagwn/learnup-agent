@@ -1,0 +1,52 @@
+# LearnUp "beyin" — API + Ritim worker + Redis.
+# Kullanım:
+#   1) learnup-brain/.env dosyanı doldur (SUPABASE_*, OPENROUTER_API_KEY ...)
+#   2) docker compose up --build
+#
+# NOT: REDIS_URL, compose içindeki 'redis' servisine yönlendirilir (host makinen değil).
+# .env'deki REDIS_URL burada override edilir; localhost yerine servis adı kullanılır.
+
+services:
+  brain:
+    build: .
+    image: learnup-brain
+    command: ["bun", "src/server.ts"]
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: learnup-brain          # brain'in ürettiği imajı kullanır (ayrı build YOK → export yarışı olmaz)
+    command: ["bun", "src/workers/ritim.worker.ts"]
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  redis-data:
