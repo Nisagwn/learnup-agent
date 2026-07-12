@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Sparkles, Pencil, Trash2, Library, Loader2, Check, SearchX, Tag, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '../supabase';
+import { apiInvoke } from '../services/apiClient';
 import { currentUid } from '../services/authApi';
 import { useUserStats } from '../contexts/UserStatsContext';
 import { useToast } from '../components/ToastProvider';
@@ -271,7 +272,7 @@ const AIQuestionGeneratorModal = ({ isOpen, onClose, teacherId, defaultSubject =
     setGenerated([]);
     try {
       const diffLabel = DIFFICULTIES.find(d => d.value === difficulty)?.label || 'Orta';
-      const { data, error: fnErr } = await supabase.functions.invoke('generate-questions', {
+      const { data, error: fnErr } = await apiInvoke('generate-questions', {
         body: {
           userId: teacherId,
           subject,

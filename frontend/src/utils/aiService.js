@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { supabase } from '../supabase';
+import { apiInvoke } from '../services/apiClient';
 import { currentUid } from '../services/authApi';
 
 // System instruction — konuşmanın ilk bağlamını oluşturur
@@ -169,7 +170,7 @@ class ChatSession {
         const slicedHistory = this.history.slice(-5);
 
         const startTime = Date.now();
-        const { data, error } = await supabase.functions.invoke('get-ai-response', {
+        const { data, error } = await apiInvoke('get-ai-response', {
           body: {
             history: slicedHistory,
             userMessage: finalMessage,
@@ -231,7 +232,7 @@ export async function suggestTopicForQuestion({ text, subject, grade }) {
   const prompt = `Aşağıdaki ${grade || '10'}. sınıf ${subject || ''} çoktan seçmeli sorusunun Türk müfredatındaki KONU başlığını belirle.
 SADECE konu adını yaz (2-5 kelime, Türkçe). Açıklama, tırnak veya noktalama ekleme.
 Soru: ${String(text || '').slice(0, 600)}`;
-  const { data, error } = await supabase.functions.invoke('get-ai-response', {
+  const { data, error } = await apiInvoke('get-ai-response', {
     body: { history: [], userMessage: prompt },
   });
   if (error) throw new Error('Konu önerilemedi');

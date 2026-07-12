@@ -10,6 +10,7 @@
 // Quiz akışında kalır.
 // ============================================================
 import { supabase } from '../supabase';
+import { apiInvoke } from './apiClient';
 import { currentUid } from './authApi';
 
 // assignment_submissions satırını uygulamanın beklediği camelCase alias'lı şekle çevirir.
@@ -84,7 +85,7 @@ export function subscribeMySubmission(assignmentId, cb, onError) {
 // { assignmentId, answers: [{questionId, selectedIndex}] } → { autoScore, maxScore, correctCount }
 // Boş bırakılan sorular için selectedIndex = -1 gönderilir. Backend tek gönderim uygular.
 export async function submitAssignment({ assignmentId, answers }) {
-  const { data, error } = await supabase.functions.invoke('submit-assignment', {
+  const { data, error } = await apiInvoke('submit-assignment', {
     body: { assignmentId, answers },
   });
   if (error) throw new Error(error.message || 'İstek başarısız');

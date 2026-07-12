@@ -6,6 +6,7 @@
 // Targeted skoru YALNIZ submit-targeted-assignment ile işlenir (record-answer çağrılmaz).
 // ============================================================
 import { supabase } from '../supabase';
+import { apiInvoke } from './apiClient';
 import { currentUid } from './authApi';
 import { normalizeDoc } from './questionPoolApi';
 
@@ -103,7 +104,7 @@ export function deleteTargetedAssignment(id) {
 // Edge Function dokümanı `status:'draft'` ile oluşturur (öğrenciye GÖRÜNMEZ). Öğretmen önizleyip
 // onayladıktan sonra publishTargetedAssignment ile 'assigned'a çevrilir → öğrenciye gider.
 export async function createTargetedAssignment(input) {
-  const { data, error } = await supabase.functions.invoke('generate-targeted-set', { body: input });
+  const { data, error } = await apiInvoke('generate-targeted-set', { body: input });
   if (error) throw error;
   return { id: data?.assignmentId || data?.id || null, questionIds: data?.questionIds || [] };
 }
@@ -137,7 +138,7 @@ export async function publishTargetedAssignment(id, patch = {}) {
 
 // { targetedAssignmentId, answers: [{questionId, selectedIndex}] } → { autoScore, maxScore }
 export async function submitTargetedAssignment({ targetedAssignmentId, answers }) {
-  const { data, error } = await supabase.functions.invoke('submit-targeted-assignment', {
+  const { data, error } = await apiInvoke('submit-targeted-assignment', {
     body: { targetedAssignmentId, answers },
   });
   if (error) throw error;

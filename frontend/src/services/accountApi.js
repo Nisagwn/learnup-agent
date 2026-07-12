@@ -4,10 +4,10 @@
 // Çağrıdan ÖNCE authApi.reauthenticate ile yeniden-doğrulama ZORUNLU.
 // Not: Edge Function backend aşamasında deploy edilecek.
 // ============================================================
-import { supabase } from '../supabase';
+import { apiInvoke } from './apiClient';
 
 export async function deleteAccount() {
-  const { data, error } = await supabase.functions.invoke('delete-account', { body: {} });
+  const { data, error } = await apiInvoke('delete-account', { body: {} });
   if (error) throw new Error(error.message || 'Hesap silinemedi.');
   return data ?? {};
 }

@@ -5,6 +5,7 @@ import { InlineMath, BlockMath } from 'react-katex';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { supabase } from '../supabase';
+import { apiInvoke } from '../services/apiClient';
 import { currentUid, currentUser } from '../services/authApi';
 import { getProfile } from '../services/profileApi';
 import { useToast } from '../components/ToastProvider';
@@ -203,7 +204,7 @@ export default function Quiz() {
         return;
       }
       // Supabase Edge Function — auth JWT invoke tarafından otomatik eklenir.
-      const { data, error: fnErr } = await supabase.functions.invoke('submit-answer', {
+      const { data, error: fnErr } = await apiInvoke('submit-answer', {
         body: {
           subject: dbCategory,
           topic: _currentQuestion?.topic || dbCategory,

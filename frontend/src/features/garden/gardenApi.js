@@ -4,6 +4,7 @@
 // Mutasyonlar Edge Functions: purchase-garden-item / plant-seed / move-plant / remove-plant.
 // ============================================================
 import { supabase } from '../../supabase';
+import { apiInvoke } from '../../services/apiClient';
 import { legacyRowColToXY, PLANT_SCALE_DEFAULT } from './gardenLogic';
 
 const toMs = (ts) => {
@@ -17,7 +18,7 @@ const toMs = (ts) => {
 };
 
 async function invokeFn(fn, body = {}) {
-  const { data, error } = await supabase.functions.invoke(fn, { body });
+  const { data, error } = await apiInvoke(fn, { body });
   if (error) throw new Error(error.message || 'İstek başarısız');
   return data;
 }

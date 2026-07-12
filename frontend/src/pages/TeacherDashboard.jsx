@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Users, AlertTriangle, TrendingUp, BarChart2, Key, Copy, Check, Plus, BookOpen, Activity, Sparkles, ShieldCheck, UserMinus, UserCheck, Search, Calendar, Megaphone, Trash2, RefreshCw, XCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area } from 'recharts';
 import { supabase } from '../supabase';
+import { apiInvoke } from '../services/apiClient';
 import { currentUser } from '../services/authApi';
 import { getProfile, updateProfile } from '../services/profileApi';
 import { useToast } from '../components/ToastProvider';
@@ -260,7 +261,7 @@ En Zayıf Olduğu Alt Konu: ${weakestSubtopic}
 
 Yanıtını Türkçe, samimi ve profesyonel bir dille yaz. Maddeler net, uygulanabilir ve motive edici olsun.`;
 
-      const { data, error: fnErr } = await supabase.functions.invoke('get-ai-response', {
+      const { data, error: fnErr } = await apiInvoke('get-ai-response', {
         body: { userMessage: aiPrompt },
       });
       if (fnErr) throw new Error("API çağrısı başarısız.");

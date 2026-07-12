@@ -1,10 +1,10 @@
-// Oyunlaştırma Edge Functions istemci sarmalı.
+// Oyunlaştırma backend istemci sarmalı (learnup-brain).
 // record-answer / ensure-daily-state / claim-quest-reward fonksiyonlarını çağırır.
-// supabase.functions.invoke kullanıcının JWT'sini otomatik ekler — manuel token yok.
-import { supabase } from '../supabase';
+// apiInvoke, kullanıcının JWT'sini Supabase oturumundan alıp otomatik ekler — manuel token yok.
+import { apiInvoke } from '../services/apiClient';
 
 async function invokeFn(fn, body = {}) {
-  const { data, error } = await supabase.functions.invoke(fn, { body });
+  const { data, error } = await apiInvoke(fn, { body });
   if (error) throw new Error(error.message || 'İstek başarısız');
   return data;
 }

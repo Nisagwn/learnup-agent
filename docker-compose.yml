@@ -1,0 +1,75 @@
+# LearnUp — TAM STACK (repo kökü): frontend + brain (API) + worker + redis.
+# Tek komutla her şey:  docker compose up --build
+#
+# Ön koşul (env dosyaları — hiçbiri commit EDİLMEZ):
+#   • learnup-brain/.env   → SUPABASE_*, OPENROUTER_API_KEY ...  (brain/worker RUNTIME)
+#   • kök .env             → VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY  (frontend BUILD-time)
+#     (.env.example'ı kopyala: cp .env.example .env)
+#
+# NOT: Yalnız 'brain' imajı build eder; 'worker' aynı imajı komutla yeniden kullanır.
+
+services:
+  # ── Frontend: Vite build → nginx (statik + /api proxy → brain) ──
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # PUBLIC değerler kök .env'den gömülür (anon key tarayıcıya inebilir; service_role ASLA).
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_EDGE_FUNCTIONS_BASE_URL: ${VITE_EDGE_FUNCTIONS_BASE_URL:-}
+    image: learnup-frontend
+    ports:
+      - "3000:80"          # http://localhost:3000
+    depends_on:
+      - brain
+    restart: unless-stopped
+
+  # ── Brain: Bun API (:8080) ──
+  brain:
+    build: ./learnup-brain
+    image: learnup-brain
+    command: ["bun", "src/server.ts"]
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./learnup-brain/.env
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Worker: Ritim (aynı imaj, farklı komut) ──
+  worker:
+    image: learnup-brain
+    command: ["bun", "src/workers/ritim.worker.ts"]
+    env_file:
+      - ./learnup-brain/.env
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+      brain:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── Redis: hot-path (ajan orkestrasyonu) ──
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  redis-data:

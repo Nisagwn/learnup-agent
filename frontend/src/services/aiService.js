@@ -6,14 +6,14 @@
 // supabase.functions.invoke kullanıcının JWT'sini otomatik ekler; manuel
 // idToken/Authorization gerekmez. Gövde: { ..., userId }.
 // ============================================================
-import { supabase } from '../supabase';
+import { apiInvoke } from './apiClient';
 import { currentUid } from './authApi';
 import { saveEphemeralQuiz } from '../utils/ephemeralQuiz';
 
 const clampCount = (n) => Math.max(1, Math.min(20, Number(n) || 5));
 
 async function callGenerateEndpoint(payload) {
-  const { data, error } = await supabase.functions.invoke('generate-questions', {
+  const { data, error } = await apiInvoke('generate-questions', {
     body: { userId: currentUid(), ...payload },
   });
   if (error) {

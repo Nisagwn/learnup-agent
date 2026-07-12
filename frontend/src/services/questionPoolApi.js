@@ -7,6 +7,7 @@
 //  • Tier 3 (category+grade, orderBy YOK) her zaman çalışan taban; Tier 4 (lokal JSON)
 //    çevrimdışı zemindir.
 import { supabase } from '../supabase';
+import { apiInvoke } from './apiClient';
 import { normalizeQuestion } from '../utils/normalizeQuestion';
 import localQuestions from '../data/questions.json';
 
@@ -314,7 +315,7 @@ export function toSample(q) {
 // AI sorularını DEPLOYED save-ai-questions Edge Function ile yazar (verified:false). → savedIds[]
 export async function saveAIQuestions(questions, meta = {}) {
   if (!Array.isArray(questions) || questions.length === 0) return [];
-  const { data, error } = await supabase.functions.invoke('save-ai-questions', {
+  const { data, error } = await apiInvoke('save-ai-questions', {
     body: { questions, meta },
   });
   if (error) throw new Error(error.message || 'AI soruları kaydedilemedi');
