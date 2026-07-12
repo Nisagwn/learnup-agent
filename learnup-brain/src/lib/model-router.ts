@@ -1,7 +1,22 @@
-import type OpenAI from 'openai'
+import OpenAI from 'openai'
 import { openrouter } from '../clients/openrouter.js'
 import { redis } from '../clients/redis.js'
 import { logger } from '../utils/logger.js'
+
+/** OPSİYONEL ikinci ücretsiz sohbet/üretim sağlayıcısı: Groq (~1000 istek/gün,
+ *  DeepSeek R1 distill dahil). Zincir girdisi 'groq:<model>' öneklidir;
+ *  GROQ_API_KEY .env'de yoksa bu girdiler sessizce atlanır — OpenRouter omurga kalır.
+ *  NOT: Embeddings (vektörler) HER ZAMAN OpenRouter'dadır (rag.ts) — Groq embedding sunmaz. */
+const groq: OpenAI | null = process.env.GROQ_API_KEY
+  ? new OpenAI({ baseURL: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY })
+  : null
+
+type Provider = 'openrouter' | 'groq'
+const parseEntry = (entry: string): { provider: Provider; model: string } =>
+  entry.startsWith('groq:')
+    ? { provider: 'groq', model: entry.slice(5) }
+    : { provider: 'openrouter', model: entry }
+const clientOf = (p: Provider): OpenAI | null => (p === 'groq' ? groq : openrouter)
 
 /**
  * MODEL YÖNLENDİRİCİ (§5.4) — ücretsiz-önce zincir + bütçe + devre kesici + timeout.
@@ -20,27 +35,28 @@ export type LlmPriority = 'P0' | 'P1' | 'P2'
  *  gpt-oss-120b:free + nemotron:free + qwen3-next:free geçerli ve test edildi. */
 const CHAINS: Record<LlmRole, string[]> = {
   chat: chainFromEnv('LLM_CHAIN_CHAT', [
+    'groq:llama-3.3-70b-versatile',
+    'groq:openai/gpt-oss-120b',
     'openai/gpt-oss-120b:free',
     'qwen/qwen3-next-80b-a3b-instruct:free',
     'meta-llama/llama-3.3-70b-instruct:free',
-    'deepseek/deepseek-chat',
   ]),
   generate: chainFromEnv('LLM_CHAIN_GENERATE', [
+    'groq:openai/gpt-oss-120b',
+    'groq:llama-3.3-70b-versatile',
     'openai/gpt-oss-120b:free',
-    'qwen/qwen3-next-80b-a3b-instruct:free',
     'nvidia/nemotron-3-super-120b-a12b:free',
-    'deepseek/deepseek-chat',
   ]),
   verify: chainFromEnv('LLM_CHAIN_VERIFY', [
+    'groq:deepseek-r1-distill-llama-70b',   // DeepSeek R1 (distill) — Groq'ta ÜCRETSİZ
+    'groq:openai/gpt-oss-120b',
     'openai/gpt-oss-120b:free',
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
-    'deepseek/deepseek-r1',
   ]),
   fast: chainFromEnv('LLM_CHAIN_FAST', [
+    'groq:llama-3.1-8b-instant',
     'nvidia/nemotron-nano-9b-v2:free',
     'meta-llama/llama-3.2-3b-instruct:free',
-    'openai/gpt-oss-120b:free',
-    'deepseek/deepseek-chat',
   ]),
 }
 
@@ -51,12 +67,18 @@ function chainFromEnv(name: string, fallback: string[]): string[] {
   return list.length ? list : fallback
 }
 
-const isFree = (slug: string): boolean => slug.endsWith(':free')
+const isFree = (entry: string): boolean => entry.endsWith(':free') || entry.startsWith('groq:')
 const TIMEOUT_MS: Record<LlmRole, number> = { chat: 45_000, generate: 60_000, verify: 120_000, fast: 30_000 }
-/** Dakika penceresi tavanı (hesap-geneli 20/dk'ya 2 tampon). */
-const MINUTE_CAP = 18
-/** Günlük ücretsiz tavan; öncelik sınıfına göre kesim ($10 sonrası 1000/gün). */
-const DAY_CAP: Record<LlmPriority, number> = { P0: 1000, P1: 950, P2: 850 }
+/** Sağlayıcı-başına dakika tavanı. */
+const MINUTE_CAP: Record<Provider, number> = { openrouter: 18, groq: 25 }
+/** Sağlayıcı-başına günlük ücretsiz tavan (env ile ezilebilir).
+ *  OpenRouter kredisiz hesapta 50/gün → güvenli 45; $10 sonrası OPENROUTER_FREE_DAILY=950 yap. */
+const DAY_CAP_BASE: Record<Provider, number> = {
+  openrouter: Number(process.env.OPENROUTER_FREE_DAILY) || 45,
+  groq: Number(process.env.GROQ_FREE_DAILY) || 900,
+}
+/** Öncelik payı: P0 tam tavan, P1 %95, P2 %85 (interaktifin payı asla yenmez). */
+const PRIORITY_FACTOR: Record<LlmPriority, number> = { P0: 1, P1: 0.95, P2: 0.85 }
 
 // ── In-memory fallback (Redis yoksa) ──
 const memCounters = new Map<string, { n: number; exp: number }>()
@@ -85,17 +107,17 @@ async function incr(key: string, ttlSec: number): Promise<number> {
   return n
 }
 
-const dayKey = (): string => `lb:llm:day:${new Date().toISOString().slice(0, 10)}`
-const minuteKey = (): string => `lb:llm:win:${Math.floor(Date.now() / 60_000)}`
+const dayKey = (p: Provider): string => `lb:llm:day:${p}:${new Date().toISOString().slice(0, 10)}`
+const minuteKey = (p: Provider): string => `lb:llm:win:${p}:${Math.floor(Date.now() / 60_000)}`
 const cbKey = (slug: string): string => `lb:llm:cb:${slug}`
 const cbCountKey = (slug: string): string => `lb:llm:cbn:${slug}`
 
-/** Ücretsiz slug için bütçe kapıları: dakika + gün (aşımda false → zincirde ilerle). */
-async function freeBudgetOk(priority: LlmPriority): Promise<boolean> {
-  const minute = await incr(minuteKey(), 120)
-  if (minute > MINUTE_CAP) return false
-  const day = await incr(dayKey(), 172_800)
-  return day <= DAY_CAP[priority]
+/** Ücretsiz slug için sağlayıcı-başına bütçe kapıları (aşımda false → zincirde ilerle). */
+async function freeBudgetOk(provider: Provider, priority: LlmPriority): Promise<boolean> {
+  const minute = await incr(minuteKey(provider), 120)
+  if (minute > MINUTE_CAP[provider]) return false
+  const day = await incr(dayKey(provider), 172_800)
+  return day <= Math.floor(DAY_CAP_BASE[provider] * PRIORITY_FACTOR[priority])
 }
 
 async function breakerOpen(slug: string): Promise<boolean> {
@@ -147,11 +169,14 @@ export async function routedChat(
   const priority = opts.priority ?? 'P1'
   let lastErr: unknown = new Error(`model zinciri boş: ${role}`)
   for (const slug of CHAINS[role]) {
+    const { provider, model } = parseEntry(slug)
+    const client = clientOf(provider)
+    if (!client) continue // GROQ_API_KEY yoksa groq girdileri atlanır
     if (await breakerOpen(slug)) continue
-    if (isFree(slug) && !(await freeBudgetOk(priority))) continue // bütçe → sıradaki (paid'e düşer)
+    if (isFree(slug) && !(await freeBudgetOk(provider, priority))) continue // bütçe → sıradaki
     try {
-      const res = await openrouter.chat.completions.create(
-        { ...params, model: slug },
+      const res = await client.chat.completions.create(
+        { ...params, model },
         { signal: AbortSignal.timeout(TIMEOUT_MS[role]) },
       )
       void resetBreaker(slug)
@@ -184,11 +209,14 @@ export async function routedStream(
   const priority = opts.priority ?? 'P0'
   let lastErr: unknown = new Error(`model zinciri boş: ${role}`)
   for (const slug of CHAINS[role]) {
+    const { provider, model } = parseEntry(slug)
+    const client = clientOf(provider)
+    if (!client) continue
     if (await breakerOpen(slug)) continue
-    if (isFree(slug) && !(await freeBudgetOk(priority))) continue
+    if (isFree(slug) && !(await freeBudgetOk(provider, priority))) continue
     try {
-      const stream = await openrouter.chat.completions.create(
-        { ...params, model: slug, stream: true },
+      const stream = await client.chat.completions.create(
+        { ...params, model, stream: true },
         { signal: AbortSignal.timeout(TIMEOUT_MS[role]) },
       )
       void resetBreaker(slug)
