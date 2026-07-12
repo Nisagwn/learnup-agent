@@ -15,25 +15,31 @@ export type LlmRole = 'chat' | 'generate' | 'verify' | 'fast'
 /** P0 interaktif (Kaptan) · P1 doğrulama/canlı üretim · P2 gece batch. */
 export type LlmPriority = 'P0' | 'P1' | 'P2'
 
-/** Ücretsiz slug'lar zamanla değişebilir → env ile ezilebilir (virgülle ayrık zincir). */
+/** Ücretsiz slug'lar zamanla değişebilir → env ile ezilebilir (virgülle ayrık zincir).
+ *  2026-07-12 canlı katalog doğrulaması: DeepSeek :free varyantları KALKTI (404);
+ *  gpt-oss-120b:free + nemotron:free + qwen3-next:free geçerli ve test edildi. */
 const CHAINS: Record<LlmRole, string[]> = {
   chat: chainFromEnv('LLM_CHAIN_CHAT', [
-    'deepseek/deepseek-chat-v3-0324:free',
+    'openai/gpt-oss-120b:free',
+    'qwen/qwen3-next-80b-a3b-instruct:free',
     'meta-llama/llama-3.3-70b-instruct:free',
     'deepseek/deepseek-chat',
   ]),
   generate: chainFromEnv('LLM_CHAIN_GENERATE', [
-    'deepseek/deepseek-chat-v3-0324:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
+    'openai/gpt-oss-120b:free',
+    'qwen/qwen3-next-80b-a3b-instruct:free',
+    'nvidia/nemotron-3-super-120b-a12b:free',
     'deepseek/deepseek-chat',
   ]),
   verify: chainFromEnv('LLM_CHAIN_VERIFY', [
-    'deepseek/deepseek-r1:free',
+    'openai/gpt-oss-120b:free',
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
     'deepseek/deepseek-r1',
   ]),
   fast: chainFromEnv('LLM_CHAIN_FAST', [
-    'meta-llama/llama-3.1-8b-instruct:free',
-    'deepseek/deepseek-chat-v3-0324:free',
+    'nvidia/nemotron-nano-9b-v2:free',
+    'meta-llama/llama-3.2-3b-instruct:free',
+    'openai/gpt-oss-120b:free',
     'deepseek/deepseek-chat',
   ]),
 }
@@ -114,11 +120,19 @@ async function resetBreaker(slug: string): Promise<void> {
   await redis.del(cbCountKey(slug))
 }
 
+/** Geçici arıza (429/5xx/timeout) → kesiciyi aç + zincirde ilerle. */
 const isRetryable = (err: unknown): boolean => {
   const status = (err as { status?: number })?.status
   if (status === 429 || (typeof status === 'number' && status >= 500)) return true
   const name = (err as { name?: string })?.name
   return name === 'AbortError' || name === 'TimeoutError' || name === 'APIConnectionError'
+}
+
+/** Kalıcı slug arızası (model kalktı/kredi yok: 400/402/404) → kesicisiz atla, zincirde ilerle.
+ *  Yalnız 401 (auth) anında fırlatılır — zincirle çözülemez. */
+const isSkippable = (err: unknown): boolean => {
+  const status = (err as { status?: number })?.status
+  return status === 400 || status === 402 || status === 404
 }
 
 type ChatParams = Omit<OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, 'model'>
@@ -148,7 +162,11 @@ export async function routedChat(
         await tripBreaker(slug)
         continue
       }
-      throw err // model/parametre hatası — zincirle çözülmez
+      if (isSkippable(err)) {
+        logger.warn({ slug, status: (err as { status?: number })?.status }, 'slug kalıcı arızalı — zincirde ilerleniyor')
+        continue
+      }
+      throw err // 401 vb. — zincirle çözülmez
     }
   }
   throw lastErr
@@ -179,6 +197,10 @@ export async function routedStream(
       lastErr = err
       if (isRetryable(err)) {
         await tripBreaker(slug)
+        continue
+      }
+      if (isSkippable(err)) {
+        logger.warn({ slug, status: (err as { status?: number })?.status }, 'slug kalıcı arızalı — zincirde ilerleniyor')
         continue
       }
       throw err

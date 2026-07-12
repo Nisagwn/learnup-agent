@@ -45,7 +45,7 @@ services:
   # ── Worker: Ritim (aynı imaj, farklı komut) ──
   worker:
     image: learnup-brain
-    command: ["bun", "src/workers/ritim.worker.ts"]
+    command: ["bun", "src/workers/atolye.worker.ts"]
     env_file:
       - ./learnup-brain/.env
     environment:
