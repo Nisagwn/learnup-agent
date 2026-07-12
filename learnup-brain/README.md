@@ -44,7 +44,7 @@ src/
   agents/{pusula,ritim,kaptan,tools}.ts
   routes/*.routes.ts
   middleware/{auth,rateLimit,error}.ts
-  workers/ritim.worker.ts
+  workers/atolye.worker.ts
 ```
 
 ## Scaffold ilerlemesi

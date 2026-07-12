@@ -25,7 +25,7 @@ services:
 
   worker:
     image: learnup-brain          # brain'in ürettiği imajı kullanır (ayrı build YOK → export yarışı olmaz)
-    command: ["bun", "src/workers/ritim.worker.ts"]
+    command: ["bun", "src/workers/atolye.worker.ts"]
     env_file:
       - .env
     environment:

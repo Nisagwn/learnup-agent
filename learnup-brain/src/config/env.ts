@@ -12,14 +12,13 @@ const envSchema = z.object({
 
   // ── Supabase (veri + hafıza deposu) ──
   SUPABASE_URL: z.string().url(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1), // RLS baypas — yalnız sunucu
-  SUPABASE_JWT_SECRET: z.string().min(1), // lokal JWT doğrulama (HS256)
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1), // GİZLİ service-role (sb_secret_…) — RLS baypas, yalnız sunucu
+  // Asimetrik JWT doğrulama (JWKS). Verilmezse SUPABASE_URL'den türetilir (ek değişken gerekmez).
+  SUPABASE_JWKS_URL: z.string().url().optional(),
 
-  // ── LLM: chat/completions → OpenRouter (DeepSeek) ──
+  // ── LLM + Embeddings: chat/completions VE embeddings → OpenRouter ──
+  // (DeepSeek sohbet/üretim + text-embedding-3-small @768; ayrı OpenAI anahtarı gerekmez.)
   OPENROUTER_API_KEY: z.string().min(1),
-
-  // ── Embeddings: text-embedding-3-small @768 → DOĞRUDAN OpenAI (F2) ──
-  OPENAI_API_KEY: z.string().min(1),
 
   // ── Redis (hot-path; ajan orkestrasyonu — bu fazda opsiyonel) ──
   REDIS_URL: z.string().url().optional(),
@@ -39,5 +38,10 @@ if (!parsed.success) {
   process.exit(1)
 }
 
-export const env = parsed.data
+const data = parsed.data
+export const env = {
+  ...data,
+  // JWKS URL açıkça verilmediyse Supabase konvansiyonundan türet.
+  SUPABASE_JWKS_URL: data.SUPABASE_JWKS_URL ?? `${data.SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
+}
 export type Env = typeof env
