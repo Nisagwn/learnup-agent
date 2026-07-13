@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
 import { openrouter } from '../clients/openrouter.js'
 import { redis } from '../clients/redis.js'
 import { logger } from '../utils/logger.js'
@@ -11,12 +12,69 @@ const groq: OpenAI | null = process.env.GROQ_API_KEY
   ? new OpenAI({ baseURL: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY })
   : null
 
-type Provider = 'openrouter' | 'groq'
-const parseEntry = (entry: string): { provider: Provider; model: string } =>
-  entry.startsWith('groq:')
-    ? { provider: 'groq', model: entry.slice(5) }
-    : { provider: 'openrouter', model: entry }
-const clientOf = (p: Provider): OpenAI | null => (p === 'groq' ? groq : openrouter)
+/** BİRİNCİL sağlayıcı: Anthropic (resmi SDK — OpenAI-shim değil). ANTHROPIC_API_KEY yoksa atlanır.
+ *  Embeddings Anthropic'te YOK → vektörler OpenRouter'da kalır (rag.ts, değişmedi). */
+const anthropic: Anthropic | null = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null
+
+type Provider = 'openrouter' | 'groq' | 'anthropic'
+const parseEntry = (entry: string): { provider: Provider; model: string } => {
+  if (entry.startsWith('groq:')) return { provider: 'groq', model: entry.slice(5) }
+  if (entry.startsWith('anthropic:')) return { provider: 'anthropic', model: entry.slice(10) }
+  return { provider: 'openrouter', model: entry }
+}
+const clientOf = (p: Provider): OpenAI | null => (p === 'groq' ? groq : p === 'anthropic' ? null : openrouter)
+
+/** Anthropic Messages API adaptörü — OpenAI-biçimli params'ı çevirir, yanıtı OpenAI şekline sarar.
+ *  Not: tools/stream desteklemez (o çağrılar zincirde sonraki sağlayıcıya akar).
+ *  Sıcaklık geçilmez (Sonnet 5 default-dışı sampling'i 400'ler); JSON istekleri system'e yönerge ekler. */
+async function anthropicChat(
+  model: string,
+  params: ChatParams,
+  timeoutMs: number,
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  const sysParts: string[] = []
+  const msgs: Anthropic.MessageParam[] = []
+  for (const m of params.messages) {
+    const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')
+    if (m.role === 'system') sysParts.push(text)
+    else if (m.role === 'user' || m.role === 'assistant') msgs.push({ role: m.role, content: text })
+  }
+  if ((params.response_format as { type?: string } | undefined)?.type === 'json_object') {
+    sysParts.push('Yanıtını YALNIZ geçerli bir JSON objesi olarak ver; başka hiçbir metin yazma.')
+  }
+  if (msgs.length === 0 || msgs[0].role !== 'user') msgs.unshift({ role: 'user', content: 'Devam et.' })
+
+  const res = await anthropic!.messages.create(
+    {
+      model,
+      max_tokens: params.max_tokens ?? 2048,
+      system: sysParts.length ? sysParts.join('\n\n') : undefined,
+      messages: msgs,
+    },
+    { signal: AbortSignal.timeout(timeoutMs) },
+  )
+  const text = res.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('')
+  return {
+    id: res.id,
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model: res.model,
+    choices: [{
+      index: 0,
+      message: { role: 'assistant', content: text, refusal: null },
+      finish_reason: res.stop_reason === 'max_tokens' ? 'length' : 'stop',
+      logprobs: null,
+    }],
+    usage: {
+      prompt_tokens: res.usage.input_tokens,
+      completion_tokens: res.usage.output_tokens,
+      total_tokens: res.usage.input_tokens + res.usage.output_tokens,
+    },
+  }
+}
 
 /**
  * MODEL YÖNLENDİRİCİ (§5.4) — ücretsiz-önce zincir + bütçe + devre kesici + timeout.
@@ -35,25 +93,25 @@ export type LlmPriority = 'P0' | 'P1' | 'P2'
  *  gpt-oss-120b:free + nemotron:free + qwen3-next:free geçerli ve test edildi. */
 const CHAINS: Record<LlmRole, string[]> = {
   chat: chainFromEnv('LLM_CHAIN_CHAT', [
+    'anthropic:claude-haiku-4-5',            // $1/$5 MTok — chat/ipucu (~$0.003/mesaj)
     'groq:llama-3.3-70b-versatile',
-    'groq:openai/gpt-oss-120b',
     'openai/gpt-oss-120b:free',
-    'qwen/qwen3-next-80b-a3b-instruct:free',
     'meta-llama/llama-3.3-70b-instruct:free',
   ]),
   generate: chainFromEnv('LLM_CHAIN_GENERATE', [
+    'anthropic:claude-sonnet-5',             // $3/$15 (intro $2/$10) — ÖSYM üretimi
     'groq:openai/gpt-oss-120b',
-    'groq:llama-3.3-70b-versatile',
     'openai/gpt-oss-120b:free',
     'nvidia/nemotron-3-super-120b-a12b:free',
   ]),
   verify: chainFromEnv('LLM_CHAIN_VERIFY', [
-    'groq:deepseek-r1-distill-llama-70b',   // DeepSeek R1 (distill) — Groq'ta ÜCRETSİZ
-    'groq:openai/gpt-oss-120b',
+    'anthropic:claude-sonnet-5',             // adaptif düşünme yerleşik — bağımsız denetçi
+    'groq:deepseek-r1-distill-llama-70b',
     'openai/gpt-oss-120b:free',
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   ]),
   fast: chainFromEnv('LLM_CHAIN_FAST', [
+    'anthropic:claude-haiku-4-5',
     'groq:llama-3.1-8b-instant',
     'nvidia/nemotron-nano-9b-v2:free',
     'meta-llama/llama-3.2-3b-instruct:free',
@@ -70,12 +128,13 @@ function chainFromEnv(name: string, fallback: string[]): string[] {
 const isFree = (entry: string): boolean => entry.endsWith(':free') || entry.startsWith('groq:')
 const TIMEOUT_MS: Record<LlmRole, number> = { chat: 45_000, generate: 60_000, verify: 120_000, fast: 30_000 }
 /** Sağlayıcı-başına dakika tavanı. */
-const MINUTE_CAP: Record<Provider, number> = { openrouter: 18, groq: 25 }
+const MINUTE_CAP: Record<Provider, number> = { openrouter: 18, groq: 25, anthropic: 999 }
 /** Sağlayıcı-başına günlük ücretsiz tavan (env ile ezilebilir).
  *  OpenRouter kredisiz hesapta 50/gün → güvenli 45; $10 sonrası OPENROUTER_FREE_DAILY=950 yap. */
 const DAY_CAP_BASE: Record<Provider, number> = {
   openrouter: Number(process.env.OPENROUTER_FREE_DAILY) || 45,
   groq: Number(process.env.GROQ_FREE_DAILY) || 900,
+  anthropic: 999_999, // paid — bütçe kapısına girmez (isFree=false)
 }
 /** Öncelik payı: P0 tam tavan, P1 %95, P2 %85 (interaktifin payı asla yenmez). */
 const PRIORITY_FACTOR: Record<LlmPriority, number> = { P0: 1, P1: 0.95, P2: 0.85 }
@@ -170,15 +229,19 @@ export async function routedChat(
   let lastErr: unknown = new Error(`model zinciri boş: ${role}`)
   for (const slug of CHAINS[role]) {
     const { provider, model } = parseEntry(slug)
+    // Anthropic: resmi SDK adaptörü (tools'lu istekler zincirde sonrakine akar)
+    if (provider === 'anthropic' && (!anthropic || params.tools?.length)) continue
     const client = clientOf(provider)
-    if (!client) continue // GROQ_API_KEY yoksa groq girdileri atlanır
+    if (provider !== 'anthropic' && !client) continue // GROQ_API_KEY yoksa groq atlanır
     if (await breakerOpen(slug)) continue
     if (isFree(slug) && !(await freeBudgetOk(provider, priority))) continue // bütçe → sıradaki
     try {
-      const res = await client.chat.completions.create(
-        { ...params, model },
-        { signal: AbortSignal.timeout(TIMEOUT_MS[role]) },
-      )
+      const res = provider === 'anthropic'
+        ? await anthropicChat(model, params, TIMEOUT_MS[role])
+        : await client!.chat.completions.create(
+            { ...params, model },
+            { signal: AbortSignal.timeout(TIMEOUT_MS[role]) },
+          )
       void resetBreaker(slug)
       return res
     } catch (err) {
@@ -210,6 +273,7 @@ export async function routedStream(
   let lastErr: unknown = new Error(`model zinciri boş: ${role}`)
   for (const slug of CHAINS[role]) {
     const { provider, model } = parseEntry(slug)
+    if (provider === 'anthropic') continue // stream adaptörü yok — sonraki sağlayıcı akıtır
     const client = clientOf(provider)
     if (!client) continue
     if (await breakerOpen(slug)) continue
