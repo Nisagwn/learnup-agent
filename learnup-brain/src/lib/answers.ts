@@ -35,10 +35,56 @@ export type AnswerBody = {
   placement?: boolean              // tanışma testi → K=0.3 hızlı yakınsama
 }
 
+/**
+ * SUNUCU TARAFI CEVAP DOĞRULAMASI.
+ *
+ * ⚠️ `isCorrect` İSTEMCİDEN GELİYORDU ve doğrudan XP'yi belirliyordu. Yani:
+ *     for (;;) POST /api/v1/answers {"isCorrect":true,"attemptNumber":1}
+ * her çağrıda 15 XP basıyordu — sınırsız XP, rozet, seri ve league_entries.weekly_xp.
+ * Lider tablosu ve garden.routes'un harcadığı coin ekonomisi tamamen sahte olabilirdi.
+ * (Ödev akışı — assignments.routes — cevabı ZATEN sunucuda puanlıyor; bu tutarsızlık
+ * açıkça bir unutkanlıktı, tasarım tercihi değil.)
+ *
+ * Soru DB'de bulunabiliyorsa doğruluk SUNUCUDA hesaplanır ve istemcinin iddiası YOK SAYILIR.
+ * İki havuz var, ikisi de kontrol edilir:
+ *   questions.correct_answer  → şık METNİ  (eski/öğretmen havuzu, options bir dizi)
+ *   yks_questions.correct_option → 'A'..'E' (YKS havuzu)
+ *
+ * Soru bulunamazsa (efemer/anlık üretilmiş) doğruluk DOĞRULANAMAZ → cevap yine kaydedilir
+ * ama XP VERİLMEZ. Doğrulanamayan bir iddia ödüllendirilemez; aksi hâlde saldırgan sadece
+ * questionId'yi boş bırakarak aynı sömürüyü sürdürürdü.
+ */
+async function dogrulukKontrol(
+  questionId: string | null,
+  selectedOption: string | null,
+  istemciIddiasi: boolean | null,
+): Promise<{ isCorrect: boolean | null; dogrulandi: boolean }> {
+  if (!questionId) return { isCorrect: istemciIddiasi, dogrulandi: false }
+
+  // YKS havuzu (şık harfi)
+  const { data: yks } = await supabase
+    .from('yks_questions').select('correct_option').eq('id', questionId).maybeSingle()
+  if (yks?.correct_option) {
+    return { isCorrect: selectedOption === yks.correct_option, dogrulandi: true }
+  }
+
+  // Eski/öğretmen havuzu (şık metni + options dizisi)
+  const { data: q } = await supabase
+    .from('questions').select('options, correct_answer').eq('id', questionId).maybeSingle()
+  if (q?.correct_answer != null) {
+    const opts = Array.isArray(q.options) ? (q.options as unknown[]) : []
+    const idx = selectedOption ? selectedOption.charCodeAt(0) - 65 : -1   // 'A'→0
+    const secilen = idx >= 0 && idx < opts.length ? String(opts[idx]) : null
+    return { isCorrect: secilen !== null && secilen === String(q.correct_answer), dogrulandi: true }
+  }
+
+  return { isCorrect: istemciIddiasi, dogrulandi: false }
+}
+
 export async function processAnswer(userId: string, body: AnswerBody) {
   const {
     questionId = null, subject = 'Genel', topic = null, subTopic = null,
-    isCorrect = null, isSkipped = false, attemptNumber = 1, durationSec = 0,
+    isSkipped = false, attemptNumber = 1, durationSec = 0,
     snapshot = null, attemptId = null, difficulty = null,
   } = body
   const kazanimId = typeof body.kazanimId === 'number' ? body.kazanimId : null
@@ -53,6 +99,13 @@ export async function processAnswer(userId: string, body: AnswerBody) {
         ? Math.round(Number(durationSec) * 1000)
         : null
 
+  // ── 0) DOĞRULUK SUNUCUDA BELİRLENİR — istemcinin isCorrect iddiası bağlayıcı değil ──
+  const { isCorrect, dogrulandi } = await dogrulukKontrol(
+    questionId ? String(questionId) : null,
+    selectedOption,
+    typeof body.isCorrect === 'boolean' ? body.isCorrect : null,
+  )
+
   // ── 1) Gamification hesabı (saf, /record ile birebir) ──
   const today = todayISO()
   const weekId = getWeekId()
@@ -60,7 +113,11 @@ export async function processAnswer(userId: string, body: AnswerBody) {
   const userData: any = profile || {}
   const g = ensureGamification(userData.gamification, today, weekId)
 
-  const xpGained = xpForAnswer({ isCorrect: isCorrect === true, isSkipped: !!isSkipped, attemptNumber })
+  // Doğrulanamayan cevap XP KAZANDIRMAZ. Aksi hâlde saldırgan questionId'yi boş bırakıp
+  // {"isCorrect":true} yollayarak sınırsız XP basmaya devam ederdi.
+  const xpGained = dogrulandi
+    ? xpForAnswer({ isCorrect: isCorrect === true, isSkipped: !!isSkipped, attemptNumber })
+    : 0
   g.xp = (g.xp || 0) + xpGained
   g.totalSolved = (g.totalSolved || 0) + 1
   if (isCorrect === true) g.correctAnswers = (g.correctAnswers || 0) + 1

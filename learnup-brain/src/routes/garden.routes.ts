@@ -19,53 +19,40 @@ gardenRouter.post('/purchase', async (req, res, next) => {
       res.status(400).json({ error: 'Ürün bulunamadı.' })
       return
     }
+    // Rozet kilidi (fiyat/kind sunucudan — istemci yalnız itemId söyler)
     const { data: profile } = await supabase
       .from('profiles')
-      .select('gamification, unlocked_badges')
+      .select('unlocked_badges')
       .eq('id', userId)
       .single()
-    const userData: any = profile || {}
-
-    // Rozet kilidi
     if (item.unlockBadge) {
-      const owned = Object.keys(userData.unlocked_badges || {})
+      const owned = Object.keys((profile as any)?.unlocked_badges || {})
       if (!owned.includes(item.unlockBadge)) {
         res.status(403).json({ error: 'Bu ürün kilitli.' })
         return
       }
     }
 
-    const g = { ...(userData.gamification || {}) }
-    const coins = Number(g.coins) || 0
-    if (coins < item.price) {
-      res.status(400).json({ error: 'Yetersiz coin.' })
-      return
+    // ATOMİK: coin düşme + envanter artışı TEK transaction (migration 0011).
+    // Eskiden oku→kontrol→yaz idi: aynı anda gelen iki istek de coins=100 okuyup ikisi de
+    // geçiyordu → bir ürünün parasına iki ürün. Üstelik coin ÖNCE düşülüp eşya SONRA
+    // ekleniyordu: arada hata olursa para gidiyor eşya gelmiyordu. RPC satırı `for update`
+    // ile kilitler; yetersiz bakiyede exception → transaction geri sarılır, kısmi yazım YOK.
+    const { data, error } = await supabase.rpc('satin_al', {
+      p_user_id: userId,
+      p_item_id: String(itemId),
+      p_kind: item.kind,
+      p_price: item.price,
+    })
+    if (error) {
+      if (error.message.includes('yetersiz_coin')) {
+        res.status(400).json({ error: 'Yetersiz coin.' })
+        return
+      }
+      throw error
     }
-    g.coins = coins - item.price
-    const { error: profErr } = await supabase.from('profiles').update({ gamification: g }).eq('id', userId)
-    if (profErr) {
-      res.status(500).json({ error: profErr.message })
-      return
-    }
-
-    // Envanter: +1
-    const { data: invRow } = await supabase
-      .from('inventory')
-      .select('count')
-      .eq('user_id', userId)
-      .eq('item_id', String(itemId))
-      .maybeSingle()
-    const newCount = (Number(invRow?.count) || 0) + 1
-    const { error: invErr } = await supabase.from('inventory').upsert(
-      { user_id: userId, item_id: String(itemId), kind: item.kind, count: newCount },
-      { onConflict: 'user_id,item_id' },
-    )
-    if (invErr) {
-      res.status(500).json({ error: invErr.message })
-      return
-    }
-
-    res.json({ coins: g.coins, itemId: String(itemId), newCount })
+    const row = (data as Array<{ coins: number; new_count: number }>)?.[0]
+    res.json({ coins: row?.coins ?? 0, itemId: String(itemId), newCount: row?.new_count ?? 0 })
   } catch (err) {
     next(err)
   }
@@ -80,37 +67,25 @@ gardenRouter.post('/plant', async (req, res, next) => {
       res.status(400).json({ error: 'itemId gerekli.' })
       return
     }
-    const { data: invRow } = await supabase
-      .from('inventory')
-      .select('count')
-      .eq('user_id', userId)
-      .eq('item_id', String(itemId))
-      .maybeSingle()
-    const count = Number(invRow?.count) || 0
-    if (count < 1) {
-      res.status(400).json({ error: 'Envanterde bu üründen yok.' })
-      return
+    // ATOMİK (0011): envanter -1 ve bahçeye ekleme TEK transaction.
+    // Eskiden: count oku → 1 azalt → garden'a insert. İki eşzamanlı istek de count=1 okuyup
+    // ikisi de 0 yazıyor ve ikisi de bitki ekiyordu → 1 tohumdan 2 bitki. Tersi de mümkündü:
+    // insert patlarsa azaltma zaten yazılmış oluyordu → tohum yok olur, bitki de dikilmez.
+    const { data, error } = await supabase.rpc('tohum_ek', {
+      p_user_id: userId,
+      p_item_id: String(itemId),
+      p_x: x != null ? Number(x) : null,
+      p_y: y != null ? Number(y) : null,
+    })
+    if (error) {
+      if (error.message.includes('tohum_yok')) {
+        res.status(400).json({ error: 'Envanterde bu üründen yok.' })
+        return
+      }
+      throw error
     }
-    const { error: invErr } = await supabase
-      .from('inventory')
-      .update({ count: count - 1 })
-      .eq('user_id', userId)
-      .eq('item_id', String(itemId))
-    if (invErr) {
-      res.status(500).json({ error: invErr.message })
-      return
-    }
-
-    const row: any = { user_id: userId, item_id: String(itemId), stage: 'seed', status: 'healthy' }
-    if (x != null) row.x = Number(x)
-    if (y != null) row.y = Number(y)
-
-    const { data: planted, error: gErr } = await supabase.from('garden').insert(row).select('id').single()
-    if (gErr) {
-      res.status(500).json({ error: gErr.message })
-      return
-    }
-    res.json({ plantId: planted?.id, id: planted?.id })
+    const row = (data as Array<{ plant_id: string; remaining: number }>)?.[0]
+    res.json({ plantId: row?.plant_id, id: row?.plant_id, remaining: row?.remaining ?? 0 })
   } catch (err) {
     next(err)
   }
@@ -162,42 +137,23 @@ gardenRouter.post('/remove', async (req, res, next) => {
       res.status(400).json({ error: 'plantId gerekli.' })
       return
     }
-    const { data: plant } = await supabase
-      .from('garden')
-      .select('id, item_id')
-      .eq('id', plantId)
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (!plant) {
-      res.status(404).json({ error: 'Bitki bulunamadı.' })
-      return
-    }
-    const { error: delErr } = await supabase.from('garden').delete().eq('id', plantId).eq('user_id', userId)
-    if (delErr) {
-      res.status(500).json({ error: delErr.message })
-      return
-    }
-
-    const returnedItemId: string | null = plant.item_id || null
-    let newCount: number | undefined
-    if (returnedItemId) {
-      const { data: invRow } = await supabase
-        .from('inventory')
-        .select('count')
-        .eq('user_id', userId)
-        .eq('item_id', returnedItemId)
-        .maybeSingle()
-      newCount = (Number(invRow?.count) || 0) + 1
-      const { error: invErr } = await supabase.from('inventory').upsert(
-        { user_id: userId, item_id: returnedItemId, kind: kindForItem(returnedItemId), count: newCount },
-        { onConflict: 'user_id,item_id' },
-      )
-      if (invErr) {
-        res.status(500).json({ error: invErr.message })
+    // ATOMİK (0011): bitkiyi sil + eşyayı envantere iade, TEK transaction.
+    // Eskiden silme ÖNCE, iade SONRA yapılıyordu: iade adımı patlarsa (ya da süreç ölürse)
+    // bitki gitmiş, eşya geri gelmemiş oluyordu. Telafi yazımı yoktu. Sahiplik kontrolü de
+    // RPC'nin içinde (`where id = ... and user_id = ...`) — başkasının bitkisi silinemez.
+    const { data, error } = await supabase.rpc('bitki_kaldir', {
+      p_user_id: userId,
+      p_plant_id: String(plantId),
+    })
+    if (error) {
+      if (error.message.includes('bitki_yok')) {
+        res.status(404).json({ error: 'Bitki bulunamadı.' })
         return
       }
+      throw error
     }
-    res.json({ returnedItemId, newCount })
+    const row = (data as Array<{ item_id: string; new_count: number }>)?.[0]
+    res.json({ returnedItemId: row?.item_id ?? null, newCount: row?.new_count })
   } catch (err) {
     next(err)
   }

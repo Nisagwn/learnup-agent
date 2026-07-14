@@ -98,6 +98,32 @@ questionsRouter.post('/targeted', async (req, res, next) => {
       res.status(400).json({ error: 'studentId ve subject gerekli.' })
       return
     }
+
+    // ⚠️ YETKİ: studentId GÖVDEDEN geliyor ve aşağıda o öğrencinin SRS yanlış-cevap
+    // geçmişi (soru metni, şıklar, doğru cevap) çekilip LLM'e few-shot olarak veriliyor,
+    // türetilen çıktı da çağırana dönüyor. Kontrol olmadan herhangi bir öğrenci
+    // {"studentId":"<kurban>"} yollayıp kurbanın özel hata geçmişinden türetilmiş içerik
+    // alabiliyor ve ona ödev iliştirebiliyordu (satır ~134: student_id: studentId).
+    // İki kapı: (1) çağıran ÖĞRETMEN mi, (2) bu öğrenci ONUN öğrencisi mi.
+    const { data: ogretmen } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', teacherId)
+      .single()
+    if (ogretmen?.role !== 'teacher') {
+      res.status(403).json({ error: 'Bu işlem için öğretmen yetkisi gerekir.' })
+      return
+    }
+    const { data: ogrenci } = await supabase
+      .from('profiles')
+      .select('teacher_id')
+      .eq('id', studentId)
+      .single()
+    if (ogrenci?.teacher_id !== teacherId) {
+      res.status(403).json({ error: 'Bu öğrenci size bağlı değil.' })
+      return
+    }
+
     const qCount = Math.min(10, Math.max(1, Number(count) || 5))
     const gradeStr = grade ? String(grade) : '10'
 

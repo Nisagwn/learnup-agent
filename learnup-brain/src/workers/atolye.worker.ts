@@ -29,22 +29,37 @@ let running = true
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-// ── BEKÇİ: tek basit iş (§5.2). Bayat RUNNING → PENDING + re-XADD; 3 deneme → FAILED. ──
+/**
+ * BEKÇİ (§5.2): bayat RUNNING → PENDING + re-XADD; 3 deneme → FAILED.
+ *
+ * ⚠️ BAYATLIK PENCERESİ, EN UZUN GÖREVDEN UZUN OLMAK ZORUNDA.
+ * Eskiden 2 dk idi. Ama tek bir forge_topup görevi meşru olarak ÇOK daha uzun sürüyor:
+ * generateVerifiedSet 3 tura kadar döner ve her tur 1 üretim (timeout 150 sn) + aday başına
+ * bağımsız doğrulama (her biri 120 sn'ye kadar) + onarım içerir. Yani gerçek üst sınır
+ * dakikalarca. Sonuç: worker A hâlâ üretirken bekçi görevi "takılmış" sanıp PENDING yapıyor
+ * ve yeniden kuyruğa atıyordu; worker B aynı görevi baştan işliyordu → AYNI iş iki kez
+ * yapılıyor, LLM faturası iki katına çıkıyor, iki batch de aynı havuza yazılmaya çalışıyor.
+ * PENDING kuyruk gecikmesi ise ayrı bir şey: orada 2 dk makul (worker ölmüşse hızlı kurtar).
+ */
+const RUNNING_BAYAT_MS = 15 * 60_000 // en uzun görevden (dakikalar) rahat uzun
+const PENDING_BAYAT_MS = 2 * 60_000  // kuyrukta bekleyen: worker düşmüşse hızlı kurtar
+
 async function janitor(): Promise<void> {
-  const staleIso = new Date(Date.now() - 2 * 60_000).toISOString()
+  const runningIso = new Date(Date.now() - RUNNING_BAYAT_MS).toISOString()
+  const pendingIso = new Date(Date.now() - PENDING_BAYAT_MS).toISOString()
 
   const { data: stale } = await supabase
     .from('agent_tasks')
     .select('id, user_id, kind, payload, attempts')
     .eq('status', 'RUNNING')
-    .lt('locked_at', staleIso)
+    .lt('locked_at', runningIso)
     .limit(50)
 
   const { data: orphans } = await supabase
     .from('agent_tasks')
     .select('id, user_id, kind, payload, attempts')
     .eq('status', 'PENDING')
-    .lt('created_at', staleIso)
+    .lt('created_at', pendingIso)
     .limit(50)
 
   for (const row of [...(stale ?? []), ...(orphans ?? [])]) {

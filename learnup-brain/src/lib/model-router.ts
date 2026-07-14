@@ -162,17 +162,33 @@ const memSet = (key: string, ttlSec: number): void => {
   memCounters.set(key, { n: 1, exp: Date.now() + ttlSec * 1000 })
 }
 
-async function incr(key: string, ttlSec: number): Promise<number> {
-  if (!redis) return memInc(key, ttlSec)
-  const n = await redis.incr(key)
-  if (n === 1) await redis.expire(key, ttlSec)
-  return n
-}
-
 const dayKey = (p: Provider): string => `lb:llm:day:${p}:${new Date().toISOString().slice(0, 10)}`
 const minuteKey = (p: Provider): string => `lb:llm:win:${p}:${Math.floor(Date.now() / 60_000)}`
 const cbKey = (slug: string): string => `lb:llm:cb:${slug}`
 const cbCountKey = (slug: string): string => `lb:llm:cbn:${slug}`
+
+/**
+ * ⚠️ BU KAPILARIN HİÇBİRİ REDIS YÜZÜNDEN İSTEĞİ ÖLDÜREMEZ.
+ *
+ * Redis hot-path client'ı artık `enableOfflineQueue:false` (bkz. clients/redis.ts) — yani
+ * Redis kapalıyken komut BEKLEMEZ, anında REDDEDER. Bu doğru davranış, ama bedeli şu:
+ * bu kapılar routedChat'in try bloğunun DIŞINDA çağrılıyor; yakalanmazlarsa reddediş
+ * dışarı kaçar ve HİÇBİR SAĞLAYICI DENENMEZ. Redis düşünce sohbet, üretim, doğrulama —
+ * hepsi anında ölür. Bu tam olarak "Redis = hot-path, yokluğu yavaşlatır kilitlemez"
+ * kuralının ihlali olurdu.
+ * → Her Redis dokunuşu yakalanır ve in-memory sayaca düşer. Bütçe hassasiyeti azalır
+ *   (process-başına yaklaşık sayım), ama servis AYAKTA kalır. Doğru takas budur.
+ */
+async function incr(key: string, ttlSec: number): Promise<number> {
+  if (!redis) return memInc(key, ttlSec)
+  try {
+    const n = await redis.incr(key)
+    if (n === 1) await redis.expire(key, ttlSec)
+    return n
+  } catch {
+    return memInc(key, ttlSec) // Redis düştü → yaklaşık say, isteği ÖLDÜRME
+  }
+}
 
 /** Ücretsiz slug için sağlayıcı-başına bütçe kapıları (aşımda false → zincirde ilerle). */
 async function freeBudgetOk(provider: Provider, priority: LlmPriority): Promise<boolean> {
@@ -184,32 +200,61 @@ async function freeBudgetOk(provider: Provider, priority: LlmPriority): Promise<
 
 async function breakerOpen(slug: string): Promise<boolean> {
   if (!redis) return memGet(cbKey(slug)) > 0
-  return (await redis.exists(cbKey(slug))) === 1
+  try {
+    return (await redis.exists(cbKey(slug))) === 1
+  } catch {
+    return memGet(cbKey(slug)) > 0 // Redis yok → kesiciyi in-memory'den oku (fail-open)
+  }
 }
 
-/** 429/5xx/timeout'ta kesiciyi aç — üstel soğuma 30s→5dk. */
+/** 429/5xx/ağ/timeout'ta kesiciyi aç — üstel soğuma 30s→5dk. */
 async function tripBreaker(slug: string): Promise<void> {
   const n = await incr(cbCountKey(slug), 3600)
   const cooldown = Math.min(300, 30 * 2 ** Math.max(0, n - 1))
-  if (!redis) memSet(cbKey(slug), cooldown)
-  else await redis.set(cbKey(slug), '1', 'EX', cooldown)
+  memSet(cbKey(slug), cooldown) // her hâlükârda in-memory (Redis düşerse tek dayanak bu)
+  if (redis) await redis.set(cbKey(slug), '1', 'EX', cooldown).catch(() => {})
   logger.warn({ slug, cooldown }, 'model kesicisi açıldı')
 }
 
 async function resetBreaker(slug: string): Promise<void> {
-  if (!redis) {
-    memCounters.delete(cbCountKey(slug))
-    return
-  }
-  await redis.del(cbCountKey(slug))
+  memCounters.delete(cbKey(slug))
+  memCounters.delete(cbCountKey(slug))
+  if (redis) await redis.del(cbCountKey(slug)).catch(() => {})
 }
 
-/** Geçici arıza (429/5xx/timeout) → kesiciyi aç + zincirde ilerle. */
+/**
+ * SDK hatasının GERÇEK sınıf adı.
+ *
+ * ⚠️ OpenAI ve Anthropic SDK'ları (ikisi de Stainless üretimi) hata sınıflarında
+ * `this.name` ATAMIYOR. `class APIConnectionError extends APIError` yazmak err.name'i
+ * DEĞİŞTİRMEZ — 'Error' kalır. Ampirik doğrulandı:
+ *     new OpenAI.APIConnectionError({message:'boom'})  →  name: "Error", status: undefined
+ * Sonuç: isRetryable'ın `name === 'APIConnectionError'` kontrolü HİÇ EŞLEŞMEDİ. Ağ kopması,
+ * DNS/TLS hatası, socket hang-up → retryable değil, skippable değil → throw → ZİNCİR ÇÖKÜYOR.
+ * Fallback zinciri, tam da var olma sebebi olan durumda (sağlayıcının ağı bozuk) ölüydü.
+ * Gerçek ad yalnız constructor.name'de yaşıyor.
+ */
+const errName = (err: unknown): string => {
+  const e = err as { name?: string; constructor?: { name?: string } }
+  return e?.name && e.name !== 'Error' ? e.name : (e?.constructor?.name ?? 'Error')
+}
+
+/** Geçici arıza (429/5xx/ağ/timeout) → kesiciyi aç + zincirde ilerle.
+ *  APIUserAbortError BİLEREK yok: o, öğrencinin akışı iptal etmesidir; yeniden denemek
+ *  iptal edilmiş isteği tekrar çağırmak olur. Bizim timeout'umuz withTimeout() içinde
+ *  açıkça TimeoutError'a çevriliyor. */
+const RETRY_NAMES = new Set([
+  'AbortError',
+  'TimeoutError',
+  'APIConnectionError',
+  'APIConnectionTimeoutError',
+  'InternalServerError',
+  'RateLimitError',
+])
 const isRetryable = (err: unknown): boolean => {
   const status = (err as { status?: number })?.status
   if (status === 429 || (typeof status === 'number' && status >= 500)) return true
-  const name = (err as { name?: string })?.name
-  return name === 'AbortError' || name === 'TimeoutError' || name === 'APIConnectionError'
+  return RETRY_NAMES.has(errName(err))
 }
 
 /**
@@ -311,9 +356,13 @@ export async function routedStream(
     if (await breakerOpen(slug)) continue
     if (isFree(slug) && !(await freeBudgetOk(provider, priority))) continue
     try {
-      const stream = await client.chat.completions.create(
-        { ...params, model, stream: true },
-        { signal: AbortSignal.timeout(TIMEOUT_MS[role]) },
+      // withTimeout: (1) timeout'u TimeoutError'a çevirir → zincir çökmez, sonraki sağlayıcıya
+      // geçer (routedChat'teki düzeltmenin aynısı; burada eksikti — P0 sohbet yolu bu).
+      // (2) Zamanlayıcı create() dönünce finally'de TEMİZLENİR. Eski AbortSignal.timeout(45sn)
+      // akışa bağlı kalıyordu: 45sn'den uzun süren bir cevap ORTASINDAN kesiliyordu. Artık
+      // timeout yalnız BAŞLATMAYA (ilk bayta kadar) uygulanır — akışın süresi sınırsız.
+      const stream = await withTimeout(TIMEOUT_MS[role], (signal) =>
+        client.chat.completions.create({ ...params, model, stream: true }, { signal }),
       )
       void resetBreaker(slug)
       return { stream, model: slug }

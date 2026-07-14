@@ -22,12 +22,22 @@ export type Exemplar = {
  * F1 DRIFT-GUARD: `dimensions: EMBED_DIM` verilmezse model 1536 döner → `vector(768)` insert patlar.
  * Dönen her vektörün uzunluğu DB'ye gitmeden SERT doğrulanır (fail-fast).
  */
+/** Embedding çağrısı için timeout. Router'daki LLM çağrılarının aksine embeddings doğrudan
+ *  SDK'ya gidiyor — ve OpenAI SDK varsayılanı `timeout: 600_000` (10 dk) + `maxRetries: 2`,
+ *  yani takılan tek bir istek ~30 DAKİKA asılı kalabilir. embed() sohbetin sıcak yolunda
+ *  (recallMemories) ve her üretim turunda çağrılıyor → tek bir yavaş embedding tüm isteği
+ *  rehin alır. 20 sn fazlasıyla yeterli; aşarsa çağıran hata alır ve isteği bırakır. */
+const EMBED_TIMEOUT_MS = 20_000
+
 export async function embed(texts: string[]): Promise<number[][]> {
-  const res = await openrouter.embeddings.create({
-    model: EMBED_MODEL,
-    input: texts,
-    dimensions: EMBED_DIM,
-  })
+  const res = await openrouter.embeddings.create(
+    {
+      model: EMBED_MODEL,
+      input: texts,
+      dimensions: EMBED_DIM,
+    },
+    { timeout: EMBED_TIMEOUT_MS, maxRetries: 1 },
+  )
   const vectors = res.data.map((d) => d.embedding)
   for (const v of vectors) {
     if (v.length !== EMBED_DIM) {

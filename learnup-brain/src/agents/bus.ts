@@ -122,11 +122,17 @@ export async function enqueueTask(input: {
 
 /**
  * CAS-claim (§5.2): at-least-once teslimatta çift işlemeyi önler.
- * PENDING → RUNNING geçişini yalnız BİR consumer kazanır; bayat RUNNING (>2dk,
- * bekçi penceresi) yeniden claim edilebilir. Kazanamayan teslimat ACK'lenip düşürülür.
+ * PENDING → RUNNING geçişini yalnız BİR consumer kazanır; bayat RUNNING yeniden claim edilebilir.
+ *
+ * ⚠️ Pencere, atolye.worker'daki BEKÇİ penceresiyle AYNI olmak zorunda — yoksa ikisi
+ * birbiriyle yarışır. 2 dk idi ve bu, meşru bir üretim görevinden (dakikalarca sürebilir)
+ * KISAYDI: bekçi görevi "bayat" ilan edip yeniden kuyruğa atıyor, ikinci worker CAS'ı
+ * kazanıyor ve AYNI iş baştan yapılıyordu → çift LLM faturası.
  */
+export const RUNNING_BAYAT_MS = 15 * 60_000
+
 export async function claimTask(taskId: string, consumer: string): Promise<boolean> {
-  const staleBefore = new Date(Date.now() - 2 * 60_000).toISOString()
+  const staleBefore = new Date(Date.now() - RUNNING_BAYAT_MS).toISOString()
   const { data, error } = await supabase
     .from('agent_tasks')
     .update({ status: 'RUNNING', locked_by: consumer, locked_at: new Date().toISOString() })
@@ -135,9 +141,12 @@ export async function claimTask(taskId: string, consumer: string): Promise<boole
     .select('id, attempts')
     .maybeSingle()
   if (error) {
-    // Kilit kolonları yoksa (0004 öncesi) claim'i kabul say — davranış eskisi gibi.
-    logger.warn({ err: error, taskId }, 'claimTask CAS başarısız — legacy kabul')
-    return true
+    // ⚠️ Eskiden burada `return true` vardı ("kilit kolonları yoksa legacy kabul"). Ama 0004
+    // ÇOKTAN uygulandı; bugün bu dal yalnız GEÇİCİ bir Postgres arızasında çalışır ve o an
+    // çift işlemeye KAPIYI AÇAR (aynı görevin her teslimatı kabul edilir). Arızada işi
+    // yapmamak, iki kez yapmaktan iyidir: görev PENDING kalır, bekçi yeniden kuyruğa atar.
+    logger.warn({ err: error, taskId }, 'claimTask CAS başarısız — görev ATLANDI (bekçi yeniden dener)')
+    return false
   }
   if (!data) return false
   await supabase.from('agent_tasks').update({ attempts: (data.attempts ?? 0) + 1 }).eq('id', taskId)

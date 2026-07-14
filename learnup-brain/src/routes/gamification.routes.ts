@@ -54,25 +54,37 @@ gamificationRouter.post('/quests/claim', async (req, res, next) => {
     const userData: any = profile || {}
     const g = ensureGamification(userData.gamification, today, weekId)
 
-    const quest = g.dailyQuests.quests.find((q: any) => q.id === questId)
-    if (!quest) {
-      res.status(404).json({ error: 'Görev bulunamadı.' })
-      return
+    // ATOMİK (0011): "oku → claimed mi? → xp += ödül → yaz" bir YARIŞ KOŞULUYDU.
+    // Çift tık (ya da iki sekme) → iki istek de claimed:false okur, ikisi de geçer, ikisi de
+    // ödül yazar → 2× XP. Şişen weeklyXP league_entries'e de gittiği için lider tablosu bozulur.
+    // RPC profil satırını `for update` ile kilitler, ödülü İSTEMCİDEN değil profilin kendi
+    // quest kaydından okur ve zaten alınmışsa hiçbir şey yazmaz (idempotent).
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('gorev_odulu_al', {
+      p_user_id: userId,
+      p_quest_id: String(questId),
+    })
+    if (rpcErr) {
+      if (rpcErr.message.includes('gorev_yok')) {
+        res.status(404).json({ error: 'Görev bulunamadı.' })
+        return
+      }
+      if (rpcErr.message.includes('gorev_tamamlanmadi')) {
+        res.status(400).json({ error: 'Görev tamamlanmadı.' })
+        return
+      }
+      throw rpcErr
     }
-    if (quest.claimed) {
+    const sonuc = (rpcData as Array<{
+      xp: number; weekly_xp: number; reward_xp: number; already_claimed: boolean
+    }>)?.[0]
+    if (sonuc?.already_claimed) {
       res.status(400).json({ error: 'Ödül zaten alındı.' })
       return
     }
-    if (quest.progress < quest.target) {
-      res.status(400).json({ error: 'Görev tamamlanmadı.' })
-      return
-    }
+    g.xp = sonuc?.xp ?? g.xp
+    g.league.weeklyXP = sonuc?.weekly_xp ?? g.league.weeklyXP
+    const quest = { rewardXP: sonuc?.reward_xp ?? 0 }
 
-    quest.claimed = true
-    g.xp = (g.xp || 0) + quest.rewardXP
-    g.league.weeklyXP = (g.league.weeklyXP || 0) + quest.rewardXP
-
-    await supabase.from('profiles').update({ gamification: g }).eq('id', userId)
     if (isStudent(userData)) {
       await supabase.from('league_entries').upsert(
         {
@@ -124,11 +136,16 @@ gamificationRouter.post('/streak/freeze', async (req, res, next) => {
         changed = true
       }
     } else {
-      // Elle bir dondurma ver (üst sınıra kadar).
-      if (s.freezesAvailable < MAX_FREEZES) {
-        s.freezesAvailable += 1
-        changed = true
-      }
+      // ⚠️ BURASI BEDAVA DONDURMA DAĞITIYORDU. Kural (gamification.ts, FREEZE_EARN_EVERY):
+      // dondurma 7 GÜNLÜK SERİ ile HAK EDİLİR. Ama bu dal hiçbir koşul aramadan sayacı
+      // artırıyordu → öğrenci uca istek atıp kendine 2 dondurma verip serisini sonsuza kadar
+      // yaşatabiliyordu (hiç çalışmadan). Dondurma kazanımı, seri ilerlemesinin bir yan
+      // ürünüdür (applyStreak); istemcinin talep edebileceği bir şey DEĞİL.
+      res.status(403).json({
+        error: 'dondurma_hak_edilir',
+        message: 'Dondurma hakkı 7 günlük seri ile otomatik kazanılır; elle verilemez.',
+      })
+      return
     }
 
     if (changed) {

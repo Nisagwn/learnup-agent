@@ -4,6 +4,19 @@ import { buildMicroTest, buildMesoTest, buildMacroTest } from '../lib/test-modes
 /** POST /api/tests/generate — Mikro / Mezo / Makro test derleme. */
 export const testsRouter = Router()
 
+/** İstemciden gelen sayıyı SINIRLA — bu sayı doğrudan LLM çağrı sayısına dönüşüyor.
+ *  Havuz yetmezse generateVerifiedSet devreye girer: her tur 1 üretim + aday başına 1
+ *  bağımsız doğrulama + olası onarım çağrısı (Sonnet, max_tokens 8000). Sınırsız `count`,
+ *  TEK HTTP isteğiyle ciddi bir fatura demek. `/questions/generate` zaten sınırlıyor
+ *  (Math.min(10,…)); burada eksikti. */
+const sinirla = (v: unknown, varsayilan: number, tavan: number): number => {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return varsayilan
+  return Math.min(tavan, Math.max(1, Math.floor(n)))
+}
+
+const ZORLUKLAR = new Set(['kolay', 'orta', 'zor'])
+
 testsRouter.post('/generate', async (req, res, next) => {
   try {
     const body = req.body as {
@@ -25,8 +38,9 @@ testsRouter.post('/generate', async (req, res, next) => {
       const questions = await buildMicroTest({
         userId,
         kazanimId: body.kazanimId,
-        difficulty: body.difficulty ?? 'orta',
-        count: typeof body.count === 'number' ? body.count : 5,
+        // Zorluk hem LLM prompt'una hem DB filtresine gidiyor → serbest metin kabul etme.
+        difficulty: ZORLUKLAR.has(String(body.difficulty)) ? String(body.difficulty) : 'orta',
+        count: sinirla(body.count, 5, 20),
       })
       res.json({ mode, questions })
       return
@@ -35,7 +49,7 @@ testsRouter.post('/generate', async (req, res, next) => {
     if (mode === 'meso') {
       const questions = await buildMesoTest({
         userId,
-        totalCount: typeof body.totalCount === 'number' ? body.totalCount : 12,
+        totalCount: sinirla(body.totalCount, 12, 40),
       })
       res.json({ mode, questions })
       return

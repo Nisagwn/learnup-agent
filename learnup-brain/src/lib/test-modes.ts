@@ -50,12 +50,19 @@ function taggedToServed(q: TaggedQuestion): ServedQuestion {
 export async function assembleSegment(seg: Segment, userId: string): Promise<ServedQuestion[]> {
   // Kaynak ayrımı yasası (ürün kuralı #6): adaptif montaj YALNIZ AI-üretimi okur;
   // çıkmış sorular (osym_cikmis) ayrı serviste yaşar (/api/v1/questions/osym).
+  // ⚠️ ZORLUK FİLTRESİ EKSİKTİ. seg.difficulty buraya kadar taşınıp yalnızca ÜRETİCİYE
+  // veriliyordu; havuz sorgusuna hiç uygulanmıyordu. Yani "zor test istiyorum" diyen öğrenciye,
+  // havuz doluysa o kazanımın KOLAY soruları dönüyordu. 0004 bunun için yq_serve_ai
+  // (kazanim_id, difficulty) indeksini bile oluşturmuş — kod indeksin varlık sebebini kullanmıyordu.
+  // Ayrıca .order() yoktu: her öğrenci hep aynı ilk N satırı, hep aynı sırada alıyordu.
   const { data, error } = await supabase
     .from('yks_questions')
     .select('id, question_text, options, correct_option, solution')
     .eq('kazanim_id', seg.kazanimId)
     .eq('verified', true)
     .eq('source_type', 'ai_generated')
+    .eq('difficulty', seg.difficulty)
+    .order('quality', { ascending: false })   // en iyi doğrulanmış sorular önce
     .limit(seg.count)
   if (error) throw error
 

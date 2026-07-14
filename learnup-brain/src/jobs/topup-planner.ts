@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { supabase } from '../clients/supabase.js'
 import { generateVerifiedSet } from '../lib/generation.js'
 import { logger } from '../utils/logger.js'
@@ -76,6 +77,7 @@ export async function runNightlyForge(): Promise<void> {
         PER_CELL,
         'P2', // gece bütçe sınıfı
       )
+      let yazilan = 0
       if (set.length) {
         const rows = set.map((q) => ({
           subject: node.subject,
@@ -88,13 +90,28 @@ export async function runNightlyForge(): Promise<void> {
           verified: true,
           quality: q.quality,
           source_type: 'ai_generated',
+          content_hash: createHash('md5').update(q.soru).digest('hex'),
         }))
-        const { error: insErr } = await supabase.from('yks_questions').insert(rows)
-        if (insErr && !insErr.message.includes('yq_dedup')) {
-          logger.warn({ err: insErr, nodeId: node.id }, 'demirhane: insert hatası')
+        // ⚠️ Eskiden düz insert + dedup hatasını AÇIKÇA YUTMA vardı:
+        //      if (insErr && !insErr.message.includes('yq_dedup')) { warn(...) }
+        //    Ama insert TEK ifadedir: bir satır yq_dedup_verified'e takılırsa TÜM batch
+        //    reddedilir. Yani tek bir çift soru, o hücrenin sağlam sorularını da yok ediyordu —
+        //    ve hata yutulduğu için hemen altındaki log "demirhane hücresi tamam, made: 4"
+        //    yazıyordu. Gece boyunca SIFIR satır yazıp "başarılı" raporlayabilirdi.
+        const { data, error: insErr } = await supabase
+          .from('yks_questions')
+          .upsert(rows, { onConflict: 'content_hash', ignoreDuplicates: true })
+          .select('id')
+        if (insErr) {
+          logger.warn({ err: insErr, nodeId: node.id }, 'demirhane: upsert hatası')
         }
+        yazilan = data?.length ?? 0
       }
-      logger.info({ nodeId: node.id, difficulty: cell.difficulty, made: set.length }, 'demirhane hücresi tamam')
+      // "made" DEĞİL "yazilan" raporlanır — üretilmiş ama yazılamamış soru başarı değildir.
+      logger.info(
+        { nodeId: node.id, difficulty: cell.difficulty, uretilen: set.length, yazilan },
+        'demirhane hücresi tamam',
+      )
     } catch (err) {
       logger.warn({ err, nodeId: cell.nodeId }, 'demirhane hücresi başarısız (bütçe/LLM) — sıradaki')
     }

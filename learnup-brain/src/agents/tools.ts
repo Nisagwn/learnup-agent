@@ -106,11 +106,22 @@ export async function runKaptanTool(
       return { brief, weak }
     }
     case 'generate_practice': {
+      // ⚠️ ARGÜMANLARI ÜRETEN TARAF MODELDİR — şemadaki `maximum: 10` bir RİCADIR, kısıt değil.
+      // Kod da uygulamıyordu: count doğrudan buildMicroTest'e gidiyordu. Sohbet tool-loop'u 6
+      // tura kadar dönüyor ve her tur bir üretim zinciri (üret → aday başına doğrula → onar)
+      // tetikleyebiliyor → TEK sohbet mesajından yüzlerce Sonnet çağrısı çıkabilirdi.
+      // Zorluk da serbest metindi ve hem prompt'a hem DB filtresine gidiyor.
+      const kazanimId = Number(args.kazanimId)
+      if (!Number.isInteger(kazanimId)) return { error: 'kazanimId gerekli (tam sayı)' }
+      const zorluk = new Set(['kolay', 'orta', 'zor']).has(String(args.difficulty))
+        ? String(args.difficulty)
+        : 'orta'
+      const adet = Math.min(10, Math.max(1, Math.floor(Number(args.count)) || 3))
       const questions: ServedQuestion[] = await buildMicroTest({
         userId,
-        kazanimId: Number(args.kazanimId),
-        difficulty: typeof args.difficulty === 'string' ? args.difficulty : 'orta',
-        count: typeof args.count === 'number' ? args.count : 3,
+        kazanimId,
+        difficulty: zorluk,
+        count: adet,
       })
       return { questions }
     }

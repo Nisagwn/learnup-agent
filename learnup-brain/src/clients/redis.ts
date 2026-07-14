@@ -52,6 +52,29 @@ export const redisBlocking: Redis | null = env.REDIS_URL
   ? createConnection(env.REDIS_URL, 'redisBlocking', false)
   : null
 
+/**
+ * HOT-PATH REDIS — arıza HİÇBİR ZAMAN isteği öldürmez.
+ *
+ * İstek yolundaki her Redis dokunuşu bundan geçmeli. `enableOfflineQueue:false` sayesinde
+ * Redis kapalıyken komut anında REDDEDİLİYOR; yakalanmazsa bu reddediş çağıranın ta tepesine
+ * kadar kaçar ve isteği 500'e düşürür. Yani "hızlı reddet" ayarı, yakalanmadığında
+ * "Redis düştü → sohbet tamamen öldü"ye dönüşür — düzeltmek istediğimizin tam tersi.
+ *
+ * Kural: Redis = hot-path (hız), Postgres = hakikat. Redis'in yokluğu ÖZELLİK KAYBI'dır
+ * (gün-içi bağlam yok, masa cache'i soğuk), HATA değil.
+ *
+ * Worker'lar bunu KULLANMAZ: onlar için Redis zorunlu (Streams) ve arıza görünür olmalı.
+ */
+export async function redisTry<T>(fn: (r: Redis) => Promise<T>, fallback: T): Promise<T> {
+  if (!redis) return fallback
+  try {
+    return await fn(redis)
+  } catch (err) {
+    logger.debug({ err }, 'redis hot-path atlandı — Redis\'siz devam')
+    return fallback
+  }
+}
+
 /** Ajan orkestrasyonu gibi Redis zorunlu olan yerlerde çağrılır. */
 export function requireRedis(): Redis {
   if (!redis) {

@@ -2,7 +2,12 @@ import { Router } from 'express'
 import { supabase } from '../clients/supabase.js'
 
 /** Ödevler — otoriter (backend) puanlama. record-answer ÇAĞRILMAZ (çift sayım yok).
- *  (Edge: submit-assignment, submit-targeted-assignment) */
+ *  (Edge: submit-assignment, submit-targeted-assignment)
+ *
+ * ⚠️ YETKİ SINIRI: bu servis SERVICE-ROLE anahtarı kullanır → RLS BAYPAS EDİLİR.
+ * Postgres artık kimseyi korumuyor; her sorgunun JWT'den gelen req.userId'ye kapsanması
+ * ZORUNLU. Gövdeden gelen bir id'yi sahiplik kontrolü olmadan kullanmak = doğrudan IDOR.
+ */
 export const assignmentsRouter = Router()
 
 /** answers[i] = { questionId, selectedIndex }; seçilen metin correct_answer ile eşleşirse doğru. */
@@ -50,6 +55,32 @@ assignmentsRouter.post('/submit', async (req, res, next) => {
       return
     }
 
+    // SAHİPLİK: assignments'ta öğrenci kolonu YOK (yalnız teacher_id) → ödev sınıf geneli.
+    // Bağ, öğrencinin KENDİ öğretmeni üzerinden kurulur: ödevi ancak o öğretmenin öğrencisi
+    // gönderebilir. Bu kontrol olmadan herhangi bir kullanıcı, hiç atanmadığı bir ödeve
+    // gönderim yapabiliyordu.
+    const { data: profil } = await supabase
+      .from('profiles')
+      .select('teacher_id')
+      .eq('id', userId)
+      .single()
+    if (!profil?.teacher_id || profil.teacher_id !== assignment.teacher_id) {
+      res.status(403).json({ error: 'Bu ödev size atanmamış.' })
+      return
+    }
+
+    // CEVAP KÂHİNİ KAPANIYOR: yanıt gövdesi correctCount döndürüyor. Tekrar tekrar gönderip
+    // selectedIndex değiştirerek doğru cevaplar puandan geri okunabiliyordu. Tek gönderim.
+    const { count: oncekiler } = await supabase
+      .from('assignment_submissions')
+      .select('*', { count: 'exact', head: true })
+      .eq('assignment_id', assignmentId)
+      .eq('student_id', userId)
+    if ((oncekiler ?? 0) > 0) {
+      res.status(409).json({ error: 'Bu ödevi zaten gönderdiniz.' })
+      return
+    }
+
     const questionIds: string[] = Array.isArray(assignment.question_ids)
       ? assignment.question_ids.map((x: any) => String(x))
       : []
@@ -93,6 +124,7 @@ assignmentsRouter.post('/submit', async (req, res, next) => {
 // POST /api/assignments/targeted/submit — hedefli set gönderimi (targeted_assignments → completed).
 assignmentsRouter.post('/targeted/submit', async (req, res, next) => {
   try {
+    const userId = req.userId!
     const body = req.body ?? {}
     const targetedAssignmentId = body?.targetedAssignmentId
     const answers: Array<{ questionId: string; selectedIndex: number }> = Array.isArray(body?.answers) ? body.answers : []
@@ -101,10 +133,14 @@ assignmentsRouter.post('/targeted/submit', async (req, res, next) => {
       return
     }
 
+    // SAHİPLİK: set BANA mı atanmış? (student_id, targeted_assignments'ta NOT NULL)
+    // Bu filtre olmadan herhangi bir öğrenci, herhangi bir kurbanın setini sıfırlayıp
+    // "completed" işaretleyebiliyordu — cevaplarını da ezerek.
     const { data: ta, error: tErr } = await supabase
       .from('targeted_assignments')
       .select('*')
       .eq('id', targetedAssignmentId)
+      .eq('student_id', userId)
       .single()
     if (tErr || !ta) {
       res.status(404).json({ error: 'Hedefli set bulunamadı.' })
@@ -127,6 +163,7 @@ assignmentsRouter.post('/targeted/submit', async (req, res, next) => {
         completed_at: new Date().toISOString(),
       })
       .eq('id', targetedAssignmentId)
+      .eq('student_id', userId) // SELECT'te kontrol ettik; UPDATE'te de TEKRAR (TOCTOU kapanır)
     if (uErr) {
       res.status(500).json({ error: uErr.message || 'Gönderim kaydedilemedi.' })
       return

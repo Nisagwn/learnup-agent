@@ -2,10 +2,11 @@ import express, { type Express } from 'express'
 import helmet from 'helmet'
 import cors from 'cors'
 import { pinoHttp } from 'pino-http'
+import { env } from './config/env.js'
 import { logger } from './utils/logger.js'
 import { notFound, errorHandler } from './middleware/error.js'
 import { requireAuth } from './middleware/auth.js'
-import { standardLimiter, chatLimiter } from './middleware/rateLimit.js'
+import { standardLimiter, chatLimiter, llmLimiter } from './middleware/rateLimit.js'
 import { healthRouter } from './routes/health.routes.js'
 import { chatRouter } from './routes/chat.routes.js'
 import { testsRouter } from './routes/tests.routes.js'
@@ -35,8 +36,20 @@ export function createApp(): Express {
   const app = express()
 
   app.disable('x-powered-by')
+  // Ters vekil (Docker/ingress) arkasındayız: X-Forwarded-For'a güven ki req.ip gerçek istemci
+  // olsun. Ayarlanmazsa req.ip HERKES için vekilin IP'sidir. (Rate limit anahtarı artık userId
+  // olduğu için kritik değil, ama log'lardaki ve teorik IP yedeğindeki yalanı da bitiriyor.)
+  app.set('trust proxy', 1)
   app.use(helmet())
-  app.use(cors())
+  // CORS: yalnız bilinen frontend origin'i. cors() çıplak çağrıldığında `Access-Control-Allow-
+  // Origin: *` gönderiyordu — Bearer token kullandığımız için oturum çalınamıyor, ama API'yi
+  // herkese açık tutmanın da bir gerekçesi yok.
+  app.use(
+    cors({
+      origin: [env.APP_URL, 'http://localhost:5173', 'http://localhost:3000'],
+      credentials: false,
+    }),
+  )
   app.use(express.json({ limit: '1mb' }))
   app.use(pinoHttp({ logger }))
 
@@ -53,22 +66,24 @@ export function createApp(): Express {
   for (const base of ['/api', '/api/v1']) {
     // SSE: compression YOK, standardLimiter YOK → requireAuth → chatLimiter (yalnız başlatma)
     app.use(`${base}/chat`, requireAuth, chatLimiter, chatRouter)
+    // LLM ÇAĞIRAN rotalar: dar limit (10/dk/kullanıcı). Tek istek onlarca Sonnet çağrısı
+    // tetikleyebiliyor → burada sınır hız değil, FATURA meselesi.
+    app.use(`${base}/tests`, requireAuth, llmLimiter, testsRouter)
+    app.use(`${base}/agents`, requireAuth, llmLimiter, agentsRouter)
     // Mutating rotalar: requireAuth + standardLimiter
-    app.use(`${base}/tests`, requireAuth, standardLimiter, testsRouter)
     app.use(`${base}/telemetry`, requireAuth, standardLimiter, telemetryRouter)
     app.use(`${base}/question-state`, requireAuth, standardLimiter, questionStateRouter)
-    app.use(`${base}/agents`, requireAuth, standardLimiter, agentsRouter)
     // Birleşik cevap ucu (record-answer + telemetry'nin halefi)
     app.use(`${base}/answers`, requireAuth, standardLimiter, answersRouter)
     // Çıkmış sorular — /questions'tan ÖNCE mount edilmeli (Express sıralı eşleşir)
     app.use(`${base}/questions/osym`, requireAuth, standardLimiter, osymRouter)
-    // Migrasyon rotaları (Edge Functions → Express)
-    app.use(`${base}/questions`, requireAuth, standardLimiter, questionsRouter)
+    // Migrasyon rotaları (Edge Functions → Express) — LLM çağıranlar llmLimiter'da
+    app.use(`${base}/questions`, requireAuth, llmLimiter, questionsRouter)
+    app.use(`${base}/ai`, requireAuth, llmLimiter, aiRouter)
     app.use(`${base}/practice`, requireAuth, standardLimiter, practiceRouter)
     app.use(`${base}/assignments`, requireAuth, standardLimiter, assignmentsRouter)
     app.use(`${base}/gamification`, requireAuth, standardLimiter, gamificationRouter)
     app.use(`${base}/garden`, requireAuth, standardLimiter, gardenRouter)
-    app.use(`${base}/ai`, requireAuth, standardLimiter, aiRouter)
     app.use(`${base}/account`, requireAuth, standardLimiter, accountRouter)
   }
 

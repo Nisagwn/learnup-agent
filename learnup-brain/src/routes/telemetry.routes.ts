@@ -1,38 +1,52 @@
 import { Router } from 'express'
-import { supabase } from '../clients/supabase.js'
-import { redis } from '../clients/redis.js'
+import { redisTry } from '../clients/redis.js'
 
-/** POST /api/telemetry — soru çözüm olayı + (varsa) gün-içi çalışma belleği. */
+/**
+ * POST /api/telemetry — GÜN-İÇİ ÇALIŞMA BELLEĞİ (hot-path).
+ *
+ * ⚠️ ESKİDEN BOZUKTU: rota `user_activities` tablosuna insert ediyordu, ama o tablo
+ * migration 0006'da DÜŞÜRÜLDÜ (`drop table if exists public.user_activities`). Yani her
+ * çağrı `throw error` ile 500 dönüyordu — canlı DB'ye sorup doğrulandı:
+ *     "Could not find the table 'public.user_activities' in the schema cache"
+ * Sessiz olmayan ama kimsenin bakmadığı bir arıza: 500'den sonraki satıra hiç ulaşılmadığı
+ * için gün-içi bağlam (`user:<id>:context`) HİÇ yazılmıyordu → buildStudentContext'in
+ * `daily.energy` bloğu kalıcı olarak ölüydü → kişiselleştirme sessizce çalışmıyordu.
+ *
+ * Cevap olaylarının OTORİTER yolu artık POST /api/v1/answers'tır (record_answer RPC'si;
+ * user_logs + mastery + gamification'ı tek transaction'da yazar). Burada tekrar yazmak
+ * çift sayım olurdu — weak_kazanimlar ve distractor_traps bozulurdu.
+ */
 export const telemetryRouter = Router()
+
+const CEVAP_ALANLARI = ['questionId', 'kazanimId', 'correct', 'selectedOption', 'durationMs'] as const
 
 telemetryRouter.post('/', async (req, res, next) => {
   try {
     const userId = req.userId!
-    const body = req.body as {
-      questionId?: string
-      kazanimId?: number
-      correct?: boolean
-      selectedOption?: string
-      durationMs?: number
-      context?: Record<string, unknown>
+    const body = (req.body ?? {}) as Record<string, unknown> & { context?: Record<string, unknown> }
+
+    // Cevap olayı buraya GÖNDERİLMEMELİ. Sessizce yutmak veri kaybı, yazmak çift sayım olur.
+    const yanlisAlan = CEVAP_ALANLARI.filter((k) => body[k] !== undefined)
+    if (yanlisAlan.length) {
+      res.status(400).json({
+        error: 'cevap_olayi_burada_degil',
+        message: `Cevap olayları POST /api/v1/answers'a gider (atomik: user_logs + mastery + gamification). Bu uçta geçersiz alanlar: ${yanlisAlan.join(', ')}`,
+      })
+      return
     }
 
-    const { error } = await supabase.from('user_activities').insert({
-      user_id: userId,
-      question_id: body.questionId ?? null,
-      kazanim_id: typeof body.kazanimId === 'number' ? body.kazanimId : null,
-      correct: typeof body.correct === 'boolean' ? body.correct : null,
-      selected_option: body.selectedOption ?? null,
-      duration_ms: typeof body.durationMs === 'number' ? body.durationMs : null,
-    })
-    if (error) throw error
-
-    // Gün-içi çalışma belleği (hot-path) — buildStudentContext bunu okur.
-    if (body.context && redis) {
-      await redis.set(`user:${userId}:context`, JSON.stringify(body.context), 'EX', 86_400)
+    if (!body.context || typeof body.context !== 'object') {
+      res.status(400).json({ error: 'context gerekli' })
+      return
     }
 
-    res.json({ ok: true })
+    // Redis = hot-path. Erişilemezse gün-içi bağlam düşer ama istek ÖLMEZ (Postgres hakikat).
+    const yazildi = await redisTry(
+      (r) => r.set(`user:${userId}:context`, JSON.stringify(body.context), 'EX', 86_400),
+      null,
+    )
+
+    res.json({ ok: true, cached: yazildi === 'OK' })
   } catch (err) {
     next(err)
   }

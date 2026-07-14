@@ -1,4 +1,4 @@
-import { redis } from '../clients/redis.js'
+import { redisTry } from '../clients/redis.js'
 import { supabase } from '../clients/supabase.js'
 import { logger } from '../utils/logger.js'
 import { embed } from './rag.js'
@@ -17,12 +17,13 @@ const WINDOW_TURNS = 12 // 12 tur = 24 mesaj
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
 
-/** Masayı oku — Redis miss'te PG'den derle + cache'le. Boş masada legacy bağlama düşer. */
+/** Masayı oku — Redis miss'te PG'den derle + cache'le. Boş masada legacy bağlama düşer.
+ *  Redis erişilemezse cache SOĞUK sayılır ve Postgres'ten derlenir; istek ÖLMEZ.
+ *  (composeChatContext her sohbet isteğinin ilk await'i — burada patlamak = sohbet tamamen ölü.) */
 export async function composeDesk(userId: string): Promise<string> {
-  if (redis) {
-    const hot = await redis.get(DESK_KEY(userId))
-    if (hot) return hot
-  }
+  const hot = await redisTry((r) => r.get(DESK_KEY(userId)), null)
+  if (hot) return hot
+
   const { data } = await supabase
     .from('student_memory')
     .select('semantic, briefs')
@@ -46,30 +47,31 @@ export async function composeDesk(userId: string): Promise<string> {
     ? parts.join('\n\n')
     : await buildStudentContext(userId).catch(() => 'Öğrenci bağlamı henüz oluşmadı (ONBOARDING).')
 
-  if (redis) await redis.set(DESK_KEY(userId), desk, 'EX', DESK_TTL)
+  await redisTry((r) => r.set(DESK_KEY(userId), desk, 'EX', DESK_TTL), null)
   return desk
 }
 
-/** Brief yazımından sonra masayı tazele (uzmanlar çağırır). */
+/** Brief yazımından sonra masayı tazele (uzmanlar çağırır).
+ *  Redis yoksa cache zaten yok → geçersizleştirecek bir şey de yok. Ajanı ÖLDÜRME. */
 export async function invalidateDesk(userId: string): Promise<void> {
-  if (redis) await redis.del(DESK_KEY(userId))
+  await redisTry((r) => r.del(DESK_KEY(userId)), 0)
 }
 
 /** Sohbet penceresi: son 12 tur ham (Redis) — restart'ta chat_messages'tan yeniden kurulabilir. */
 export async function pushChatTurn(userId: string, turn: ChatTurn): Promise<void> {
-  if (!redis) return
   const key = CHATWIN_KEY(userId)
-  await redis
-    .multi()
-    .lpush(key, JSON.stringify(turn))
-    .ltrim(key, 0, WINDOW_TURNS * 2 - 1)
-    .expire(key, 86_400)
-    .exec()
+  await redisTry(
+    (r) => r.multi()
+      .lpush(key, JSON.stringify(turn))
+      .ltrim(key, 0, WINDOW_TURNS * 2 - 1)
+      .expire(key, 86_400)
+      .exec(),
+    null,
+  )
 }
 
 export async function readChatWindow(userId: string): Promise<ChatTurn[]> {
-  if (!redis) return []
-  const raw = await redis.lrange(CHATWIN_KEY(userId), 0, WINDOW_TURNS * 2 - 1)
+  const raw = await redisTry((r) => r.lrange(CHATWIN_KEY(userId), 0, WINDOW_TURNS * 2 - 1), [] as string[])
   const out: ChatTurn[] = []
   for (const item of raw) {
     try {

@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { supabase } from '../clients/supabase.js'
+import { fetchAll } from '../lib/pg.js'
 
 /**
  * GET /api/v1/questions/osym — ÇIKMIŞ SORULAR servisi (ürün kuralı #6).
@@ -34,17 +35,23 @@ osymRouter.get('/', async (req, res, next) => {
   }
 })
 
-/** GET /api/v1/questions/osym/years — mevcut yıl/etiket envanteri (filtre UI'ı için). */
+/** GET /api/v1/questions/osym/years — mevcut yıl/etiket envanteri (filtre UI'ı için).
+ *
+ * ⚠️ Burada satırları çekip JS'te saymak zorundayız (PostgREST group-by sunmuyor) — ama
+ * DÜZ `.select()` PostgREST'in 1000 satır tavanına takılır. Ölçüldü: 1730 çıkmış sorunun
+ * 1000'i geliyordu, 730'u SESSİZCE düşüyordu → filtre UI'ındaki her sayı yanlıştı. Hata da
+ * uyarı da yoktu. fetchAll sayfalayarak gerçekten hepsini getirir. */
 osymRouter.get('/years', async (_req, res, next) => {
   try {
-    const { data, error } = await supabase
-      .from('yks_questions')
-      .select('exam_year, exam_label')
-      .eq('source_type', 'osym_cikmis')
-      .not('exam_year', 'is', null)
-    if (error) throw error
+    const data = await fetchAll<{ exam_year: number; exam_label: string | null }>(() =>
+      supabase
+        .from('yks_questions')
+        .select('exam_year, exam_label')
+        .eq('source_type', 'osym_cikmis')
+        .not('exam_year', 'is', null),
+    )
     const seen = new Map<string, { exam_year: number; exam_label: string | null; count: number }>()
-    for (const r of (data ?? []) as { exam_year: number; exam_label: string | null }[]) {
+    for (const r of data) {
       const key = `${r.exam_year}|${r.exam_label ?? ''}`
       const cur = seen.get(key)
       if (cur) cur.count += 1

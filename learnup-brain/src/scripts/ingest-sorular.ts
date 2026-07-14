@@ -27,6 +27,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { supabase } from '../clients/supabase.js'
+import { fetchAll, sayimAl } from '../lib/pg.js'
 import { embed } from '../lib/rag.js'
 
 const argv = process.argv.slice(2)
@@ -57,19 +58,24 @@ console.log(`Eşik             : ${ESIK}`)
 console.log(`Mod              : ${COMMIT ? 'COMMIT (DB\'ye yazılacak)' : 'ÖN İZLEME (yazma yok)'}\n`)
 
 // ── Kazanım kodu → curriculum_nodes.id + başlık ──
-const { data: nodes, error: nErr } = await supabase
-  .from('curriculum_nodes').select('id, subject, code, title').limit(5000)
-if (nErr) { console.error('curriculum_nodes okunamadı: ' + nErr.message); process.exit(1) }
+// ⚠️ fetchAll ŞART: `.limit(5000)` PostgREST'in 1000 satır tavanını YÜKSELTMEZ. curriculum_nodes
+// şu an 907 satır — 1000'i geçtiği an (birkaç ders daha) kodların bir kısmı bu haritadan
+// SESSİZCE düşerdi ve iki şey olurdu: (a) globalKod.get(kod) gerçekte VAR OLAN bir kazanımı
+// bulamayıp "HİÇBİR derste yok" diye yalan bir hatayla exit 1, (b) mufredatliDersler'den ders
+// düşerse o dersin TÜM soruları kazanımsız yazılır ve sebebi "müfredatı yok" diye raporlanır.
+const nodes = await fetchAll<{ id: number; subject: string; code: string; title: string }>(() =>
+  supabase.from('curriculum_nodes').select('id, subject, code, title'),
+)
 const kodMap = new Map<string, { id: number; title: string }>()
 // ÇAPRAZ-DERS aramaya izin veren global indeks: sınav ders etiketi ≠ müfredat ders sınırı.
 // Örn. AYT "Tarih" kitapçığının 2. bölümü İnkılap Tarihi konularını içerir; "Millî Mücadele"nin
 // doğru kazanımı İTA.12.1.3'tür ve o kazanım TARİH dersinde DEĞİL, İTA dersindedir.
 const globalKod = new Map<string, { id: number; title: string; subject: string }>()
-for (const n of (nodes ?? []) as Array<{ id: number; subject: string; code: string; title: string }>) {
+for (const n of nodes) {
   kodMap.set(`${n.subject}|${n.code}`, { id: n.id, title: n.title })
   globalKod.set(n.code, { id: n.id, title: n.title, subject: n.subject })
 }
-const mufredatliDersler = new Set((nodes ?? []).map((n: { subject: string }) => n.subject))
+const mufredatliDersler = new Set(nodes.map((n) => n.subject))
 
 // ── Kazanım VEKTÖRLERİNİ bir kez çek, eşleştirmeyi YERELDE yap ──
 //    Soru başına match_yks_knowledge RPC'si çağırmak 1730 ağ gidiş-dönüşü demekti (10dk+ timeout).
@@ -77,9 +83,15 @@ const mufredatliDersler = new Set((nodes ?? []).map((n: { subject: string }) => 
 type Kaz = { subject: string; code: string; v: Float32Array; norm: number }
 const kazVek: Kaz[] = []
 {
-  const { data, error } = await supabase.from('yks_knowledge').select('subject, kazanim_code, embedding').limit(5000)
-  if (error) { console.error('yks_knowledge okunamadı: ' + error.message); process.exit(1) }
-  for (const r of (data ?? []) as Array<{ subject: string; kazanim_code: string | null; embedding: unknown }>) {
+  // ⚠️ EN TEHLİKELİ 1000-TAVAN NOKTASI. Bu liste, her sorunun kazanımını seçen YEREL kosinüs
+  // aramasının ADAY KÜMESİ. Tavana takılırsa doğru kazanım adaylıktan sessizce düşer ve soru
+  // "hayatta kalan en yakın" kazanıma bağlanır — üstelik benzerlik eşiğin ÜSTÜNDE çıkıp geçer.
+  // Hata yok, uyarı yok, kalıcı yanlış etiket. Sayı satırı da hep "1000" yazacağı için kimse
+  // fark etmez. fetchAll + tamlık doğrulaması bunu imkânsız kılar.
+  const rows = await fetchAll<{ subject: string; kazanim_code: string | null; embedding: unknown }>(() =>
+    supabase.from('yks_knowledge').select('subject, kazanim_code, embedding'),
+  )
+  for (const r of rows) {
     if (!r.kazanim_code) continue
     // pgvector PostgREST üzerinden "[0.1,0.2,…]" string'i olarak gelir
     const arr: number[] = typeof r.embedding === 'string' ? JSON.parse(r.embedding) : (r.embedding as number[])
@@ -88,7 +100,15 @@ const kazVek: Kaz[] = []
     for (const x of v) n += x * x
     kazVek.push({ subject: r.subject, code: r.kazanim_code, v, norm: Math.sqrt(n) })
   }
-  console.log(`▸ kazanım vektörü yüklendi: ${kazVek.length} (yerel eşleştirme)\n`)
+  // TAMLIK KAPISI: yüklenen vektör sayısı DB'deki gerçek sayıyla birebir tutmalı.
+  const gercek = await sayimAl(
+    supabase.from('yks_knowledge').select('*', { count: 'exact', head: true }).not('kazanim_code', 'is', null),
+  )
+  if (kazVek.length !== gercek) {
+    console.error(`⛔ kazanım vektörü EKSİK: ${kazVek.length} yüklendi, DB'de ${gercek} var. Etiketleme yapılmaz.`)
+    process.exit(1)
+  }
+  console.log(`▸ kazanım vektörü yüklendi: ${kazVek.length}/${gercek} (yerel eşleştirme)\n`)
 }
 const kazByDers = new Map<string, Kaz[]>()
 for (const k of kazVek) {
