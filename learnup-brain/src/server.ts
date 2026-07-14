@@ -2,6 +2,8 @@ import { env } from './config/env.js'
 import { logger } from './utils/logger.js'
 import { createApp } from './app.js'
 import { redis, redisBlocking, pingRedis } from './clients/redis.js'
+import { setInprocHandler } from './agents/bus.js'
+import { handleTask } from './agents/ritim.js'
 
 const app = createApp()
 
@@ -16,7 +18,13 @@ if (redis) {
     else logger.warn({ status }, 'redis yapılandırıldı ama erişilemedi — ajan orkestrasyonu devre dışı olabilir')
   })
 } else {
-  logger.info('REDIS_URL tanımsız — ajan orkestrasyonu (Streams) bu süreçte devre dışı')
+  // ⚠️ REDİS'SİZ DÜŞÜŞ ARTIK GERÇEK. bus.ts'te tam olarak yazılmış bir in-process kuyruk vardı
+  // (eşzamanlılık 2) ama setInprocHandler HİÇ ÇAĞRILMIYORDU — yani belgelenen "zarif düşüş"
+  // gerçekte YOKTU: REDIS_URL olmadan her görev sonsuza kadar PENDING'de kalıyordu (worker da
+  // Redis'siz açılmıyor, dolayısıyla bekçi bile toparlamıyordu). Görevler sessizce kayboluyordu.
+  // Handler burada enjekte edilir; bus → ritim döngüsel import'u böyle kırılır.
+  setInprocHandler(handleTask)
+  logger.warn('REDIS_URL tanımsız — ajan görevleri bu süreçte İN-PROCESS işlenecek (eşzamanlılık 2)')
 }
 
 /** Nazik kapanış — açık bağlantıları bitirip çıkar. */

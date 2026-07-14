@@ -196,18 +196,22 @@ export async function runNightlyFold(): Promise<void> {
   }
 }
 
-/** Ortak brief yazıcı — tüm uzmanlar bunu kullanır (tek ses: brief'ler yapısaldır). */
+/**
+ * Ortak brief yazıcı — tüm uzmanlar bunu kullanır (tek ses: brief'ler yapısaldır).
+ *
+ * ⚠️ ESKİDEN KAYIP GÜNCELLEME VARDI: briefs okunur, bellekte birleştirilir, TÜM obje geri
+ * yazılırdı. Dört uzman da (ATLAS, NABIZ, PUSULA, KÂTİP) bunu çağırıyor ve worker
+ * eşzamanlılık 2 ile çalışıyor. İkisi aynı anda bitirirse ikisi de {} okur ve biri
+ * ötekinin brief'ini EZER — Kaptan'ın masasına eksik uzman gider, üstelik sessizce.
+ * Çok-ajanlı mimarinin kalbinde bir veri kaybıydı.
+ * → Birleştirme artık DB'de (0012, brief_yaz): `||` satır kilidi altında, taze değer üzerinde.
+ */
 export async function upsertBrief(userId: string, agent: string, brief: string): Promise<void> {
-  const { data } = await supabase
-    .from('student_memory')
-    .select('briefs')
-    .eq('user_id', userId)
-    .maybeSingle()
-  const briefs = { ...((data?.briefs ?? {}) as Record<string, string>), [agent]: brief }
-  const { error } = await supabase.from('student_memory').upsert(
-    { user_id: userId, briefs, updated_at: new Date().toISOString() },
-    { onConflict: 'user_id' },
-  )
+  const { error } = await supabase.rpc('brief_yaz', {
+    p_user_id: userId,
+    p_agent: agent,
+    p_brief: brief,
+  })
   if (error) throw error
   await invalidateDesk(userId)
 }

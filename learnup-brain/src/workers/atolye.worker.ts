@@ -1,5 +1,5 @@
 import { env } from '../config/env.js'
-import { redis } from '../clients/redis.js'
+import { redis, redisBlocking, redisReady } from '../clients/redis.js'
 import { supabase } from '../clients/supabase.js'
 import {
   ensureConsumerGroup,
@@ -108,8 +108,12 @@ async function schedulerTick(): Promise<void> {
   }
 }
 
+/** Uçuştaki görev sayısı — zarif kapanış bunun sıfırlanmasını bekler. */
+let inFlight = 0
+
 async function processDelivered(delivered: DeliveredTask[]): Promise<void> {
   for (const { streamId, task } of delivered) {
+    inFlight++
     try {
       // CAS-claim: at-least-once teslimatta yalnız bir consumer işler.
       const claimed = await claimTask(task.id, CONSUMER)
@@ -124,9 +128,13 @@ async function processDelivered(delivered: DeliveredTask[]): Promise<void> {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'işleme hatası'
       logger.error({ err, taskId: task.id }, 'görev işlenemedi')
-      await publishEvent(task.id, { status: 'FAILED', data: message })
+      // publishEvent Redis'e yazar; o da patlarsa görevi kaybetme — sadece logla.
+      await publishEvent(task.id, { status: 'FAILED', data: message }).catch(() => {})
     } finally {
-      await ackTask(streamId)
+      await ackTask(streamId).catch((err: unknown) =>
+        logger.warn({ err, streamId }, 'ACK başarısız — kayıt pending listesinde kalır'),
+      )
+      inFlight--
     }
   }
 }
@@ -134,6 +142,15 @@ async function processDelivered(delivered: DeliveredTask[]): Promise<void> {
 async function main(): Promise<void> {
   if (!env.REDIS_URL || !redis) {
     logger.error('REDIS_URL tanımlı değil — Atölye worker başlatılamaz.')
+    process.exit(1)
+  }
+
+  // ⚠️ BAĞLANTININ HAZIR OLMASINI BEKLE. Hot-path client enableOfflineQueue:false ile çalışıyor
+  // (istek yolu Redis yüzünden ASILI KALMASIN diye). Bunun bedeli: soket hazır değilken komut
+  // beklemez, REDDEDİLİR. Worker açılışta hemen XGROUP CREATE çağırıyordu ve bağlantı henüz
+  // kurulmadığı için ilk saniyede ölüyordu. İstek yolu "reddeder", worker "bekler".
+  if (!(await redisReady())) {
+    logger.error('Redis 10 sn içinde hazır olmadı — Atölye worker başlatılamıyor.')
     process.exit(1)
   }
 
@@ -159,13 +176,38 @@ async function main(): Promise<void> {
   }
 }
 
-function shutdown(sig: string): void {
-  logger.info({ sig }, 'Atölye worker kapanıyor')
-  running = false
-  setTimeout(() => process.exit(0), 100)
+/**
+ * ZARİF KAPANIŞ.
+ *
+ * ⚠️ Eskiden: `running = false; setTimeout(() => process.exit(0), 100)` — SIGTERM'den
+ * 100 MİLİSANİYE sonra süreç öldürülüyordu. Ama o an worker büyük ihtimalle handleTask'ın
+ * İÇİNDEDİR ve bir forge_topup görevi meşru olarak DAKİKALARCA sürer (ölçüldü: 100 sn).
+ * Sonuç: her deploy'da yarım kalan Sonnet üretimi çöpe gidiyor, stream kaydı XACK'lenmiyor,
+ * görev RUNNING'de asılı kalıp bekçinin toparlamasını bekliyordu → iş İKİ KEZ ödeniyordu.
+ * → Artık uçuştaki görevin bitmesi beklenir (tavanla); yeni görev alınmaz.
+ */
+const KAPANIS_TAVANI_MS = 3 * 60_000
+
+async function shutdown(sig: string): Promise<void> {
+  logger.info({ sig, inFlight }, 'Atölye worker kapanıyor — uçuştaki görev bekleniyor')
+  running = false // yeni görev ALINMAZ (readTasks döngüsü sonlanır)
+
+  const bitis = Date.now() + KAPANIS_TAVANI_MS
+  while (inFlight > 0 && Date.now() < bitis) await sleep(500)
+  if (inFlight > 0) {
+    logger.warn({ inFlight }, 'kapanış tavanı doldu — görev yarım kaldı (bekçi toparlayacak)')
+  }
+  await Promise.allSettled([redis?.quit(), redisBlocking?.quit()])
+  process.exit(0)
 }
-process.on('SIGTERM', () => shutdown('SIGTERM'))
-process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('SIGTERM', () => void shutdown('SIGTERM'))
+process.on('SIGINT', () => void shutdown('SIGINT'))
+
+// Yakalanmamış reddediş → Bun/Node varsayılanı SÜRECİ ÖLDÜRÜR. Worker'ın tek bir Redis
+// tökezlemesi yüzünden crash-loop'a girmesi, görevleri sürekli yeniden işletmek demektir.
+process.on('unhandledRejection', (err) => {
+  logger.error({ err }, 'yakalanmamış reddediş — worker ayakta kalıyor')
+})
 
 main().catch((err: unknown) => {
   logger.error({ err }, 'Atölye worker ölümcül hata')

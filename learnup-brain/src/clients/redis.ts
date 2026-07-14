@@ -75,6 +75,31 @@ export async function redisTry<T>(fn: (r: Redis) => Promise<T>, fallback: T): Pr
   }
 }
 
+/**
+ * Bağlantı HAZIR olana kadar bekler (worker açılışı için).
+ *
+ * ⚠️ Neden gerekli: hot-path client `enableOfflineQueue:false` → komut, soket hazır DEĞİLKEN
+ * anında REDDEDİLİR ("Stream isn't writeable"). İstek yolu için doğru davranış; ama worker
+ * açılışta hemen XGROUP CREATE çağırıyor ve o an bağlantı henüz kurulmamış oluyor →
+ * worker daha ilk saniyede ölüyordu. (Ölçüldü: gerçekten öldü.)
+ * İstek yolu "beklemez, reddeder"; worker "bekler, sonra başlar". Farklı sözleşmeler.
+ */
+export async function redisReady(timeoutMs = 10_000): Promise<boolean> {
+  if (!redis) return false
+  if (redis.status === 'ready') return true
+  return new Promise<boolean>((resolve) => {
+    const t = setTimeout(() => {
+      redis?.off('ready', ok)
+      resolve(false)
+    }, timeoutMs)
+    const ok = (): void => {
+      clearTimeout(t)
+      resolve(true)
+    }
+    redis?.once('ready', ok)
+  })
+}
+
 /** Ajan orkestrasyonu gibi Redis zorunlu olan yerlerde çağrılır. */
 export function requireRedis(): Redis {
   if (!redis) {

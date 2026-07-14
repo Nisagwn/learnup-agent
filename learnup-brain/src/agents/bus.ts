@@ -108,8 +108,17 @@ export async function enqueueTask(input: {
   })
   if (error) throw error
 
+  // Postgres = HAKİKAT (satır yukarıda yazıldı). Redis = yalnız SİNYAL (hızlı teslim).
+  // ⚠️ Sinyal başarısız olsa bile görev KAYBOLMAZ: PENDING satırı duruyor ve bekçi
+  // (atolye.worker janitor) PENDING_BAYAT_MS sonra onu yeniden kuyruğa atar. Dolayısıyla
+  // XADD hatası isteği ÖLDÜRMEMELİ — hot-path client Redis kapalıyken anında reddediyor
+  // ve bu, /agents/dispatch'i 500'e düşürürdü. Gecikme kabul edilir, kayıp edilmez.
   if (redis) {
-    await redis.call('XADD', TASKS_STREAM, 'MAXLEN', '~', 10_000, '*', 'task', JSON.stringify(task))
+    try {
+      await redis.call('XADD', TASKS_STREAM, 'MAXLEN', '~', 10_000, '*', 'task', JSON.stringify(task))
+    } catch (err) {
+      logger.warn({ err, taskId: task.id }, 'XADD başarısız — görev PG\'de PENDING, bekçi toparlayacak')
+    }
   } else if (inprocHandler) {
     inprocQueue.push(task)
     pumpInproc()
