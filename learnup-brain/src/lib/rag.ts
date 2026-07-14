@@ -47,14 +47,17 @@ export async function embed(texts: string[]): Promise<number[][]> {
   return vectors
 }
 
-/** Grounding retrieval — ltree ön-ekli + vektör sıralı (match_yks_knowledge RPC). */
+/** Grounding retrieval — ltree ön-ekli + vektör sıralı (match_yks_knowledge RPC).
+ *  `qvec` verilirse embed ATLANIR. generateVerifiedSet grounding ve exemplar için BİREBİR
+ *  AYNI sorgu dizesini kullanıyor; iki kez embed etmek bedava değil (ağ + token). */
 export async function retrieveGrounding(p: {
   subject: string
   paths: string[]
   query: string
+  qvec?: number[]
   k?: number
 }): Promise<GroundingChunk[]> {
-  const [qe] = await embed([p.query])
+  const qe = p.qvec ?? (await embed([p.query]))[0]
   const { data, error } = await supabase.rpc('match_yks_knowledge', {
     query_embedding: qe,
     filter_subject: p.subject,
@@ -71,9 +74,10 @@ export async function retrieveExemplars(p: {
   topic: string
   difficulty: string
   query: string
+  qvec?: number[]
   k?: number
 }): Promise<Exemplar[]> {
-  const [qe] = await embed([p.query])
+  const qe = p.qvec ?? (await embed([p.query]))[0]
   const { data, error } = await supabase.rpc('match_yks_exemplars', {
     query_embedding: qe,
     filter_subject: p.subject,

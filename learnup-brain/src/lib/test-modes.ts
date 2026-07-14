@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto'
 import { supabase } from '../clients/supabase.js'
 import { generateVerifiedSet, type TaggedQuestion } from './generation.js'
 import { resolveKazanim, getWeakPaths, osymBlueprint } from './curriculum.js'
+import { logger } from '../utils/logger.js'
 
 /** Mode-agnostik atom: tek kazanım/segment. */
 export type Segment = {
@@ -81,7 +83,58 @@ export async function assembleSegment(seg: Segment, userId: string): Promise<Ser
     },
     need,
   )
-  return [...pool, ...generated.map(taggedToServed)]
+
+  // ⚠️ ÜRETİLEN SORULAR HAVUZA YAZILMIYORDU — tekrar eden maliyetin TAMAMI buydu.
+  // Bir kazanımın havuzu boşsa her istek soruları SIFIRDAN üretiyordu: üret → aday başına
+  // bağımsız doğrula → onar. Öğrenciye verilip atılıyordu. Havuz asla ısınmıyordu; aynı
+  // kazanım için gelen 100. istek de 1. istek kadar pahalıydı.
+  // Artık yazılıyor → ikinci istek havuzdan okur, LLM'e hiç gitmez. Gece demirhanesinin
+  // yaptığı işin aynısı, sadece talep anında.
+  // Not: fazla üretilenler de yazılır (generateVerifiedSet artık kesmiyor) — parası ödenmiş
+  // doğrulanmış soruyu çöpe atmanın anlamı yok; havuz zenginleşir.
+  const hashById = new Map<string, string>() // content_hash → yks_questions.id
+  if (generated.length) {
+    const rows = generated.map((q) => ({
+      subject: seg.subject,
+      kazanim_id: seg.kazanimId,
+      question_text: q.soru,
+      options: q.siklar,
+      correct_option: q.dogru,
+      solution: q.cozum,
+      difficulty: q.zorluk || seg.difficulty,
+      verified: true,
+      quality: q.quality,
+      source_type: 'ai_generated',
+      content_hash: createHash('md5').update(q.soru).digest('hex'),
+    }))
+    // upsert + ignoreDuplicates: düz insert TEK İFADEDİR, tek çift satır TÜM batch'i düşürür.
+    const { error: insErr } = await supabase
+      .from('yks_questions')
+      .upsert(rows, { onConflict: 'content_hash', ignoreDuplicates: true })
+    if (insErr) {
+      logger.warn({ err: insErr, kazanimId: seg.kazanimId }, 'havuz yazımı başarısız — soru yine servis edilir')
+    } else {
+      // ⚠️ SERVİS EDİLEN SORU MUTLAKA id TAŞIMALI. Cevap geldiğinde sunucu doğruluğu
+      // questionId ile DB'den doğruluyor (answers.ts). id'siz soru → doğrulanamaz → XP=0.
+      // ignoreDuplicates satırları geri döndürmediği için id'leri hash ile ayrıca çekiyoruz.
+      const { data: ids } = await supabase
+        .from('yks_questions')
+        .select('id, content_hash')
+        .in('content_hash', rows.map((r) => r.content_hash))
+      for (const r of (ids ?? []) as Array<{ id: string; content_hash: string }>) {
+        hashById.set(r.content_hash, r.id)
+      }
+    }
+  }
+
+  const tazeler = generated.map((q) => {
+    const served = taggedToServed(q)
+    const id = hashById.get(createHash('md5').update(q.soru).digest('hex'))
+    return id ? { ...served, id } : served
+  })
+
+  // Servis tarafı istenen sayıda keser (fazlası havuzda kalır, bir sonraki isteğe hazır).
+  return [...pool, ...tazeler].slice(0, seg.count)
 }
 
 /** Mikro — öğrencinin seçtiği tek kazanım, nokta atışı. */

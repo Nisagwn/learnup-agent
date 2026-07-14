@@ -21,6 +21,52 @@ export async function resolveKazanim(id: number): Promise<KazanimNode | null> {
   return (data as KazanimNode | null) ?? null
 }
 
+/**
+ * SERBEST METİN KONU → KAZANIM (hat birleştirmesinin köprüsü).
+ *
+ * Eski pratik akışı (practice/next) kazanım bilmiyor; istemciden serbest metin
+ * `subject` + `topic`/`sub_topic` geliyor ("Matematik" / "Türev"). Denetimli üretim hattı ise
+ * kazanım-tabanlı (grounding ltree path'e, exemplar kazanım başlığına dayanıyor). Köprü bu:
+ * konu metnini embed edip o DERSİN kazanımları içinde en yakınını buluruz.
+ *
+ * Eşik ŞART. Eşiksiz eşleme, ilgisiz bir kazanımın grounding'iyle soru üretmek demektir —
+ * ki bu, denetimsiz üretimden bile kötüdür (yanlış müfredat dayanağıyla "doğrulanmış" soru).
+ * Eşiğin altında null döner ve çağıran ESKİ yola düşer (denetimsiz ama en azından dürüst).
+ *
+ * Not: soru ETİKETLEME işinde bu yaklaşımı reddetmiştik (ingest-sorular) çünkü orada
+ * 2018-2025 eski müfredat konularını 2026 kazanımlarına eşliyorduk ve ders sınırları
+ * değişmişti. Burada durum farklı: aynı ders içinde, canlı bir konu adını kendi müfredatının
+ * kazanımına bağlıyoruz — ve eşik altı kalırsa hiçbir şey uydurmuyoruz.
+ */
+const KONU_ESIK = 0.45
+
+export async function resolveKazanimByTopic(
+  subject: string,
+  topic: string,
+): Promise<{ node: KazanimNode; similarity: number } | null> {
+  if (!subject || !topic) return null
+  const { embed } = await import('./rag.js') // döngüsel import'u kır (rag → curriculum yok ama tedbir)
+  const [qv] = await embed([`${subject} ${topic}`])
+
+  const { data, error } = await supabase.rpc('match_yks_knowledge', {
+    query_embedding: qv,
+    filter_subject: subject,
+    filter_paths: [],
+    match_count: 1,
+  })
+  if (error) throw error
+  const top = (data ?? [])[0] as { kazanim_code: string | null; similarity: number } | undefined
+  if (!top?.kazanim_code || top.similarity < KONU_ESIK) return null
+
+  const { data: node } = await supabase
+    .from('curriculum_nodes')
+    .select('id, code, title, path, subject, grade')
+    .eq('subject', subject)
+    .eq('code', top.kazanim_code)
+    .maybeSingle()
+  return node ? { node: node as KazanimNode, similarity: top.similarity } : null
+}
+
 export type WeakPath = {
   subject: string
   kazanimId: number

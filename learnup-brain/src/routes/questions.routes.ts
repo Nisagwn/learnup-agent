@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { supabase } from '../clients/supabase.js'
 import { llmChat, GEN_MODEL, GEN_MODES, buildModePromptConfig, parseTaggedQuestions } from '../lib/questions-ai.js'
+import { resolveKazanimByTopic } from '../lib/curriculum.js'
+import { buildMicroTest } from '../lib/test-modes.js'
 
 /** AI soru üretimi + kaydı (4-şıklı app dünyası).
  *  (Edge: generate-questions, generate-targeted-set, save-ai-questions) */
@@ -49,6 +51,18 @@ async function fetchStudentWrongSamples(studentId: string, subject: string, limi
     }))
 }
 
+/** ServedQuestion (YKS şeması: A-E anahtarlı) → bu ucun eski yanıt şekli (options dizisi).
+ *  Frontend bu şekli bekliyor; hattı değiştirirken sözleşmeyi bozmuyoruz. */
+function yksToLegacy(q: { id?: string; soru: string; siklar: Record<string, string>; dogru: string; cozum: string | null }) {
+  return {
+    id: q.id,
+    question_text: q.soru,
+    options: ['A', 'B', 'C', 'D', 'E'].map((L) => q.siklar[L]),
+    correct_answer: q.siklar[q.dogru],
+    explanation: q.cozum ?? '',
+  }
+}
+
 // POST /api/questions/generate — çoktan seçmeli soru üretir (opsiyonel havuza yazar).
 questionsRouter.post('/generate', async (req, res, next) => {
   try {
@@ -60,8 +74,32 @@ questionsRouter.post('/generate', async (req, res, next) => {
     }
     const qCount = Math.min(10, Math.max(1, Number(count) || 5))
     const gradeStr = grade ? String(grade) : '10'
-    const diffStr = difficulty || 'orta'
+    const diffStr = ['kolay', 'orta', 'zor'].includes(String(difficulty)) ? String(difficulty) : 'orta'
 
+    // ── HAT BİRLEŞTİRME: konu bir kazanıma çözülüyorsa DENETİMLİ hattan üret ──
+    // Eski yol tek llmChat çağrısıydı: grounding yok, çıkmış soru örneği yok, doğrulama yok.
+    // buildMicroTest havuzu da kullanır (ısınmışsa LLM'e hiç gitmez) ve ürettiğini havuza yazar.
+    const eslesme = await resolveKazanimByTopic(String(subject), String(topic)).catch(() => null)
+    if (eslesme) {
+      const set = await buildMicroTest({
+        userId, kazanimId: eslesme.node.id, difficulty: diffStr, count: qCount,
+      })
+      if (set.length) {
+        res.json({
+          success: true,
+          questions: set.map(yksToLegacy),
+          mode: 'grounded_verified',
+          kazanim: eslesme.node.code,
+          questionIds: set.map((q) => q.id).filter(Boolean),
+        })
+        return
+      }
+      // Denetimli hat hiç soru veremediyse (kapılar hepsini eledi) eskiye düşme — dürüst ol.
+      res.status(502).json({ error: 'Doğrulanmış soru üretilemedi. Lütfen tekrar deneyin.' })
+      return
+    }
+
+    // ── Yedek: konu müfredatta yok (öğretmenin serbest konusu) → eski hat, verified:false ──
     let samples: any[] = []
     if (String(mode || '').toLowerCase() === GEN_MODES.ANALYZE_AND_DERIVE) {
       samples = await fetchSampleQuestions(subject, 5)

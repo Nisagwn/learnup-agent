@@ -2,7 +2,7 @@ import { supabase } from '../clients/supabase.js'
 import { redis } from '../clients/redis.js'
 import { TEMP } from './models.js'
 import { routedChat, type LlmPriority } from './model-router.js'
-import { retrieveGrounding, retrieveExemplars, type GroundingChunk, type Exemplar } from './rag.js'
+import { embed, retrieveGrounding, retrieveExemplars, type GroundingChunk, type Exemplar } from './rag.js'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Dinamik Context Injection — modelin "sıfır beyinle" başlamasını engeller.
@@ -166,9 +166,11 @@ export async function generateQuestions(a: {
   count: number
   grounding: GroundingChunk[]
   exemplars: Exemplar[]
+  /** Hazır bağlam (generateVerifiedSet turlar arası tekrar kurmasın diye bir kez hesaplar). */
+  studentCtx?: string
   priority?: LlmPriority
 }): Promise<TaggedQuestion[]> {
-  const studentCtx = await buildStudentContext(a.userId) // ← Context Injection
+  const studentCtx = a.studentCtx ?? (await buildStudentContext(a.userId)) // ← Context Injection
   const grounding = a.grounding
     .map((g, i) => `[BAĞLAM ${i + 1}] ${g.context ?? ''}\n${g.content}`)
     .join('\n\n')
@@ -269,7 +271,20 @@ const isAccepted = (v: Verdict): boolean =>
 
 /**
  * GENERATE → bağımsız VERIFY → REPAIR (≤1) → TOP-UP (≤3 tur) do-loop.
- * Yalnız tüm kapıları geçen sorular döner (havuza `verified:true` olarak yazılır).
+ * Yalnız tüm kapıları geçen sorular döner (havuza `verified:true` yazılır).
+ *
+ * ── OPTİMİZASYON (ölçüldü: 2 soru / 97-199 sn) ─────────────────────────────
+ * Kalite kapıları AYNEN duruyor; değişen yalnızca ne zaman ve kaç kez iş yaptığımız.
+ *
+ * 1) RETRIEVAL DÖNGÜNÜN DIŞINA ÇIKTI. Sorgu dizesi yalnız spec'e bağlı → her turda BİREBİR
+ *    AYNI. Eskiden 3 turda 3 kez grounding + 3 kez exemplar çekiliyordu; sonuçlar aynıydı.
+ * 2) TEK EMBED. Grounding ve exemplar aynı dizeyi AYRI AYRI embed ediyordu (tur başına 2 →
+ *    toplam 6). Artık bir kez embed edilip ikisine de veriliyor.
+ * 3) ÖĞRENCİ BAĞLAMI da tur başına yeniden kuruluyordu (2 Supabase RPC + Redis). Bir kez.
+ * 4) DOĞRULAMA PARALEL. Baskın maliyet buydu: adaylar TEK TEK denetleniyordu, her biri
+ *    120 sn'ye kadar. Bağımsız işler; Promise.all ile aynı anda. Onarım+yeniden doğrulama da.
+ * 5) FAZLA SORULAR ARTIK ATILMIYOR. `slice(0, targetCount)` kapılardan geçmiş, parası ödenmiş
+ *    soruları çöpe atıyordu. Hepsi döner; çağıran havuza yazar (servis tarafı kendi keser).
  */
 export async function generateVerifiedSet(
   spec: GenSpec,
@@ -278,32 +293,49 @@ export async function generateVerifiedSet(
 ): Promise<Array<TaggedQuestion & { quality: number }>> {
   const accepted: Array<TaggedQuestion & { quality: number }> = []
 
-  for (let round = 0; accepted.length < targetCount && round < 3; round++) {
-    const need = targetCount - accepted.length
-    const query = `${spec.subject} ${spec.topic} ${spec.kazanim} ${spec.difficulty}`
-    const grounding = await retrieveGrounding({ subject: spec.subject, paths: spec.paths, query })
-    const exemplars = await retrieveExemplars({
+  // ── Turlar arasında DEĞİŞMEYEN her şey: bir kez ──
+  const query = `${spec.subject} ${spec.topic} ${spec.kazanim} ${spec.difficulty}`
+  const [qvec] = await embed([query])
+  const [grounding, exemplars, studentCtx] = await Promise.all([
+    retrieveGrounding({ subject: spec.subject, paths: spec.paths, query, qvec }),
+    retrieveExemplars({
       subject: spec.subject,
       topic: spec.topic,
       difficulty: spec.difficulty,
       query,
-    })
-    const candidates = await generateQuestions({ ...spec, count: need + 2, grounding, exemplars, priority })
+      qvec,
+    }),
+    buildStudentContext(spec.userId),
+  ])
 
-    for (const q of candidates) {
-      if (accepted.length >= targetCount) break
-      const v = await verifyQuestion(q, grounding, priority)
-      if (isAccepted(v)) {
-        accepted.push({ ...q, quality: v.osymStyleScore })
-        continue
-      }
-      if (v.verdict === 'REPAIR') {
-        const repaired = await repairQuestion(q, v.critique, grounding, priority)
-        const v2 = await verifyQuestion(repaired, grounding, priority)
-        if (isAccepted(v2)) accepted.push({ ...repaired, quality: v2.osymStyleScore })
-      }
-    }
+  /** Bir adayı denetle; REPAIR ise bir kez onar ve yeniden denetle. Kabul edilirse döner. */
+  const denetle = async (
+    q: TaggedQuestion,
+  ): Promise<(TaggedQuestion & { quality: number }) | null> => {
+    const v = await verifyQuestion(q, grounding, priority)
+    if (isAccepted(v)) return { ...q, quality: v.osymStyleScore }
+    if (v.verdict !== 'REPAIR') return null
+    const repaired = await repairQuestion(q, v.critique, grounding, priority)
+    const v2 = await verifyQuestion(repaired, grounding, priority)
+    return isAccepted(v2) ? { ...repaired, quality: v2.osymStyleScore } : null
   }
 
-  return accepted.slice(0, targetCount)
+  for (let round = 0; accepted.length < targetCount && round < 3; round++) {
+    const need = targetCount - accepted.length
+    const candidates = await generateQuestions({
+      ...spec,
+      count: need + 2,
+      grounding,
+      exemplars,
+      studentCtx,
+      priority,
+    })
+    if (!candidates.length) break // model hiç ayrıştırılabilir soru vermedi → tur boşa döner
+
+    // Adaylar birbirinden BAĞIMSIZ → hepsi aynı anda denetlenir (eskiden sıradaydı).
+    const sonuclar = await Promise.all(candidates.map(denetle))
+    for (const q of sonuclar) if (q) accepted.push(q)
+  }
+
+  return accepted
 }

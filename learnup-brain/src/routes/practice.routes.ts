@@ -5,6 +5,8 @@ import {
   llmChat, CHAT_MODEL, GEN_MODEL, GEN_MODES, buildModePromptConfig, parseTaggedQuestions,
 } from '../lib/questions-ai.js'
 import { processAnswer } from '../lib/answers.js'
+import { resolveKazanimByTopic } from '../lib/curriculum.js'
+import { buildMicroTest } from '../lib/test-modes.js'
 
 /** Adaptif pratik motoru + otoriter gamification yazımı.
  *  (Edge: submit-answer [adaptif sıradaki soru], record-answer [XP/seri/görev/rozet/SRS]) */
@@ -114,46 +116,61 @@ Lütfen öğrenciyi motive edecek ve bu hatasındaki konsept eksiğini anlaması
       return list.length ? list[Math.floor(Math.random() * list.length)] : null
     }
 
+    const diffLabel = nextDifficultyNum === 1 ? 'kolay' : nextDifficultyNum === 3 ? 'zor' : 'orta'
     let newQuestion: any = null
-    if (!newQuestion && sub_topic) {
-      const { data } = await supabase.from('questions').select('*').eq('category', subject).eq('sub_topic', sub_topic).limit(10)
-      newQuestion = pick(data)
-    }
-    if (!newQuestion) {
-      const { data } = await supabase.from('questions').select('*').eq('category', subject).eq('topic', topic).limit(10)
-      newQuestion = pick(data)
-    }
-    if (!newQuestion) {
-      const { data } = await supabase.from('questions').select('*').eq('category', subject).limit(10)
-      newQuestion = pick(data)
-    }
-    if (!newQuestion) {
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // HAT BİRLEŞTİRME — bu akış ESKİ, DENETİMSİZ hattı kullanıyordu:
+    //   · `questions` tablosundan `verified` filtresi OLMADAN okuyordu,
+    //   · havuz boşsa tek llmChat çağrısıyla üretip ÖĞRENCİYE DOĞRUDAN veriyordu:
+    //     müfredat grounding'i YOK, çıkmış soru örneği YOK, bağımsız doğrulama YOK.
+    // Yani 907 kazanımlık müfredat, 1730 çıkmış soru ve beş kapılı denetçi — hiçbiri
+    // öğrencinin gerçekte gördüğü sorulara dokunmuyordu.
+    //
+    // Artık: serbest metin konu → kazanım (eşikli). Çözülürse DENETİMLİ hat (assembleSegment:
+    // havuzdan oku, eksiği grounded+doğrulanmış üret, havuza yaz). Çözülemezse eski hatta
+    // düşeriz — ama o zaman bile denetimsiz soruyu öğrenciye VERMEYİZ (aşağı bak).
+    // ═══════════════════════════════════════════════════════════════════════
+    const eslesme = await resolveKazanimByTopic(subject, sub_topic !== 'Genel' ? sub_topic : topic)
+      .catch((err) => { logger.warn({ err }, 'kazanım çözümlenemedi'); return null })
+
+    if (eslesme) {
       try {
-        const diffLabel = nextDifficultyNum === 1 ? 'kolay' : nextDifficultyNum === 3 ? 'zor' : 'orta'
-        const diffStr = nextDifficultyNum === 1 ? 'easy' : nextDifficultyNum === 3 ? 'hard' : 'medium'
-        const cfg = buildModePromptConfig(GEN_MODES.STRICT_CURRICULUM, { subject, topic, grade: '10', difficulty: diffLabel, count: 1 })
-        const generatedText = await llmChat([{ role: 'system', content: cfg.system }, { role: 'user', content: cfg.prompt }], {
-          model: GEN_MODEL, temperature: cfg.temperature, max_tokens: 700,
+        const set = await buildMicroTest({
+          userId, kazanimId: eslesme.node.id, difficulty: diffLabel, count: 1,
         })
-        const parsed = parseTaggedQuestions(generatedText)
-        if (parsed.length > 0) {
-          const gq = parsed[0]
-          const row = {
-            category: subject, subject, subject_tr: subject,
-            topic: topic || subject, sub_topic: sub_topic || topic || subject,
-            question_text: gq.question_text, options: gq.options, correct_answer: gq.correct_answer,
-            explanation: gq.explanation || '', difficulty: diffStr, grade: '10',
-            verified: false, is_ai_generated: true, gen_mode: GEN_MODES.STRICT_CURRICULUM,
-            random_seed: Math.floor(Math.random() * 1e6), teacher_id: null,
+        const q = set.find((x) => !excludeIds.has(String(x.id ?? '')))
+        if (q) {
+          newQuestion = {
+            id: q.id ?? null,
+            question_text: q.soru,
+            options: ['A', 'B', 'C', 'D', 'E'].map((L) => q.siklar[L as 'A']),
+            correct_answer: q.siklar[q.dogru as 'A'],
+            explanation: q.cozum ?? '',
+            category: subject, subject, topic, sub_topic,
+            difficulty: diffLabel, is_ai_generated: true,
+            kazanim_id: eslesme.node.id, kazanim: eslesme.node.code,
           }
-          const { data: saved, error: insErr } = await supabase.from('questions').insert(row).select('*').single()
-          if (insErr) logger.warn({ err: insErr }, 'Üretilen soru kaydedilemedi')
-          else newQuestion = saved
+          logger.info({ kazanim: eslesme.node.code, sim: eslesme.similarity.toFixed(3) },
+            'pratik: denetimli hattan soru')
         }
-      } catch (genErr) {
-        logger.warn({ err: genErr }, 'Soru üretimi başarısız')
+      } catch (err) {
+        logger.warn({ err, kazanim: eslesme.node.code }, 'denetimli hat başarısız — eski havuza düşülüyor')
       }
     }
+
+    // ── Yedek: eski `questions` havuzu — ama YALNIZ DENETLENMİŞ satırlar ──
+    // Denetimsiz AI çıktısını öğrenciye vermek, yanlış cevaplı soru göstermek demektir.
+    // Öğretmen soruları (source_type='ogretmen') ve doğrulanmış olanlar geçerlidir.
+    const havuzdanSec = async (filtre: (q: any) => any): Promise<any> => {
+      const { data } = await filtre(
+        supabase.from('questions').select('*').eq('category', subject).eq('verified', true),
+      ).limit(10)
+      return pick(data)
+    }
+    if (!newQuestion && sub_topic) newQuestion = await havuzdanSec((q: any) => q.eq('sub_topic', sub_topic))
+    if (!newQuestion) newQuestion = await havuzdanSec((q: any) => q.eq('topic', topic))
+    if (!newQuestion) newQuestion = await havuzdanSec((q: any) => q)
 
     // Session güncelle (7 gün TTL)
     try {
