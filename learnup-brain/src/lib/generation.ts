@@ -12,7 +12,9 @@ export async function buildStudentContext(userId: string): Promise<string> {
   const [weakRes, trapsRes, ctxRaw] = await Promise.all([
     supabase.rpc('weak_kazanimlar', { p_user_id: userId, p_limit: 4 }),
     supabase.rpc('distractor_traps', { p_user_id: userId, p_limit: 5 }),
-    redis ? redis.get(`user:${userId}:context`) : Promise.resolve(null),
+    // Redis = hot-path, HAKİKAT DEĞİL. Erişilemezse gün-içi bağlam düşer; zayıf kazanımlar
+    // ve çeldirici tuzakları Postgres'ten gelmeye devam eder. Redis yüzünden üretim DURMAZ.
+    redis ? redis.get(`user:${userId}:context`).catch(() => null) : Promise.resolve(null),
   ])
 
   const weak = (weakRes.data ?? []) as Array<{ subject: string; title: string; wrong_rate: number }>
@@ -145,6 +147,11 @@ export type Verdict = {
   matchesMarked: boolean
   singleCorrect: boolean
   curriculumBound: boolean
+  /** Soru KÖKÜ kendi içinde tutarlı mı? (çelişen veri · eksik veri · şıklarla uyumsuz birim)
+   *  Ölçüldü — bu kapı yokken şu soru 4/5 alıp GEÇTİ: "K ve L … aynı anda tamamen durmaktadır"
+   *  dedikten sonra "K'nın çarpışma süresi daha uzundur" diyordu. İkisi aynı anda duramaz.
+   *  Cevap yine de doğruydu; denetçi doğru cevabı bulunca yeterli sayıp kökü hiç okumadı. */
+  internallyConsistent: boolean
   osymStyleScore: number
   verdict: 'ACCEPT' | 'REPAIR' | 'REJECT'
   critique: string
@@ -213,7 +220,12 @@ export async function verifyQuestion(
         role: 'user',
         content:
           `SORU:\n${render}\n\nMÜFREDAT KANITI:\n${evidence}\n\n` +
-          `Şu şemada JSON döndür: {"solvedAnswer":"A-E","matchesMarked":true|false,"singleCorrect":true|false,"curriculumBound":true|false,"osymStyleScore":1..5,"verdict":"ACCEPT|REPAIR|REJECT","critique":"..."}`,
+          `ÖNCE soru KÖKÜNÜ denetle (doğru cevabı bulmuş olman soruyu geçerli yapmaz):\n` +
+          `- Kökteki veriler birbiriyle ÇELİŞİYOR mu? (örn. "ikisi de aynı anda durur" dedikten sonra "birinin süresi daha uzundur" demek)\n` +
+          `- Soruyu çözmek için gereken bir veri EKSİK mi? (okuyucunun varsayması gereken sayı/koşul)\n` +
+          `- Şıkların birimi/biçimi kökle uyumlu mu? Kökte sorulan nicelik ile şıklar aynı şeyi mi ölçüyor?\n` +
+          `Bunlardan biri bile varsa internallyConsistent=false ve verdict="REPAIR" ver, critique'te TAM olarak hangi cümlenin neyle çeliştiğini yaz.\n\n` +
+          `Şu şemada JSON döndür: {"solvedAnswer":"A-E","matchesMarked":true|false,"singleCorrect":true|false,"curriculumBound":true|false,"internallyConsistent":true|false,"osymStyleScore":1..5,"verdict":"ACCEPT|REPAIR|REJECT","critique":"..."}`,
       },
     ],
   }, { priority })
@@ -249,6 +261,10 @@ const isAccepted = (v: Verdict): boolean =>
   v.matchesMarked &&
   v.singleCorrect &&
   v.curriculumBound &&
+  // `!== false`: eski/zayıf model alanı hiç döndürmezse soruyu sessizce ELEME —
+  // ama açıkça false derse GEÇİRME. (Zincirde Sonnet düşerse Groq/OpenRouter devreye
+  // giriyor; onlar şemayı eksik doldurabilir. Eksik alan "kusurlu" demek değildir.)
+  v.internallyConsistent !== false &&
   v.osymStyleScore >= 4
 
 /**

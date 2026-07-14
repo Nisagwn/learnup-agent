@@ -30,7 +30,7 @@ const clientOf = (p: Provider): OpenAI | null => (p === 'groq' ? groq : p === 'a
 async function anthropicChat(
   model: string,
   params: ChatParams,
-  timeoutMs: number,
+  signal: AbortSignal,
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   const sysParts: string[] = []
   const msgs: Anthropic.MessageParam[] = []
@@ -51,7 +51,7 @@ async function anthropicChat(
       system: sysParts.length ? sysParts.join('\n\n') : undefined,
       messages: msgs,
     },
-    { signal: AbortSignal.timeout(timeoutMs) },
+    { signal },
   )
   const text = res.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -126,7 +126,10 @@ function chainFromEnv(name: string, fallback: string[]): string[] {
 }
 
 const isFree = (entry: string): boolean => entry.endsWith(':free') || entry.startsWith('groq:')
-const TIMEOUT_MS: Record<LlmRole, number> = { chat: 45_000, generate: 60_000, verify: 120_000, fast: 30_000 }
+/** Rol başına timeout. `generate` 60sn'ydi ve YETMİYORDU: tek çağrıda 4 tam ÖSYM sorusu
+ *  + çözümleri (max_tokens 8000) yazılıyor; Sonnet bunu 60sn'de bitiremeyip abort ediliyordu.
+ *  Üretim interaktif değil (P1 canlı top-up / P2 gece batch) → bekleyebilir. `chat` P0 kalır. */
+const TIMEOUT_MS: Record<LlmRole, number> = { chat: 45_000, generate: 150_000, verify: 120_000, fast: 30_000 }
 /** Sağlayıcı-başına dakika tavanı. */
 const MINUTE_CAP: Record<Provider, number> = { openrouter: 18, groq: 25, anthropic: 999 }
 /** Sağlayıcı-başına günlük ücretsiz tavan (env ile ezilebilir).
@@ -209,6 +212,36 @@ const isRetryable = (err: unknown): boolean => {
   return name === 'AbortError' || name === 'TimeoutError' || name === 'APIConnectionError'
 }
 
+/**
+ * TIMEOUT'U KENDİ ABORT'UMUZLA KUR — sonra onu açıkça TimeoutError'a çevir.
+ *
+ * NEDEN böyle: `AbortSignal.timeout()` kullanınca Anthropic SDK'sı `APIUserAbortError`
+ * fırlatıyor; adı ne 'AbortError' ne 'TimeoutError' → isRetryable FALSE dönüyordu →
+ * routedChat `throw err` yapıp ZİNCİRİ ÇÖKERTİYORDU. Yani birincil sağlayıcı zaman
+ * aşımına uğradığı anda Groq/OpenRouter'a hiç geçilmiyordu — fallback'in tam olarak
+ * gerektiği durumda devre dışıydı. (Ölçüldü: gen-smoke, Sonnet 60sn'yi aştı → script öldü.)
+ *
+ * "APIUserAbortError'ı da retryable say" demek YANLIŞ olurdu: o hata öğrenci akışı
+ * iptal ettiğinde de fırlar; onu yeniden denemek iptal edilen isteği tekrar çağırmak olur.
+ * Ayrımı ancak abort'a KİMİN sebep olduğunu bilerek yapabiliriz → kendi controller'ımız.
+ */
+async function withTimeout<T>(ms: number, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), ms)
+  try {
+    return await fn(ac.signal)
+  } catch (err) {
+    if (ac.signal.aborted) {
+      const e = new Error(`model zaman aşımı (${ms} ms)`)
+      e.name = 'TimeoutError' // → isRetryable → kesici açılır, zincirde ilerlenir
+      throw e
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** Kalıcı slug arızası (model kalktı/kredi yok: 400/402/404) → kesicisiz atla, zincirde ilerle.
  *  Yalnız 401 (auth) anında fırlatılır — zincirle çözülemez. */
 const isSkippable = (err: unknown): boolean => {
@@ -236,12 +269,11 @@ export async function routedChat(
     if (await breakerOpen(slug)) continue
     if (isFree(slug) && !(await freeBudgetOk(provider, priority))) continue // bütçe → sıradaki
     try {
-      const res = provider === 'anthropic'
-        ? await anthropicChat(model, params, TIMEOUT_MS[role])
-        : await client!.chat.completions.create(
-            { ...params, model },
-            { signal: AbortSignal.timeout(TIMEOUT_MS[role]) },
-          )
+      const res = await withTimeout(TIMEOUT_MS[role], (signal) =>
+        provider === 'anthropic'
+          ? anthropicChat(model, params, signal)
+          : client!.chat.completions.create({ ...params, model }, { signal }),
+      )
       void resetBreaker(slug)
       return res
     } catch (err) {

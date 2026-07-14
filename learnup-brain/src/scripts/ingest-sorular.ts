@@ -326,6 +326,18 @@ console.log('\n=== COMMIT ===')
 const hash = (t: string): string => createHash('md5').update(t).digest('hex')
 
 // 1) yks_questions — servis havuzu (VEKTÖRSÜZ)
+//
+// ⚠️ KÜNYE ZORUNLU — source_type ATLANAMAZ.
+//    0004 bir "kaynak ayrımı yasası" kurdu: source_type default'u 'ai_generated'.
+//    Bu alanı yazmazsak 1730 GERÇEK ÖSYM sorusu DB'de "AI üretimi" diye durur ve:
+//      · assembleSegment (test-modes.ts) onları adaptif teste sokar → öğrenciye
+//        "senin için üretildi" diye 2019 çıkmış sorusu gider (ürün kuralı #6 ihlali),
+//      · havuz hep dolu göründüğü için gerçek üretim hiç tetiklenmez,
+//      · frontend "ÖSYM ÇIKMIŞ SORU" rozetini basamaz,
+//      · osym.routes.ts (çıkmış sorular servisi) bu satırları HİÇ göremez.
+//    0004'teki değişmezlik trigger'ı source_type'ı sonradan DÜZELTMEYE de izin vermez
+//    (AI→çıkmış sahteciliğini önlemek için) → yanlış basılırsa tek çare SİL-YENİDEN BAS.
+//    yq_osym_meta_chk: osym_cikmis ise exam_year + exam_label ZORUNLU.
 const qRows = etiketli.map((e) => ({
   subject: e.soru.subject,
   kazanim_id: e.kod ? (globalKod.get(e.kod)?.id ?? null) : null,   // çapraz-ders eşlemesi olabilir
@@ -335,8 +347,10 @@ const qRows = etiketli.map((e) => ({
   solution: null,                       // belgede yok → uydurulmaz
   difficulty: null,                     // belgede yok → uydurulmaz
   verified: true,                       // gerçek ÖSYM sorusu (insan yazımı, resmî)
+  source_type: 'osym_cikmis',           // ← KÜNYE: AI değil, çıkmış soru
+  exam_year: e.soru.yil,                // 2019
+  exam_label: e.soru.sinav,             // 'TYT' | 'AYT'  (ders zaten subject sütununda)
   content_hash: hash(e.soru.question_text),
-  source: e.soru.kaynak,                // "2019-TYT"
   topic: e.soru.konu,
 }))
 for (let i = 0; i < qRows.length; i += 200) {

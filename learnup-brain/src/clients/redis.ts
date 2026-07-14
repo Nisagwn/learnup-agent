@@ -12,19 +12,44 @@ import { logger } from '../utils/logger.js'
  * REDIS_URL tanımlı değilse ikisi de `null` olur: API + RAG + Kaptan tek process'te çalışmaya devam eder,
  * yalnız ajan orkestrasyonu (Pusula ↔ Ritim) devre dışı kalır.
  */
-function createConnection(url: string, label: string): Redis {
+/**
+ * İki client'ın DAYANIKLILIK İHTİYACI ZITTIR — aynı ayarı vermek biri için hatalıdır.
+ *
+ * hotPath=false (worker, XREAD BLOCK): `maxRetriesPerRequest: null` + çevrimdışı kuyruk.
+ *   Worker'ın işi zaten beklemek; Redis dönene kadar komut kuyrukta durmalı, düşmemeli.
+ *
+ * hotPath=true (istek yolu: buildStudentContext, telemetri): HIZLI PATLAMALI.
+ *   Ölçüldü — `maxRetriesPerRequest: null` + çevrimdışı kuyruk ile Redis kapalıyken
+ *   `redis.get()` HİÇ ÇÖZÜLMÜYOR: promise sonsuza kadar asılı kalıyor, soru üretimi ve
+ *   sohbet tamamen donuyor. Oysa mimarinin kuralı "Postgres = hakikat · Redis = hot-path":
+ *   Redis'in yokluğu YAVAŞLATMALI, KİLİTLEMEMELİ.
+ *   → enableOfflineQueue:false ile komut anında REDDEDİLİR; çağıran .catch() ile
+ *     Redis'siz devam eder (bkz. buildStudentContext).
+ */
+function createConnection(url: string, label: string, hotPath: boolean): Redis {
   const client = new Redis(url, {
-    // Bloklu (XREAD BLOCK) komutlar ve dayanıklı worker'lar için önerilir.
-    maxRetriesPerRequest: null,
+    maxRetriesPerRequest: hotPath ? 1 : null,
+    enableOfflineQueue: !hotPath,
+    connectTimeout: 2000,
+    // Kademeli geri çekilme: kapalı Redis saniyede onlarca hata log'u basmasın.
+    retryStrategy: (times: number) => Math.min(times * 500, 10_000),
   })
-  client.on('error', (err: Error) => logger.error({ err, label }, 'redis bağlantı hatası'))
-  client.on('connect', () => logger.debug({ label }, 'redis bağlandı'))
+  let sustu = false
+  client.on('error', (err: Error) => {
+    if (sustu) return
+    sustu = true // ilk hatayı bildir, gerisini bastır (yeniden bağlanınca sıfırlanır)
+    logger.error({ err, label }, 'redis bağlantı hatası — hot-path Redis olmadan sürer')
+  })
+  client.on('connect', () => {
+    sustu = false
+    logger.debug({ label }, 'redis bağlandı')
+  })
   return client
 }
 
-export const redis: Redis | null = env.REDIS_URL ? createConnection(env.REDIS_URL, 'redis') : null
+export const redis: Redis | null = env.REDIS_URL ? createConnection(env.REDIS_URL, 'redis', true) : null
 export const redisBlocking: Redis | null = env.REDIS_URL
-  ? createConnection(env.REDIS_URL, 'redisBlocking')
+  ? createConnection(env.REDIS_URL, 'redisBlocking', false)
   : null
 
 /** Ajan orkestrasyonu gibi Redis zorunlu olan yerlerde çağrılır. */
