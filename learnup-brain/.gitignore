@@ -28,3 +28,22 @@ Thumbs.db
 # test / coverage
 coverage/
 .nyc_output/
+
+# ── VERİ (data/) ─────────────────────────────────────────────────────────────
+# Kaynak belgeler: MEB DÖP müfredat PDF'leri + ÖSYM çıkmış soru kitapçıkları.
+# ~190 MB. Repo'ya girerse her klon bunu indirir ve git geçmişinden bir daha
+# çıkmaz. Yayımcısından yeniden indirilebilir; türevleri (data/*.json) izleniyor.
+data/pdf/
+data/questions/
+*.pdf
+
+# pdftotext ara çıktıları (PDF'ten saniyeler içinde yeniden üretilir)
+data/**/*.txt
+
+# Embedding önbelleği — 37 MB, TÜREV. Eşik ayarlarken script'i defalarca
+# çalıştırmak için var; silinirse ingest yeniden embed eder (API maliyeti düşük).
+data/.sorular-vec.json
+
+# ingest-sorular'ın her koşuda yeniden yazdığı denetim raporu (elle eşlemenin
+# başlangıç noktasıydı; artık konu-kazanim.json otorite — bu sadece çıktı).
+data/konu-kazanim-oto.json

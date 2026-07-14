@@ -1,0 +1,309 @@
+[
+  {
+    "_kaynak": "TYT Türkçe Konu ve Kazanım Listesi (MEBİ platformu listelerine dayalı, 2018 öğretim programı). Resmî MEB DÖP PDF'i DEĞİLDİR — diğer 10 dersten farklı provenans. İçerik belgeden birebir alınmış, uydurulmamıştır; yalnız kazanım cümlesi 'yeterlik' biçimine getirilmiştir.",
+    "subject": "Türkçe",
+    "grade": null,
+    "code": "TÜR.1.1",
+    "unit": "Sözcükte Anlam",
+    "title": "Sözcüklerde çok anlamlılığı; gerçek (temel), yan ve mecaz anlamı ayırt edebilme",
+    "icerik": "Sözcüklerde çok anlamlılık; gerçek (temel) anlam, yan anlam, mecaz anlam.",
+    "terms": "çok anlamlılık, gerçek anlam, temel anlam, yan anlam, mecaz anlam",
+    "surec": [
+      "Bir sözcüğün cümledeki kullanımından hareketle gerçek, yan ve mecaz anlamını belirler.",
+      "Çok anlamlı sözcükleri bağlam içinde ayırt eder."
+    ],
+    "uygulama": "",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.1.2", "unit": "Sözcükte Anlam",
+    "title": "Sözcükler arasındaki anlam ilişkilerini çözümleyebilme",
+    "icerik": "Eş anlamlı, yakın anlamlı, zıt anlamlı, sesteş sözcükler; somut-soyut anlamlı, nicel-nitel anlamlı, genel-özel anlamlı sözcükler; yansıma sözcükler.",
+    "terms": "eş anlamlı, yakın anlamlı, zıt anlamlı, sesteş, somut-soyut, nicel-nitel, genel-özel, yansıma",
+    "surec": ["Sözcükler arasındaki anlam ilişkisini belirler.", "İlişki türünü örneklerle sınıflandırır."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.1.3", "unit": "Sözcükte Anlam",
+    "title": "Sözcükler arasındaki anlam olaylarını çözümleyebilme",
+    "icerik": "Ad aktarması, dolaylama, güzel adlandırma, deyim aktarmaları, somutlama, kinaye, benzetme; anlam genişlemesi, anlam daralması, anlam iyileşmesi, anlam kötüleşmesi.",
+    "terms": "ad aktarması, dolaylama, güzel adlandırma, deyim aktarması, somutlama, kinaye, benzetme, anlam genişlemesi, anlam daralması, anlam iyileşmesi, anlam kötüleşmesi",
+    "surec": ["Metinde geçen anlam olayını tanır.", "Anlam olayının türünü gerekçelendirerek belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.1.4", "unit": "Sözcükte Anlam",
+    "title": "Atasözü, deyim ve ikilemelerin anlamını ve kullanımını yorumlayabilme",
+    "icerik": "Atasözleri, deyimler, ikilemeler.",
+    "terms": "atasözü, deyim, ikileme",
+    "surec": ["Atasözü ve deyimin anlamını bağlamdan çıkarır.", "İkilemelerin yapısını ve işlevini belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.2.1", "unit": "Cümlede Anlam",
+    "title": "Anlam ilişkilerine göre cümleleri sınıflandırabilme",
+    "icerik": "Yakın anlamlı, neden-sonuç, amaç-sonuç, koşul, örneklendirme, açıklama, karşılaştırma cümleleri.",
+    "terms": "neden-sonuç, amaç-sonuç, koşul, örneklendirme, açıklama, karşılaştırma",
+    "surec": ["Cümledeki anlam ilişkisini belirler.", "Cümleler arası anlam bağını çözümler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.2.2", "unit": "Cümlede Anlam",
+    "title": "Anlatım özelliklerine göre cümleleri ayırt edebilme",
+    "icerik": "Öznel anlatım, nesnel anlatım, doğrudan anlatım, dolaylı anlatım; içerik, üslup, tanım, kinayeli anlatım, aşamalı durum bildiren cümleler.",
+    "terms": "öznel, nesnel, doğrudan anlatım, dolaylı anlatım, içerik, üslup, tanım, kinaye, aşamalı durum",
+    "surec": ["Cümlenin öznel mi nesnel mi olduğunu gerekçelendirir.", "Anlatım biçimini belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.2.3", "unit": "Cümlede Anlam",
+    "title": "Cümlede yer alan kavram ve duyguları belirleyebilme",
+    "icerik": "Olasılık, tahmin, sitem, yakınma, hayıflanma, pişmanlık, tasarı, eşitlik, öneri, ön yargı, öz eleştiri ve diğer kavram-duygu bildiren cümleler.",
+    "terms": "olasılık, tahmin, sitem, yakınma, hayıflanma, pişmanlık, tasarı, eşitlik, öneri, ön yargı, öz eleştiri",
+    "surec": ["Cümlenin taşıdığı duygu veya kavramı belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.3.1", "unit": "Paragrafta Anlam",
+    "title": "Anlatım biçimlerini ve düşünceyi geliştirme yollarını ayırt edebilme",
+    "icerik": "Anlatım biçimleri: öyküleyici, açıklayıcı, betimleyici, tartışmacı anlatım. Düşünceyi geliştirme yolları: tanımlama, karşılaştırma, tanık gösterme, örneklendirme, sayısal (nicel) verilerden yararlanma, benzetme.",
+    "terms": "öyküleyici, açıklayıcı, betimleyici, tartışmacı, tanımlama, karşılaştırma, tanık gösterme, örneklendirme, sayısal veri, benzetme",
+    "surec": ["Paragrafta kullanılan anlatım biçimini belirler.", "Düşünceyi geliştirme yolunu tanır."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.3.2", "unit": "Paragrafta Anlam",
+    "title": "Anlatımın özelliklerini çözümleyebilme",
+    "icerik": "Anlatım ve anlatımın özellikleri (duruluk, akıcılık, açıklık, yalınlık, özlülük vb.).",
+    "terms": "anlatım, duruluk, akıcılık, açıklık, yalınlık, özlülük",
+    "surec": ["Bir metnin anlatım özelliklerini belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.3.3", "unit": "Paragrafta Anlam",
+    "title": "Paragrafta konu, başlık, ana düşünce ve yardımcı düşünceyi belirleyebilme",
+    "icerik": "Paragrafta konu, paragrafta başlık, paragrafta ana düşünce, paragrafta yardımcı düşünce.",
+    "terms": "konu, başlık, ana düşünce, yardımcı düşünce",
+    "surec": ["Paragrafın konusunu ve ana düşüncesini çıkarır.", "Paragrafa uygun başlığı belirler.", "Yardımcı düşünceleri ayırt eder."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.3.4", "unit": "Paragrafta Anlam",
+    "title": "Paragrafın yapısını çözümleyebilme ve paragraf oluşturabilme",
+    "icerik": "Paragrafın yapısı: giriş, gelişme, sonuç bölümleri. Paragraf oluşturma ve düzenleme; paragrafta akışı bozan cümle; paragrafı iki bölüme ayırma; paragrafa cümle ekleme (tamamlama).",
+    "terms": "giriş, gelişme, sonuç, akışı bozan cümle, paragraf tamamlama, paragraf bölme",
+    "surec": ["Paragrafın bölümlerini belirler.", "Akışı bozan cümleyi bulur.", "Paragrafı uygun cümleyle tamamlar."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.4.1", "unit": "Ses Bilgisi",
+    "title": "Ünlü uyumlarını ve ünlülerle ilgili ses olaylarını çözümleyebilme",
+    "icerik": "Büyük ünlü uyumu, küçük ünlü uyumu. Ünlü düşmesi, ünlü daralması, ünlü türemesi, ünlü değişimi, ulama.",
+    "terms": "büyük ünlü uyumu, küçük ünlü uyumu, ünlü düşmesi, ünlü daralması, ünlü türemesi, ünlü değişimi, ulama",
+    "surec": ["Sözcüğün ünlü uyumuna uygunluğunu denetler.", "Ünlülerle ilgili ses olayını belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.4.2", "unit": "Ses Bilgisi",
+    "title": "Ünsüzlerle ilgili ses olaylarını çözümleyebilme",
+    "icerik": "Ünsüz benzeşmesi, ünsüz yumuşaması, ünsüz türemesi, ünsüz düşmesi, n-m değişimi, kaynaştırma ünsüzleri.",
+    "terms": "ünsüz benzeşmesi, ünsüz yumuşaması, ünsüz türemesi, ünsüz düşmesi, n-m değişimi, kaynaştırma ünsüzü",
+    "surec": ["Sözcükte gerçekleşen ünsüz olayını belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.5.1", "unit": "Yazım Kuralları",
+    "title": "Büyük harflerin kullanıldığı yerleri ve sayıların yazımını uygulayabilme",
+    "icerik": "Büyük harflerin kullanıldığı yerler; sayıların yazımı.",
+    "terms": "büyük harf, özel ad, sayıların yazımı",
+    "surec": ["Büyük harf kullanımındaki yanlışı belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.5.2", "unit": "Yazım Kuralları",
+    "title": "Kısaltma, ek-fiil, bağlaç ve ek yazımlarını uygulayabilme",
+    "icerik": "Kısaltmaların yazılışı; ek-fiilin yazılışı; bağlaç olan \"ki\"nin yazılışı; ikilemelerin yazılışı; pekiştirmeli sözlerin yazılışı; soru eki mı/mi/mu/mü'nün yazılışı; bağlaç olan da/de'nin yazılışı.",
+    "terms": "kısaltma, ek-fiil, bağlaç ki, ikileme, pekiştirme, soru eki mı/mi, bağlaç da/de",
+    "surec": ["\"de\" ve \"ki\"nin bağlaç mı ek mi olduğunu ayırt eder.", "Soru ekinin yazımını denetler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.5.3", "unit": "Yazım Kuralları",
+    "title": "Birleşik kelimelerin bitişik ve ayrı yazımını uygulayabilme",
+    "icerik": "Bitişik yazılan birleşik kelimeler; ayrı yazılan birleşik kelimeler.",
+    "terms": "birleşik kelime, bitişik yazım, ayrı yazım",
+    "surec": ["Birleşik kelimenin yazımını kurala göre denetler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.6.1", "unit": "Noktalama İşaretleri",
+    "title": "Nokta, virgül ve noktalı virgülü doğru kullanabilme",
+    "icerik": "Nokta (.), virgül (,), noktalı virgül (;).",
+    "terms": "nokta, virgül, noktalı virgül",
+    "surec": ["Cümlede virgülün işlevini belirler.", "Noktalama yanlışını bulur."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.6.2", "unit": "Noktalama İşaretleri",
+    "title": "İki nokta, üç nokta, soru, ünlem ve çizgi işaretlerini doğru kullanabilme",
+    "icerik": "İki nokta (:), üç nokta (…), soru işareti (?), ünlem işareti (!), kısa çizgi (-), uzun çizgi (–).",
+    "terms": "iki nokta, üç nokta, soru işareti, ünlem, kısa çizgi, uzun çizgi",
+    "surec": ["İşaretin cümledeki işlevini belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.6.3", "unit": "Noktalama İşaretleri",
+    "title": "Ayraç, tırnak, kesme ve eğik çizgi işaretlerini doğru kullanabilme",
+    "icerik": "Eğik çizgi (/), ters eğik çizgi (\\), tırnak işareti (\" \"), tek tırnak işareti (' '), denden işareti (\"), yay ayraç ( ), köşeli ayraç [ ], kesme işareti (').",
+    "terms": "eğik çizgi, tırnak işareti, denden, yay ayraç, köşeli ayraç, kesme işareti",
+    "surec": ["Kesme işaretinin kullanımını denetler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.7.1", "unit": "Biçim Bilgisi",
+    "title": "Kök ile çekim ve yapım eklerini ayırt edebilme",
+    "icerik": "Kök; çekim ekleri; yapım ekleri.",
+    "terms": "kök, gövde, çekim eki, yapım eki",
+    "surec": ["Sözcüğün kökünü bulur.", "Ekin çekim mi yapım eki mi olduğunu belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.7.2", "unit": "Biçim Bilgisi",
+    "title": "Sözcüğün yapısını çözümleyebilme",
+    "icerik": "Sözcüğün yapısı: basit, türemiş, birleşik sözcükler.",
+    "terms": "basit sözcük, türemiş sözcük, birleşik sözcük",
+    "surec": ["Sözcüğü yapısına göre sınıflandırır."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.8.1", "unit": "Sözcük Türleri",
+    "title": "İsmi ve isim çeşitlerini çözümleyebilme",
+    "icerik": "İsim çeşitleri; isim çekim ekleri; yapısına göre isimler.",
+    "terms": "isim, özel ad, tür adı, isim çekim eki",
+    "surec": ["İsmi türüne göre sınıflandırır."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.8.2", "unit": "Sözcük Türleri",
+    "title": "Sıfatı ve sıfat çeşitlerini çözümleyebilme",
+    "icerik": "Sıfat çeşitleri; sıfatlarda pekiştirme; sıfatlarda küçültme; sıfatlarda yapı.",
+    "terms": "sıfat, niteleme sıfatı, belirtme sıfatı, pekiştirme, küçültme",
+    "surec": ["Sıfatı türüne göre belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.8.3", "unit": "Sözcük Türleri",
+    "title": "Zamiri ve zamir türlerini çözümleyebilme",
+    "icerik": "Zamir (adıl); zamir türleri; yapılarına göre zamirler.",
+    "terms": "zamir, adıl, kişi zamiri, işaret zamiri, belgisiz zamir, ilgi zamiri, soru zamiri",
+    "surec": ["Zamiri türüne göre belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.8.4", "unit": "Sözcük Türleri",
+    "title": "İsim ve sıfat tamlamalarını çözümleyebilme",
+    "icerik": "Tamlama; isim tamlaması; sıfat tamlaması.",
+    "terms": "tamlama, isim tamlaması, sıfat tamlaması, tamlayan, tamlanan",
+    "surec": ["Tamlamanın türünü ve ögelerini belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.8.5", "unit": "Sözcük Türleri",
+    "title": "Zarfı ve zarf türlerini çözümleyebilme",
+    "icerik": "Zarf (belirteç); zarf türleri; zarflarda pekiştirme; yapılarına göre zarflar.",
+    "terms": "zarf, belirteç, durum zarfı, zaman zarfı, miktar zarfı, yer-yön zarfı, soru zarfı",
+    "surec": ["Zarfı türüne göre belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.8.6", "unit": "Sözcük Türleri",
+    "title": "Edat, bağlaç ve ünlemi ayırt edebilme",
+    "icerik": "Edat (ilgeç), bağlaç ve ünlemlerin özellikleri.",
+    "terms": "edat, ilgeç, bağlaç, ünlem",
+    "surec": ["Sözcüğün edat mı bağlaç mı olduğunu gerekçelendirir."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.9.1", "unit": "Fiiller",
+    "title": "Fiilde kip ve kip kaymasını çözümleyebilme",
+    "icerik": "Fiiller: iş, oluş, durum fiilleri. Fiilde kipler: haber kipleri, dilek kipleri. Fiilde kip kayması (anlam-zaman kayması).",
+    "terms": "iş fiili, oluş fiili, durum fiili, haber kipi, dilek kipi, kip kayması",
+    "surec": ["Fiilin kipini belirler.", "Kip kaymasını fark eder."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.9.2", "unit": "Fiiller",
+    "title": "Ek-fiili tanıyabilme ve işlevini belirleyebilme",
+    "icerik": "İsim ve isim soylu sözcüklere gelen ek-fiil; fiillere gelen ek-fiil.",
+    "terms": "ek-fiil, ek eylem, imek",
+    "surec": ["Ek-fiilin işlevini belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.9.3", "unit": "Fiiller",
+    "title": "Fiilin yapısını çözümleyebilme",
+    "icerik": "Basit fiil, türemiş fiil, birleşik fiil.",
+    "terms": "basit fiil, türemiş fiil, birleşik fiil",
+    "surec": ["Fiili yapısına göre sınıflandırır."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.9.4", "unit": "Fiiller",
+    "title": "Fiilimsileri ve çeşitlerini çözümleyebilme",
+    "icerik": "Fiilimsiler (eylemsiler) ve çeşitleri: isim fiil, zarf fiil, sıfat fiil.",
+    "terms": "fiilimsi, eylemsi, isim fiil, zarf fiil, sıfat fiil",
+    "surec": ["Cümledeki fiilimsiyi bulur ve türünü belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.9.5", "unit": "Fiiller",
+    "title": "Fiilde çatıyı çözümleyebilme",
+    "icerik": "Nesne-yüklem ilişkisine göre fiiller (geçişli-geçişsiz, ettirgen-oldurgan); özne-yüklem ilişkisine göre fiiller (etken-edilgen, dönüşlü-işteş).",
+    "terms": "çatı, geçişli, geçişsiz, ettirgen, oldurgan, etken, edilgen, dönüşlü, işteş",
+    "surec": ["Fiilin çatısını nesne ve özne ilişkisi üzerinden belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.10.1", "unit": "Cümlenin Ögeleri",
+    "title": "Cümlenin ögelerini belirleyebilme",
+    "icerik": "Temel ögeler: yüklem, özne. Yardımcı ögeler: nesne, yer tamlayıcısı, zarf tümleci. Cümlede vurgu. Cümle dışı unsurlar (ünlemler, bağlaçlar, ara sözler).",
+    "terms": "yüklem, özne, nesne, yer tamlayıcısı, zarf tümleci, cümle vurgusu, cümle dışı unsur, ara söz",
+    "surec": ["Cümlenin temel ve yardımcı ögelerini ayırır.", "Cümle vurgusunun hangi ögede olduğunu belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.11.1", "unit": "Cümle Türleri",
+    "title": "Cümleleri yüklemine, dizilişine, anlamına ve yapısına göre sınıflandırabilme",
+    "icerik": "Yüklemin türüne göre: fiil (eylem) cümlesi, isim (ad) cümlesi. Öge dizilişine göre: kurallı, devrik, eksiltili cümleler. Anlamına göre: olumlu, olumsuz, soru, ünlem cümlesi. Yapısına göre: basit cümle; birleşik cümle (girişik, şartlı, ki'li, iç içe birleşik); sıralı cümle (bağımlı sıralı, bağımsız sıralı); bağlı cümle (bağımlı bağlı, bağımsız bağlı).",
+    "terms": "fiil cümlesi, isim cümlesi, kurallı, devrik, eksiltili, basit cümle, birleşik cümle, girişik, şartlı, sıralı cümle, bağlı cümle",
+    "surec": ["Cümleyi dört ölçüte göre sınıflandırır.", "Yapısına göre birleşik cümle türünü belirler."],
+    "uygulama": "", "kapsamDisi": []
+  },
+
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.12.1", "unit": "Anlatım Bozuklukları",
+    "title": "Anlama dayalı anlatım bozukluklarını belirleyebilme ve düzeltebilme",
+    "icerik": "Gereksiz sözcük kullanımı; sözcüğün yanlış anlamda kullanımı; anlamca çelişen sözlerin birlikte kullanımı; sözcüğün yanlış yerde kullanımı; mantık hatası ve sıralama yanlışları; anlam belirsizliği; deyim ve atasözlerinin yanlış kullanımı; yanlış bağlaç kullanımı.",
+    "terms": "gereksiz sözcük, anlam belirsizliği, mantık hatası, çelişen sözler, yanlış bağlaç",
+    "surec": ["Cümledeki anlam bozukluğunu bulur.", "Bozukluğun türünü belirleyip cümleyi düzeltir."],
+    "uygulama": "", "kapsamDisi": []
+  },
+  {
+    "subject": "Türkçe", "grade": null, "code": "TÜR.12.2", "unit": "Anlatım Bozuklukları",
+    "title": "Yapıya dayalı anlatım bozukluklarını belirleyebilme ve düzeltebilme",
+    "icerik": "Öge eksikliği (yüklem, özne, nesne, tümleç eksikliği); özne-yüklem uyuşmazlığı (tekillik-çoğulluk); ek-fiil eksikliği; ek yanlışları ve tamlama yanlışları; fiilimsi eksikliği; fiilimsi uyuşmazlığı; çatı uyuşmazlığı.",
+    "terms": "öge eksikliği, özne-yüklem uyuşmazlığı, ek-fiil eksikliği, tamlama yanlışı, fiilimsi eksikliği, çatı uyuşmazlığı",
+    "surec": ["Cümledeki yapısal bozukluğu bulur.", "Eksik ögeyi tamamlayarak cümleyi düzeltir."],
+    "uygulama": "", "kapsamDisi": []
+  }
+]

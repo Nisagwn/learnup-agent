@@ -1,0 +1,222 @@
+[
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.1.1",
+    "title": "Psikolojinin tanımı, konusu ve temel bileşenlerini çözümleyebilme",
+    "unit": "PSİKOLOJİ İLE TANIŞMA",
+    "temaNo": 1,
+    "surec": [
+      "Psikolojinin tanımını, konusunu ve temel bileşenlerini belirler.",
+      "Psikolojinin temel bileşenleri arasındaki ilişkileri belirler."
+    ],
+    "icerik": "Psikolojinin Tanımı, Konusu ve Amaçları Psikolojinin Alt Dalları Psikolojinin Yöntem ve Teknikleri",
+    "terms": "algı, bilişsel süreçler, davranış, duyum, organizma, psikoloji",
+    "uygulama": "Öğrencilere; psikolojinin tanımınına, konusuna ve amaçlarına yönelik bilgi notları verilir (E1.1). Psikolojinin tanımında organizma, davranış ve bilişsel süreçler kavramları ile birlikte can, ruh ve nefs kavramlarına; psikolojinin konusunda uyarıcı, tepki, duyum ve algı kavramlarına; psikolojinin amaçlarında davranışı tanımlama, açıklama, tahmin ve kontrol etme kavramlarına yer verilir. Söz konusu kavramların örneklendirildiği olay veya durumlar verilerek öğrencilerden bu olay ve durumların hangi kavramlarla ilişkili olduğunu belirlemeleri istenir. (KB2.11). Bunun için anlam çözümleme tablosu kullanılabilir. Öğrencilre verilen örnek olay ve durumlarda bulunan karakterler ile empati kurar (E2.1). Öğrenciler, diğerlerinin bakış açılarını anlamaya yönelik farkındalıklarını artırarak sosyal ipuçlarını dikkate alır ve toplumsal normlar konusunda bir anlayış geliştirir (SDB2.3, D5.1). Öğrenciler, psikolojinin amaçları konusunda ulaştıkları bilgilere kendi hayatlarından örnekler vererek duygularını ve düşüncelerini sözel olarak ifade eder (E3.5, SDB1.1). Öğrencilere, farklı çalışma alanları ile ilgili yazılı ya da görsel materyaller verilir (E1.1, OB4). Öğrencilerin, bu alanlarının psikoloji ile ilişkisini tahmin etmeleri sağlanır (KB2.12). Öğrencilere, psikolojinin alt dallarının (deneysel psikoloji, psikometri, gelişim psikolojisi, sosyal psikoloji, klinik psikoloji, danışmanlık psikolojisi, eğitim psikolojisi, adli psikoloji, endüstri ve örgüt psikolojisi) çalışma alanlarını içeren bilgi notu verilir (OB1). Öğrencilerin günlük hayattan seçilerek verilen örnek olaylar ve durumları karşılaştırarak psikolojinin hangi alt dalları ile ilişkili olduğunu belirlemeleri sağlanır (KB2.7). Bunun için anlam çözümleme tablosu ya da yapılandırılmış grid kullanılabilir. Öğrencilerden Farabi, İbn Sina, Gazali, Mustafa Şekip Tunç, Çiğdem Kâğıtçıbaşı ve Doğan Cüceloğlu’nun psikoloji bilimine katkılarını araştırmaları istenir. Araştırmada ele ettikleri verileri zaman çizelgesi üzerinde göstermeleri sağlanır. Türkiye'de Psikoloji biliminde yapılan çalışmaların devamını sağlamak için neler yapılması gerektiği hakkında görüş belirtir (D19.3). Öğrencilere; sosyal hayatta karşılaşabilecek durumlarla ilgili örneklerin, psikolojinin deneysel ve ilişkisel yöntemi ile betimsel yöntem ve tekniklerinin (gözlem, görüşme, psikolojik testler, anket ve vaka incelemesi) açıklandığı bilgi notları ile açık uçlu soruların yer aldığı çalışma kâğıdı verilir (OB1). Öğrencilerin iş birliği yaparak örnek durumlarda kullanılabilecek araştırma yöntem ve tekniklerine ilişkin görüşlerini ifade etmeleri istenir (SDB2.2). Öğrencilerin söz konusu örnek olayları dikkate alarak araştırma yöntem ve tekniklerinin işlevlerine yönelik çıkarımlarda bulunmaları sağlanır (KB2.10). Öğrencilerden; performans görevi olarak psikolojinin amaçlarını, alt dallarını, yöntem ve tekniklerini günlük hayatla ilişkilendirmeleri ve bu konuda poster hazırlamaları istenir. Öğrencilerin, deneyimlerinden ya da yakın çevrelerine ilişkin gözlemlerinden yola çıkarak günlük rutinlerden örnek durumlar belirlemeleri istenir. Bu durumları; psikolojinin amaçları, alt dalları, yöntem ve teknikleri ile ilişkilendirmeleri sağlanır (KB2.11). Öğrenciler, bu ilişkilendirmeyi yansıtan estetik ve özgün bir poster hazırlar (E3.3, OB4, D7.1). Performans görevi; içeriği, kurulan ilişkilerin tutarlılığı, posterin özgünlüğü ve estetiği gibi kriterler açısından dereceli puanlama anahtarı kullanılarak değerlendirilebilir. Öğrenciler, performans çalışmasında görev bilinci ile hareket ederek ödev ve sorumluluklarını etik ilkelere uygun şekilde yerine getirir (D3.3, D16.3).",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.2.1",
+    "title": "Gelişim psikolojisinin temel kavramlarını, gelişimi etkileyen etmenleri ve gelişimin ilkelerini özetleyebilme",
+    "unit": "GELİŞİMİ ANLAMAK",
+    "temaNo": 2,
+    "surec": [
+      "Gelişim psikolojisi ile ilgili temel kavramları çözümler.",
+      "Gelişimi etkileyen etmenleri sınıflandırır.",
+      "Kendisinin ve çevresindeki kişilerin gelişim sürecini, gelişim ilkelerini dikkate alarak yorumlar."
+    ],
+    "icerik": "Gelişime Genel Bir Bakış Gelişim Dönemleri Gelişim Görevleri İnsan Zekâsı ve Yapay Zekâ Kişilik ve Benlik-Dijital Benlik",
+    "terms": "büyüme, gelişim, gelişme, kişilik, kritik dönem, olgunlaşma, zekâ",
+    "uygulama": "Öğrencilere; gelişim psikolojisinin temel kavramlarının (büyüme, gelişim, gelişme, gelişim görevi, olgunlaşma, hazırbulunuşluk, öğrenme) açıklamalarının, örnek durumlarının ve konuya ilişkin açık uçlu soruların bulunduğu çalışma kâğıdı verilir. Verilen çalışma kâğıdındaki örneklerin dünyadaki ve Türk Kültür Medeniyetindeki çocuk gelişimine ilişkin kültürel davranışları yansıtacak biçimde olması sağlanır. Öğrenciler, ilgili kavramlara ilişkin kendi deneyimlerinden ya da ailesindeki ve yakın çevresindeki kişilerin deneyimlerinden, onların mahremiyetini koruyarak örnekler verir (D2.1). Süreçte eşleştirme testi öğretim tekniği kullanılabilir. Söz konusu kavramların daha iyi anlaşılabilmesi için dünyadan ve Türk Kültür medeniyetinden kültürel örnekler ile desteklenmesi sağlanır. Bunun için geleneksel çocuk yetiştirme pratiklerinden (bebeklikte kundak, çocuklukta sorumluluk alma), geleneksel çocuk oyunlarının gelişim ve hazır bulunuşluğa etkisi, Nasreddin Hoca fıkralarındaki çocuk algısı ve bilgelik aktarımı, üzerinden tartışma gerçekleştirilir. Öğrencilere, gelişimi etkileyen etmenler [kalıtım, çevre (doğum öncesi, doğum sırası ve doğum sonrası) ve tarihsel zaman] ile ilgili alan çalışmalarından yazılı ya da görsel örnekler verilir (E1.1, OB1, OB4). Bireysel farklılıkların nedenleri konusunda tartışma yaptırılır (SDB2.1, KB2.18). Bunun için görüş geliştirme öğretim tekniği kullanılabilir. Öğrencilere, gelişimi etkileyen etmenleri örnekleyen yapılandırılmış bir metin verilir (OB1). Öğrencilerin; iş birliği yaparak gelişimi etkileyen etmenleri belirlemeleri, sınıflandırmaları ve bu etmenlere günlük hayattan örnek vermeleri sağlanır (E3.5, SDB2.2, KB2.5). Öğrenciler, örneklerini görsellerle destekleyerek sunum hazırlar ve sunumlarını güvenli ağlarda yayımlar (OB2). Öğrenciler, sunumu hazırlarken ihtiyacı olan arkadaşlarına yardım eder (D20.4). Süreç sonunda öğrencilerden yansıtma yazısı yazmaları istenebilir. Öğrencilere, ”Gelişim yaşa ve bireye göre değişir mi? Bebeklerin ve yetişkinlerin fiziksel beceriler açısından farklılıkları nelerdir? Genetik faktörler ve çevre koşulları gelişimi nasıl etkiler?” gibi gelişim ilkelerini açığa çıkaracak nitelikte sorular sorulur (E1.1). Süreçte öğrenciler çevre kirliliğinin gelişimi olumsuz etkilediğini ifade eder (D18.3). Öğrenciler, iş birlikli olarak gelişim ilkelerinin neler olduğunu sorgular ve bu gelişim ilkelerini kendi cümleleri ile ifade etmeleri sağlanır (SDB2.2, KB2.8). Öğrencilere, kavram yanılgıları ve öğrenme eksiklikleri ile ilgili dönüt verilir. Öğrencilerin gelişim ilkelerini dikkate alarak kendisinin ve çevresindeki kişilerin gelişim sürecini yorumlamaları sağlanır (KB2.14). Öğrenciler, kendi gelişim özelliklerini fark ederek bu özelliklerine ilişkin duygu ve düşüncelerini açıklar (D6.2, D10.1). Süreçte konuşma halkası ya da akvaryum tekniği kullanılabilir. Süreç sonunda çıkış kartı tekniğinden yararlanılabilir.",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.2.2",
+    "title": "Gelişim dönemlerinde değişim ve sürekliliği algılayabilme",
+    "unit": "GELİŞİMİ ANLAMAK",
+    "temaNo": 2,
+    "surec": [
+      "Gelişim özelliklerini dikkate alarak gelişim dönemlerini karşılaştırır.",
+      "Gelişim dönemlerine göre gelişim görevlerini sıralar.",
+      "Gelişim dönemlerindeki değişim ve sürekliliği neden ve sonuçları ile yorumlar.",
+      "Gelişim dönemindeki değişim ve sürekliliği sentezler.",
+      "Kendisinin ve çevresindeki kişilerin gelişim dönemlerine göre yaşayacakları değişim ve sürekliliğe ilişkin gözleme dayalı öngörüde bulunur."
+    ],
+    "icerik": "Gelişime Genel Bir Bakış Gelişim Dönemleri Gelişim Görevleri İnsan Zekâsı ve Yapay Zekâ Kişilik ve Benlik-Dijital Benlik",
+    "terms": "büyüme, gelişim, gelişme, kişilik, kritik dönem, olgunlaşma, zekâ",
+    "uygulama": "Öğrencilere; gelişim dönemlerinde yaşanan değişim ve süreklilikle ilgili olarak, farklı gelişim dönemlerini yansıtan günlük hayat örneklerine ya da Türk mitolojisi ve Dede Korkut hikayelerinde çocukların eğitimi ve büyüme sürecine ilişkin aktarımlar konusunda görseller ya da yapılandırılmış bir metin verilir (E1.1, OB4). Öğrencilerden, verilen içerikleri göz önünde bulundurarak gelişim dönemlerinin karşılaştırmaları istenir. Gelişim alanlarının (fiziksel, bilişsel, duygusal, sosyal ve ahlaki) ve gelişim dönemlerinin (bebeklik, ilk çocukluk, orta çocukluk, son çocukluk, ergenlik, ilk yetişkinlik, orta yetişkinlik, ileri yetişkinlik) temel özellikleri verilir. Öğrencilerin, her gelişim döneminde gerçekleşen değişimleri gelişim alanlarına göre sıralamaları sağlanır. Bunun için eşleştirme maddeleri ya da anlam çözümleme tablosu kullanılabilir. Öğrencilere, Havighurst'ün (Hevikhörst) “Gelişim Görevleri” yaklaşımı ile ilgili bilgi görseli verilir. Öğrencilerden, gelişim dönemlerindeki değişim ve sürekliliği nedenleri ve sonuçları ile yorumlamaları istenir (OB4, KB2.14). Bunun için balık kılçığı kullanılabilir (OB4, KB2.14). Öğrenciler, süreç içerisinde kendi deneyimlerinden örnekler verir (SDB1.2). Öğrencilere; akademik başarı, meslek seçimi, arkadaşlık ilişkisi, olumlu beden algısı geliştirme konularında örnek senaryolar verilir. Öğrenciler ergenlik dönemi gelişim görevlerinin yerine getirildiği bu senaryoları inceler. Gelişim alanlarında meydana gelen değişimlerin sonuçlarını yorumlar. Senaryolardaki karakterlerle empati kurarak karakterlerin davranışlarının nedenlerine ilişkin mantıksal karar vermeleri istenir (E2.1, KB3.1). Öğrenciler karar verme sürecinde ön yargılı olmaktan kaçınır (D1.4). Öğrencilerden deneyimlerinden yola çıkarak gelişim görevlerini yansıtan özgün bir metin yazmaları istenebilir. (SDB1.1, SDB1.3). Öğrencilerden, iş birliği içinde Jean Piaget’nin Bilişsel Gelişim Kuramı’ndaki bilişsel gelişim dönemlerini, Lawrence Kohlberg’in Ahlak Gelişimi Kuramı’ndaki ahlaki gelişim düzeylerini, Erik Erikson’un Psikososyal Gelişim Kuramı’ndaki psikososyal gelişim dönemlerini ve Sigmund Freud’un Psikoseksüel Gelişim Kuramı’ndaki psikoseksüel gelişim dönemlerini güvenilir kaynaklardan araştırmaları istenir. Öğrencilerin yaptıkları araştırmalar sonucunda elde ettikleri bilgileri rapor hâline getirmeleri, hazırlanan raporlardan yola çıkarak bir sunum hazırlayıp sınıfta paylaşmaları sağlanır. Raporlarda insanın felsefi boyutuna vurgu yaparak \"insan nedir?\", \"insanın varlık amacı nedir?\" gibi soruların cevaplarına yer verilmesi beklenir. Öğrencilerin sunum hazırlama ve sunma sürecinde kişisel verilerin yer aldığı dijital araçları bilinçli, güvenli ve etik biçimde kullanmaları beklenir (D8.2). Öğrencilerden, sunumlardan hareketle kendi yaşantıları ve yakın çevrelerindeki bireylerin deneyimleri ile ilgili kuramlar arasında ilişki kurmaları istenir. Bu ilişkilerden elde ettikleri verileri dikkate alarak bireysel farklılıklara saygı duymanın değerine yönelik özgün görüşler geliştirmeleri sağlanır (E3.3, SDB1.3). Süreç boyunca öğrencilerin arkadaşlarının bireysel farklılıklarını kabul etmeleri desteklenir (D4.4). Öğrencilerin bu çalışması performans görevi olarak kabul edilir. Performans görevi; içeriğe uygunluğu, bilgilerin doğruluğu ve tutarlılığı, rapor düzeni, sunum ve zamanın etkili kullanımı gibi kriterler açısından dereceli puanlama anahtarı kullanılarak değerlendirilebilir. Öğrenciler, performans çalışmasında görev bilinci ile hareket ederek ödev ve sorumluluklarını etik ilkelere uygun şekilde yerine getirir (D3.3, D16.3). Öğrencilerden, farklı gelişim dönemlerindeki kişilerin gelişim görevlerine ilişkin işbirlikli olarak özgün bir senaryo oluşturmaları istenir. Öğrencilerin senaryo hazırlarken bir bütün olarak gelişmenin ne anlama geldiğini, \"egonun aşılması\" ve \"yüksek değerler\"in bütün olarak gelişimde oynadığı rolün göz önünde bulundurulması sağlanır. Öğrencilerin senaryolardaki kişilerin bir bütün olarak gelişimleri ile ilgili çıkarım yapmaları ve bu karakterlerin gelecekteki gelişimlerine yönelik öngörüde bulunmaları sağlanır (SDB2.3, KB2.10, D8.4).",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.2.3",
+    "title": "İnsan zekâsı ile yapay zekâyı karşılaştırabilme",
+    "unit": "GELİŞİMİ ANLAMAK",
+    "temaNo": 2,
+    "surec": [
+      "İnsan zekâsı ile yapay zekânın özelliklerini belirler.",
+      "İnsan zekâsı ve yapay zekânın benzerliklerini listeler.",
+      "İnsan zekâsı ve yapay zekânın farklılıklarını listeler."
+    ],
+    "icerik": "Gelişime Genel Bir Bakış Gelişim Dönemleri Gelişim Görevleri İnsan Zekâsı ve Yapay Zekâ Kişilik ve Benlik-Dijital Benlik",
+    "terms": "büyüme, gelişim, gelişme, kişilik, kritik dönem, olgunlaşma, zekâ",
+    "uygulama": "Öğrencilere, zekânın işlevlerini anlatan ve satranç, akıl oyunları, film, haber gibi örnekleri içeren yazılı ya da görsel materyaller sunulur (E1.1, OB4). Ardından, zekânın gelişip gelişmediğine ilişkin bir tartışma yapmaları sağlanır (SDB2.1, KB2.18). Tartışma sürecinde, zekânın gelişiminde kalıtım ve çevrenin etkileşimine dikkat çekilir ve öğrencilerin bu etkileşimi fark etmeleri beklenir. Bu süreçte, zekânın çok boyutluluğuna ve kültürel bağlamda nasıl şekillendiğine de değinilebilir. Örneğin, Fatih Sultan Mehmet’in ve Mustafa Kemal Atatürk’ün bilim, sanat ve strateji alanlarındaki çok yönlü başarıları farklı zekâ türlerinin tarihsel bağlamda nasıl ortaya çıktığını tartışmaya açmak için kullanılabilir. Öğrencilere; sosyal zekâ, duygusal zekâ, zekâ bölümü zekânın bileşenleri (kristalize zekâ ve akışkan zekâ) analitik zekâ, ruhsal zekâ ile yapay zekânın tanımını ve özelliklerini içerenbilgi notu verilir (OB1). Öğrencilerin; empati kurma, etik karar verme ve yaratıcılık kavramlarını göz önünde bulundurarak “Farklı zekâ türleri olmasının nedenleri nelerdir? Yapay zekâ insan zekâsını nasıl model alır?” sorularını göz önüne alarak tartışmaları sağlanır (SDB2.1, KB2.18). Bu aşamada büyük grup tartışması tekniği kullanılır. Öğrencilerden, insan zekâsının ve yapay zekânın duyguları fark etme, uyum sağlama, hız, deneyimden sonuç çıkarma, verilen görevi tamamlama ve akıl yürütme açısından benzerliklerini ve farklılıklarını listelemeleri istenir (KB2.5). Bunun için venn şeması ya da T tablosu kullanılabilir.",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.2.4",
+    "title": "Kişilik ve benlik-dijital benliği karşılaştırabilme",
+    "unit": "GELİŞİMİ ANLAMAK",
+    "temaNo": 2,
+    "surec": [
+      "Kişilik ve benlik-dijital benliğin özelliklerini belirler.",
+      "Kişilik ve benlik-dijital benliğin benzerliklerini listeler.",
+      "Kişilik ve benlik-dijital benliğin farklılıklarını listeler."
+    ],
+    "icerik": "Gelişime Genel Bir Bakış Gelişim Dönemleri Gelişim Görevleri İnsan Zekâsı ve Yapay Zekâ Kişilik ve Benlik-Dijital Benlik",
+    "terms": "büyüme, gelişim, gelişme, kişilik, kritik dönem, olgunlaşma, zekâ",
+    "uygulama": "Öğrencilere, kişilik özelliklerinde bireysel farklılıkları yansıtan örnek durumlar verilir (E1.1). Örnekler içinde Karagöz, Hacivat, Kavuklu, Pişekar gibi karakterlere yer verilir. Öğrencilerden verilen örnek durumlardaki bireylerin tutumlarını, davranış biçimlerini ve sosyal ilişkilerini dikkate alarak onları birbirinden ayıran temel özellikleri belirtmeleri istenir. Ayrıca bireyleri değerlendirirken hangi ölçütleri göz önüne aldıkları (örneğin davranışlar, güvenilir olmak, dürüst olmak gibi) ifade etmeleri beklenir. Öğrencilerden örnek durumlarda bireylerin sosyal medya kullanımlarına ilişkin verilen bilgileri analiz ederek bireylerin dijital ortamlarda kendilerini nasıl ifade ettiklerini değerlendirmeleri istenir. Bu süreçte öğrencilerin kişilik, benlik ve dijital benlik kavramlarının temel özelliklerini belirlemeleri, bu kavramları tanımlamaları ve aralarındaki ilişkiyi yorumlamaları beklenir. Yorumlamada \"benlik\" ve \"kendi gerçekleştirme\" arasındaki ilişkinin vurgulanması ve insanın varlık amacına vurgu yapılması sağlanır. Öğrencilerin, değerlendirmelerini kısa bir konuşma ya da yansıtma yazısı ile ifade etmeleri sağlanır (SDB2.1, KB2.15, KB2.18). Öğrencilere, uygulama sürecinde kavram yanılgılarına ve öğrenme eksikliklerine yönelik dönüt verilir. Öğrencilerden; aile, okul ve dijital ortam gibi farklı sosyal çevrelerde benliklerini nasıl ifade ettiklerini karşılaştırmaları istenir. Öğrencilerin, bu ortamlardaki benzerlik ve farklılıkları değerlendirerek sosyal rollerin benlik sunumuna etkisini fark etmeleri amaçlanır (SDB1.2). Öğrencilerden, ailenin benlik gelişimine katkısını düşünmeleri ve aile bağlarının kendileri için taşıdığı önemi ifade etmeleri beklenir (D2.1).",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.3.1",
+    "title": "Öğrenmenin temel kavramlarını çözümleyebilme",
+    "unit": "NASIL ÖĞRENİRİZ?",
+    "temaNo": 3,
+    "surec": [
+      "VE SÜREÇ BİLEŞENLERİ      a) Öğrenme ile ilgili temel kavramları belirler.",
+      "Öğrenme ile ilgili temel kavramlar arasındaki ilişkiyi belirler."
+    ],
+    "icerik": "Öğrenmeye Genel Bir Bakış Öğrenmeyi Etkileyen Temel Etmenler Öğrenme Türleri İnsan Öğrenmesi ve Makine Öğrenmesi",
+    "terms": "biliş, hazırbulunuşluk, öğrenme, öğretim",
+    "uygulama": "Öğrencilere öğrenmenin temel kavramlarını (öğrenme, öğretme, öğretim, hazırbulunuşluk) konu alan öğrenme ile ilgili deney [Edward Thorndike’ın (Edvırt Törndayk) “Bulmaca Kutusu Deneyi” ya da Wolfgang Köhler’in (Volfgank Köhler) “Şempanze Deneyi”] verilir (E1.1). Öğrencilerden, deneyde yer alan öğrenmenin temel kavramlarını belirlemeleri ve kendi cümleleri ile ifade etmeleri istenir (SDB2.1). Öğrencilerin, belirlenen kavramları karşılaştırarak söz konusu kavramların birbirleri ile ilişkilerini belirlemeleri ve kendi örneklerini vermeleri sağlanır. Süreç sonunda öğrenciler kavram haritası hazırlar.",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.3.2",
+    "title": "Öğrenmeyi etkileyen etmenleri özetleyebilme",
+    "unit": "NASIL ÖĞRENİRİZ?",
+    "temaNo": 3,
+    "surec": [
+      "Doğuştan, geçici ve öğrenilmiş davranış türlerini çözümler.",
+      "Öğrenmeyi etkileyen etmenleri sınıflandırır.",
+      "Öğrenmeyi etkileyen etmenleri yorumlar."
+    ],
+    "icerik": "Öğrenmeye Genel Bir Bakış Öğrenmeyi Etkileyen Temel Etmenler Öğrenme Türleri İnsan Öğrenmesi ve Makine Öğrenmesi",
+    "terms": "biliş, hazırbulunuşluk, öğrenme, öğretim",
+    "uygulama": "Öğrencilere günlük hayattaki öğrenilmiş ve öğrenilmemiş davranışlara ilişkin örnek olaylar ya da durumlar verilir (E1.1). Öğrencilere, yönlendirici sorular (Bu olay ya da durumlardaki davranışların hangileri bir türün tüm üyelerinde görülür? Hangi davranışlar refleksiftir? Hangi davranışlar kalıcıdır? Hangi davranışlar gerektiğinde ortaya çıkar? Hangi davranışlar deneyim sonucunda oluşur? Zihinsel çaba ile ortaya çıkan davranışların diğerlerinden farkı nedir? vb.) sorularak bu davranışlardan hangilerinin doğuştan, geçici ya da öğrenilmiş olduğuna ilişkin bir sınıflandırmanın iş birliği içinde yapılması sağlanır (SDB2.2, KB2.4, KB2.5). Bunun için yapılandırılmış grid ya da kavram haritası öğretim tekniği kullanılabilir. Öğrenilmiş davranışların yaşantı ürünü, sonradan edinilmiş ve nispeten kalıcı izli olduğu vurgulanır. Süreç sonunda öğrencilerden kültür ögesi içeren bir davranışın öğrenilme süreci ile ilgili afiş ya da karikatür hazırlaması istenebilir. Öğrencilere kavram yanılgıları ve öğrenme eksiklikleri ile ilgili dönüt verilir. Öğrencilere, öğrenmeyi etkileyen etmenlerin (türe özgü hazırbulunuşluk, dikkat, genel uyarılmışlık hâli, zekâ, fizyolojik durum, kaygı, transfer, olgunlaşma, aralıklı öğrenme, toplu öğrenme, parçalara bölerek öğrenme, bütün öğrenme, geri bildirim, telaffuz edilebilirlik, algısal ayırt edilebilirlik, anlamsal çağrışım, kavramsal gruplama) kısa tanımlarının yer aldığı bilgi notu verilir (OB1). Öğrencilerin, bu etmenleri öğrenenden, öğrenme malzemesinden ve öğrenme yönteminden kaynaklananlar şeklinde iş birliği yaparak gruplamaları sağlanır (SDB2.2, KB2.5). Öğrencilere, bunun için kavram haritası hazırlatılır. Söz konusu etmenlerle ilgili örnekler verilerek öğrencilerin bu örneklerin hangi etmen ya da etmenlerle ilişkili olduğunu bulması sağlanır. Bunun için eşleştirme maddeleri kullanılabilir. Öğrencilerin öğrenmeyi etkileyen etmenleri yorumlayabilmeleri için bu etmenlerin akademik başarıya etkisi konusunda eleştirel bir metin yazmaları sağlanır (E3.10, KB3.3). Çalışmanın sonunda öğrencilerden, bu etmenlerin kendi öğrenme süreçlerine nasıl etki ettiğine ilişkin kısa bir örnek ya da durum yazısı hazırlayarak öz eleştiri yapmaları ve davranışlarını düzenlemeleri beklenir (D9.1).",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.3.3",
+    "title": "Öğrenme yaklaşımlarını özetleyebilme",
+    "unit": "NASIL ÖĞRENİRİZ?",
+    "temaNo": 3,
+    "surec": [
+      "Öğrenme yaklaşımlarını çözümler.",
+      "Öğrenme yaklaşımlarını sınıflandırır.",
+      "Öğrenme yaklaşımlarını yorumlar."
+    ],
+    "icerik": "Öğrenmeye Genel Bir Bakış Öğrenmeyi Etkileyen Temel Etmenler Öğrenme Türleri İnsan Öğrenmesi ve Makine Öğrenmesi",
+    "terms": "biliş, hazırbulunuşluk, öğrenme, öğretim",
+    "uygulama": "Öğrencilere insanların ve hayvanların öğrenme davranışlarına ilişkin örnek olaylar ya da durumlar verilir. İnsanların ve hayvanların öğrenme davranışlardaki farklılıklar konusunda tartışmaları sağlanır (SDB2.1, KB2.18). Bunun için küçük grup tartışma öğretim tekniği kullanılabilir. Öğrencilere öğrenme yaklaşımlarının [davranışçı (klasik ve edimsel koşullanma), sosyal-bilişsel, bilişsel] tanımlarını, temel özelliklerini, bu yaklaşımları içeren örnek durumları ve açık uçlu soruları içeren çalışma kâğıdı verilir. Öğrencilerin farklı öğrenme türlerinde öğrenmenin nasıl gerçekleştiğini sorgulamaları sağlanır (KB2.8). Farklı kaynaklardan alınan örnekler (yaşanmış ya da kurgulanmış olaylar, gazete haberleri, deneyler vb.) göz önüne alınarak uyarıcı-tepki ilişkisine ve bilişsel süreçlere dikkat çeken sorular sorulur. Söz konusu örneklerdeki öğrenilen davranışları; gözlenebilir olması, modelden öğrenilmesi ve zihinsel bir süreç içermesi ölçütlerine göre gruplamaları istenir (KB2.5). Bunun için soru-cevap ve zihin haritası öğretim teknikleri kullanılabilir. Öğrencilere Ahilik geleneğindeki usta-çırak ilişkisi üzerinden, gözlem ve pekiştirme temelli öğrenmenin tarihsel örnekleri sunulur. Zanaatların kuşaktan kuşağa aktarımında gözlem ve pekiştirmenin rolü açıklanarak, öğrencilerin bu öğrenme yaklaşımlarını günlük hayatta hangi durumlarda ve nasıl kullandıklarını tartışmaları sağlanır (SDB2.1, KB2.18). Öğrencilerden, tartışma sonucunda öğrenme yaklaşımlarının tanım ve özelliklerini özetleyerek güçlü ve zayıf yönlerini eleştirel bir bakış açısıyla Frayer modeli kullanarak yorumlamaları istenebilir (E3.5, KB2.14, KB3.3).",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.3.4",
+    "title": "İnsan öğrenmesi ile makine öğrenmesini karşılaştırabilme",
+    "unit": "NASIL ÖĞRENİRİZ?",
+    "temaNo": 3,
+    "surec": [
+      "İnsan öğrenmesi ve makine öğrenmesinin özelliklerini belirler.",
+      "İnsan öğrenmesi ve makine öğrenmesinin benzerliklerini listeler.",
+      "İnsan öğrenmesi ve makine öğrenmesinin farklılıklarını listeler."
+    ],
+    "icerik": "Öğrenmeye Genel Bir Bakış Öğrenmeyi Etkileyen Temel Etmenler Öğrenme Türleri İnsan Öğrenmesi ve Makine Öğrenmesi",
+    "terms": "biliş, hazırbulunuşluk, öğrenme, öğretim",
+    "uygulama": "Öğrencilere, makine öğrenmesine ilişkin yazılı ya da görsel materyaller verilir. Öğrenciler, makine öğrenmesinin mantık ve matematik ile ilişkisi konusunda çıkarımda bulunur (KB2.10). Öğrencilere insanın öğrenme süreci (uyarıcı, tanıma, dikkat, algı, bilginin kodlanması, depolanması ve geri getirilmesi), makine öğrenmesinin bileşenleri (girdi, süreç, çıktı) ile nöron ve yapay sinir ağı arasındaki ilişkiyi açıklayan bilgi görseli verilir (E1.1, OB4). Öğrencilerin; insan öğrenmesi ve makine öğrenmesinin özelliklerini, bu öğrenmeler arasındaki benzerlikleri ve farklılıkları belirlemeleri sağlanır. Bunun için T tablosu ya da venn şeması kullanılabilir. Öğrencilerden, Cahit Arf'in “Makine Düşünebilir mi ve Nasıl Düşünebilir?” makalesini veya bu makaleyi açıklayan yapılandırılmış bir metni okumaları ve incelemeleri istenir. Öğrencilere, ilgili incelemelerinden hareketle insanın öğrenme sürecini makine öğrenmesi ile karşılaştırmaları konusunda performans görevi verilir. Öğrencilerden Cahit Arf'ın hayatına ve bilim dünyasına katkılarına kısaca değinen ve insan öğrenmesi ve makine öğrenmesini karşılaştıran bir sunum hazırlamaları istenir (E3.4, TAB2.1). Öğrenciler gerçekleştirdikleri bilimsel çalışmalarla ülkemizi temsil eden bilim insanlarını takdir eder (D19.2). Performans görevi; ulaşılan sonuçların doğruluğu, içerik, özgünlük, görsel kullanımı, sunum ve dil anlatım gibi kriterleri açısından dereceli puanlama anahtarı kullanılarak değerlendirilebilir. Öğrenciler performans çalışmasında görev bilinci ile hareket eder. Ödev ve sorumluluklarını görev etiğine uygun olarak yerine getirir (D3.3, D16.3).",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.4.1",
+    "title": "Uyum sorunlarını karşılaştırabilme",
+    "unit": "BİREYSEL VE SOSYAL UYUM",
+    "temaNo": 4,
+    "surec": [
+      "Uyum sorunlarının özelliklerini belirler.",
+      "Uyum sorunlarının benzerliklerini listeler.",
+      "Uyum sorunlarının farklılıklarını listeler."
+    ],
+    "icerik": "Uyum Sorunları Uyum Sağlama Uyum Sağlamaya Yönelik Yaklaşımlar Tutum ve Olumlu-Olumsuz Sosyal Davranışlar",
+    "terms": "anormal, benlik, duygu, kalıp yargı, normal, ön yargı, tutum, uyum",
+    "uygulama": "Öğrencilere, uyum sağlamanın gerçekleştiği örnek durumlar sunulur. Örnek durumlardaki karakterlerle empati kurarak uyum sağlamak için gerçekleştirdikleri davranışların neler olduğu, uyum sağlamanın ne demek olduğu, uyum sorunlarının sonuçlarının neler olabileceği gibi sorular sorularak öğrencilerin bu konu üzerinden tartışmaları sağlanır (SDB2.1, KB2.18, E2.1). Bunun için konuşma halkası ya da akvaryum tekniği kullanılabilir. Öğrencilere; bazı uyum sorunlarının [kaygı bozuklukları (özgül fobi, sosyal kaygı bozukluğu, travma sonrası stres bozukluğu), depresif bozukluk, bağımlılıklar (madde bağımlılığı, oyun bağımlılığı ve alışveriş bağımlılığı) ve yeme bozuklukları (anoreksiya nervoza, bulimiya nervoza ve tıkınırcasına yeme bozukluğu)] tanımlarını, örnek durumları ve açık uçlu soruları içeren çalışma kâğıdı verilir. Öğrencilerin uyum sorunlarının genel özelliklerini belirlemeleri istenir. Öğrenciler, çalışma kâğıdındaki uyum sorunlarının benzer ve farklı özelliklerini iş birliği yaparak belirlerler. Benzer ve farklı özelliklerle ilgili liste hazırlarlar. Öğrenciler, verilen örnek durumlarda hangi uyum sorununun olduğuna yönelik akıl yürüterek çözümlemelerde bulunur (E3.6, SDB3.3, KB3.2). Öğrenciler çalışmalarda aktif rol alır ve uyumlu davranırlar (D3.5, D10.3). Süreç sonunda yapılandırılmış grid ya da kavram haritası kullanılabilir.",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.4.2",
+    "title": "Uyum sağlamaya yönelik yaklaşım ve becerileri yapılandırabilme",
+    "unit": "BİREYSEL VE SOSYAL UYUM",
+    "temaNo": 4,
+    "surec": [
+      "Uyum sağlamaya yönelik yaklaşım ve becerileri inceleyerek nedensel ilişkiler ortaya koyar.",
+      "Belirlediği ilişkiler ve uyum sağlamada kullanılan farklı yöntemler arasında uyumlu bir bütün oluşturur."
+    ],
+    "icerik": "Uyum Sorunları Uyum Sağlama Uyum Sağlamaya Yönelik Yaklaşımlar Tutum ve Olumlu-Olumsuz Sosyal Davranışlar",
+    "terms": "anormal, benlik, duygu, kalıp yargı, normal, ön yargı, tutum, uyum",
+    "uygulama": "Öğrencilerin uyum sağlamaya yönelik yaklaşım ve becerileri yapılandırmaları amaçlanır. Öğrencilere pozitif psikoloji ne olduğu sorulur. Pozitif psikolojinin kavramları (psikolojik sağlamlık, umut, karakter güçleri ve erdemler, öz güven, öz saygı, travma sonrası büyüme) verilerek öğrencilerden bu kavramlara örnekler vermeleri istenir. Kavram yanılgıları ve öğrenme eksiklikleri hakkında dönüt verilir. Millî Mücadele yıllarında Türk halkının yaşadığı zorluklara ve bu zorluklar karşısında sergilediği yaklaşım hakkında görüşleri alınır. Millî Mücadele'nin kazanılmasında pozitif psikolojinin hangi kavramlarıyla ilişkili olduğu hakkında tartışma yaptırılır. Süreçte beyin fırtınası, çember veya akvaryum öğretim teknikleri kullanılabilir. Uyum sağlamaya yönelik yaklaşımları (kendi kendine yardım, kabul ve kararlılık yaklaşımı) ve becerileri (duygu ve stres yönetimi, etkili iletişim) tanımlayan bilgi notu verilerek öğrencilerin söz konusu yaklaşımların ilgili becerilerin kazanılmasındaki rolü ve önemi hakkında çıkarım yapmaları sağlanır. Bunun için örnek olaylar veya durumlardan hareket edilebilir. Doğal afetlerde yaşanılan sorunlara başa çıkmada söz konusu yaklaşım ve becerilerin rolü ve önemini ifade eden yansıtma yazısı yazdırılır (KB2.14, D5.3). Öğrencilere İbn Sina’nın duyguların insan sağlığı üzerindeki etkisini, tedaviyi desteklemek için çevresel koşulların düzenlenmesini ve müzik/ritim kullanımının önemini vurgulayan yapılandırılmış bir metin verilir (OB4). Bu metinden hareketle şifahanelerdeki su sesi ve müzik terapisi uygulamalarının günümüzdeki müzik terapisi ile karşılaştırılması sağlanır. Doğan Cüceloğlu’nun “İnsan İnsana” adlı eserlerinden hazırlanan yapılandırılmış metin verilerek öğrencilerin bu metni uyum sağlamaya dönük yaklaşım ve becerilerle karşılaştırmaları sağlanır. Öğrencilerden uyum sağlamaya yönelik yaklaşım ve becerilere dair nedensel ilişkiller hakkında yansıtma yazısı yazmaları istenir. Uyum sağlamaya yönelik yaklaşım ve beceriler arasında bir bütünlük oluşturulması için öğrencilere duygu yönetimi ve stres yönetimi ile ilgili örnek olaylar sunulur. Öğrencilerin, konu edilen örneklerde karakterlerin sergiledikleri davranışları uyum sağlamaya yardımcı olan ve olmayan şeklinde sınıflandırarak bir liste oluşturmaları sağlanır. Öğrenciler, karakterlerin uyum sağlamak ve uyumun bozulmasını önlemek için kimlerden destek alabileceklerine ilişkin çıkarımlarda bulunur (KB2.10). Söz konusu örneklerdeki karakterlerin ne hissetmiş ve düşünmüş olabileceğini ifade eder (E2.1, SDB1.3, SDB2.2). Karakterlerin duygularına ve düşüncelerine ilişkin ortak görüş oluşturur. Duyguların ve düşüncelerin ifade edilmesinde kontrollü olmanın önemini belirtir (D12.2). İnsanlara saygı duyar. Farklı görüşlerin eleştirilmesine açık olur (D14.1). Süreçte konuşma halkası ya da empati haritası kullanılabilir. Atasözleri, deyimler ile Yunus Emre veya Aşık Veysel gibi topluma mal olmuş şahsiyetlerden seçilen örnekler verilerek öğrencilerden iletişimin sosyal hayattaki önemini vurgulamaları istenir (E1.1, OB1). Sosyal hayatta etkili iletişimin nasıl kurulduğuna ilişkin tartışmaları sağlanır (SDB2.1, KB2.18). Öğrenciler, iletişimin birey ve toplum hayatı açısından önemi konusunda iş birliği yaparak yazılı görüş bildirir. Görüşlerini görsellerle destekleyerek güvenli ağlarda yayımlar (SDB2.2, OB2, OB5, SDB2.2). Kültürel değerlerin aktarımında sorumluluk üstlenir (D19.3). Öğrencilere ben dili, sen dili, ego geliştirici dil, iletişim engelleri, sözel olan ve sözel olmayan iletişim ögeleri ile ilgili bilgi notu verilir (OB1). Günlük hayattan verilen örneklerdeki iletişim ögelerini belirlemeleri ve bu ögelerin etkili iletişim kurmaya etkileri konusunda yargıda bulunmaları sağlanır (E1.1, OB8). Süreçte drama, pandomim ya da rol oynama gibi öğretim teknikleri kullanılabilir. Öğrenciler bu teknikler kullanılırken estetik tavır gösterir (E2.5, OB9, D7.3). Süreç sonunda öğrencilerden duygu yönetimi ve stres yönetiminin etkili iletişim ile ilişkisi konusunda yansıtma yazısı yazmaları istenebilir.",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.4.3",
+    "title": "Uyum sağlama sürecinde kullanılan maruz bırakma yönteminde sanal gerçeklik ve artırılmış gerçeklik uygulamalarının yeri ve önemine ilişkin eleştirel düşünebilme",
+    "unit": "BİREYSEL VE SOSYAL UYUM",
+    "temaNo": 4,
+    "surec": [
+      "Maruz bırakma yönteminde sanal gerçeklik ve artırılmış gerçeklik uygulamalarının yeri ve önemini sorgular.",
+      "Yaşantısal olarak maruz bırakmanın mümkün olmadığı (afet, savaş vb.) durumlarda sanal gerçeklik ve artırılmış gerçekliğin kullanımına ilişkin akıl yürütür.",
+      "Sanal gerçeklik ve artırılmış gerçekliğin psikoloji alanındaki kullanımında sınırlılıklara ilişkin çıkarımda bulunur."
+    ],
+    "icerik": "Uyum Sorunları Uyum Sağlama Uyum Sağlamaya Yönelik Yaklaşımlar Tutum ve Olumlu-Olumsuz Sosyal Davranışlar",
+    "terms": "anormal, benlik, duygu, kalıp yargı, normal, ön yargı, tutum, uyum",
+    "uygulama": "Öğrencilere, psikolojide kullanılan “maruz bırakma” yöntemi konusunda bilgi notu verilir. Uyum sorunlarında (özellikle kaygı bozuklukları) sanal gerçeklik ile artırılmış gerçekliğin nasıl kullanıldığını açıklayan yazılı ya da görsel materyaller sağlanır (E1.1, OB1, OB4). Materyalde yerli simülasyon uygulamaları [Türkiye Bilimsel ve Teknolojik Araştırma Kurumu (TÜBİTAK) destekli projeler vb.] tanıtılır. Maruz bırakma için yerli bir yazılımın imkânı tartışılarak maruz bırakma yönteminde sanal gerçeklik ve artırılmış gerçeklik uygulamalarının yeri ve önemi sorgulatılır. Bunun için soru-cevap öğretim tekniği kullanılabilir. Öğrencilerden, yaşantısal olarak maruz bırakmanın mümkün olmadığı durumlarda (afet, savaş vb.), sanal gerçeklik ve artırılmış gerçekliğin nasıl kullanilabileceğine ilişkin akıl yürütmeleri istenir. Öğrenciler; söz konusu uygulamaların uyum sorunlarını belirlemede, uyum sorunlarını önlemede ve uyum sorunları ile baş etmede etkili olduğunu ifade eder (D13.4). Öğrencilerin, sanal gerçeklik ve artırılmış gerçekliğin psikolojideki kullanımının sınırlılıklarına ilişkin çıkarımlarda bulunmaları sağlanır (KB2.10).",
+    "kapsamDisi": []
+  },
+  {
+    "subject": "Psikoloji",
+    "grade": null,
+    "code": "PSK.4.4",
+    "title": "Tutum ve olumlu-olumsuz sosyal davranışları gözlemleyebilme",
+    "unit": "BİREYSEL VE SOSYAL UYUM",
+    "temaNo": 4,
+    "surec": [
+      "Sunulan örnek olaylardaki tutum ve olumlu-olumsuz sosyal davranışları gözlemlemenin amacını ve ölçütünü belirler.",
+      "Uygun yöntemi kullanarak veri toplar.",
+      "Verilerden hareketle örnek olaylardaki sosyal davranışları çatışma, kalıp yargı, önyargı ve ayrımcılık açısından sınıflar ve ulaştığı sonuçları kaydeder."
+    ],
+    "icerik": "Uyum Sorunları Uyum Sağlama Uyum Sağlamaya Yönelik Yaklaşımlar Tutum ve Olumlu-Olumsuz Sosyal Davranışlar",
+    "terms": "anormal, benlik, duygu, kalıp yargı, normal, ön yargı, tutum, uyum",
+    "uygulama": "Öğrencilere, tutum ve olumlu-olumsuz sosyal davranış kavramlarına ilişkin örnek durumlar ve açıklayıcı bilgiler verilir (OB1). Örnekler içerisinde OsmanlıDevleti'nde farklı etnik ve dini grupların bir arada yaşama deneyimine ve çok kültürlülüğüne yer verilir. Öğrencilere farklılıklarla bir arada yaşama ve ön yargıların azalmasında tutumların rolünü kavratmak amacıyla Mevlânâ’nın insan ve toplum anlayışını yansıtan bir rubaiye yer verilir. Bu kapsamda Mevlânâ’nın insanı olduğu gibi kabul etmeye, empati kurmaya ve farklılıkları toplumsal uyumun bir parçası olarak görmeye dayalı yaklaşımı açıklanır. Söz konusu örneklere Kınalızâde Ali Efendi’nin Ahlâk-ı Alâî adlı esrinden alıntı ve açıklamalar da eklenir. Öğrencilerin, verilen örneklerden yola çıkarak tutum ve olumlu-olumsuz sosyal davranış kavramlarını kendi cümleleri ile ifade etmeleri istenir. Öğrencilerin; “Tutum ve olumlu-olumsuz sosyal davranışlar nasıl gözlemlenebilir? Bir insanın ön yargılı olduğu nasıl anlaşılabilir? Kültür tutum ve olumlu-olumsuz sosyal davranışları nasıl etkiler?” sorularını tartışmaları sağlanır (E1.1, SDB2.2, KB2.18). Bunun için kartopu öğretim tekniği kullanılabilir. Öğrenciler, tutum ve olumlu-olumsuz sosyal davranışları gözlemleyerek nesnel biçimde değerlendirmeyi amaç edinir (E3.2, SDB1.2). Öğrencilere; tutum, olumlu sosyal davranış ve olumsuz sosyal davranışlara ilişkin örnek olayların analiz edilmesi, kültüre duyarlılık kavramının araştırılması ve bu araştırmanın örnek olaylarla ilişkilendirilmesi performans görevi olarak verilir. Öğrencilere, farklı sosyal ortamlarda geçen; çatışma, yardım etme, önyargı, kalıp yargı ve ayrımcılık gibi davranışların yer aldığı kısa vaka metinleri sunulur. Öğrencilerden, bu vaka metinlerinde yer alan tutum, olumlu sosyal davranış ve olumsuz sosyal davranışları belirlemeleri, bu davranışları gözlemlemenin amacını ve ölçütlerini ifade etmeleri istenir. Öğrenciler; belirledikleri davranışları olumlu sosyal davranış ya da olumsuz sosyal davranış olarak sınıflandırır ve çatışma, kalıp yargı, önyargı ve ayrımcılık açısından analiz ederek sonuçlarını kaydeder (E3.2, SDB1.2). Etkinlik sürecinde öğrencilerin mahremiyet, saygı ve etik değerlere bağlı kalmaları vurgulanır (D8.4, D11.3). Öğrenciler, analiz ettikleri örnek olaylardaki tutum ve davranışların toplumsal uyuma etkisini değerlendirir, kültüre duyarlılık kavramı ile ilişkilendirir ve konuya ilişkin görüş oluşturur. Öğrencilerden, ulaştıkları analiz sonuçlarını ve oluşturdukları görüşlerini görsellerle destekleyerek bireysel sunum hazırlamaları beklenir (D7.1). Performans görevi; sınıflamanın tutarlılığı, raporun içeriği, görüşlerin geçerliliği ve sunumun düzeni gibi kriterler açısından dereceli puanlama anahtarı kullanılarak değerlendirilir. Öğrenciler, performans görevini yürütürken görev bilinci içinde hareket eder, ödev ve sorumluluklarını görev etiğine uygun şekilde yerine getirir (D3.3, D16.3).",
+    "kapsamDisi": []
+  }
+]
