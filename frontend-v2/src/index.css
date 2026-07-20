@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COASTAL — "Deniz Kenarı" tasarım sistemi. İKİ TEMA:
+   · Varsayılan: KIYI (açık, ferah, camlı — beyaz köpük + turkuaz)
+   · .dark:      OKYANUS (derin petrol + yakamoz)
+   Kullanıcı üst bardan geçiş yapar; tercih localStorage'da.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* ── Kıyı (açık) yüzeyleri — mavi tonlu soft ── */
+  --color-shore-50: #f3f7fc;  /* sayfa zemini */
+  --color-shore-100: #e7eff8; /* çökük yüzey */
+  --color-shore-200: #d6e4f0; /* kenarlıklar / heatmap sıfır */
+
+  /* ── Okyanus (koyu) yüzeyleri ── */
+  --color-ocean-950: #060d15;
+  --color-ocean-900: #0b1520;
+  --color-ocean-850: #0e1b28;
+  --color-ocean-800: #122334;
+  --color-ocean-700: #1a3247;
+
+  /* ── Brass — YALNIZ ÖSYM mühür kimliği ── */
+  --color-brass-300: #e8cd92;
+  --color-brass-400: #d9b267;
+  --color-brass-500: #c99a4a;
+  --color-brass-600: #a6792f;
+  --color-brass-700: #7c591f;
+
+  /* ── Tipografi ── */
+  --font-display: "Space Grotesk", "Outfit", sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* ── Glow gölgeler ── */
+  --shadow-glow-teal: 0 0 18px --alpha(var(--color-teal-500) / 22%),
+    0 0 52px --alpha(var(--color-teal-500) / 9%);
+  --shadow-glow-sky: 0 0 18px --alpha(var(--color-sky-500) / 24%),
+    0 0 52px --alpha(var(--color-sky-500) / 10%);
+  --shadow-card: 0 10px 30px rgb(15 46 74 / 0.10);
+
+  /* ── Ambiyans animasyonları ── */
+  --animate-drift: drift 34s ease-in-out infinite alternate;
+  --animate-drift-slow: drift 50s ease-in-out infinite alternate-reverse;
+  --animate-pulse-soft: pulse-soft 2.4s ease-in-out infinite;
+  --animate-border-spin: border-spin 6s linear infinite;
+
+  @keyframes drift {
+    from { transform: translate3d(-4%, -2%, 0) scale(1); }
+    to   { transform: translate3d(5%, 4%, 0) scale(1.15); }
+  }
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+  @keyframes border-spin {
+    to { --border-angle: 360deg; }
+  }
+}
+
+/* Neon sınır açısı — conic açı animasyonu için Houdini kaydı */
+@property --border-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --page-bg: var(--color-shore-50);
+    --heat-zero: var(--color-shore-200);
+    --glass-bg: rgb(255 255 255 / 0.62);
+    --glass-border: rgb(2 64 110 / 0.10);
+    --glass-solid-bg: rgb(255 255 255 / 0.78);
+    --glass-solid-border: rgb(2 64 110 / 0.09);
+    /* Veri/ısı ana tonu — sekansiyel tek ton (dataviz: magnitude=sky) */
+    --data-hue: var(--color-sky-500);
+  }
+  .dark {
+    color-scheme: dark;
+    --page-bg: var(--color-ocean-900);
+    --heat-zero: var(--color-ocean-800);
+    --glass-bg: rgb(8 47 73 / 0.22);
+    --glass-border: rgb(14 165 233 / 0.10);
+    --glass-solid-bg: rgb(14 27 40 / 0.85);
+    --glass-solid-border: rgb(14 165 233 / 0.08);
+    --data-hue: var(--color-sky-400);
+  }
+  body {
+    background: var(--page-bg);
+    @apply font-sans text-slate-700 antialiased;
+  }
+  .dark body { @apply text-slate-200; }
+
+  /* Klavye odağı — uygulamada hiç yoktu. --data-hue tema ile döndüğü için
+     hem Kıyı'da hem Okyanus'ta kontrast doğru. Fare kullanıcısını rahatsız etmez
+     (:focus-visible, :focus değil). */
+  :focus-visible {
+    outline: 2px solid var(--data-hue);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection { background: --alpha(var(--color-sky-400) / 30%); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background: --alpha(var(--color-sky-600) / 25%);
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+/* ── Cam yüzeyler (iki tema) ─────────────────────────────────────────────────
+   @layer components: her zaman derlenir (utility tarama/@utility sürüm
+   oyunlarına bağımlı değil) ve utilities katmanı bunları ezebilir
+   (border-rose-*, hover:border-teal-* çalışmaya devam eder).
+   Renkler .dark ile dönen CSS değişkenlerinden gelir. */
+@layer components {
+  /* Deniz köpüğü camı — blur BÜTÇELİDİR (≤5 yüzey/görünüm) */
+  .glass {
+    background-color: var(--glass-bg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--glass-border);
+  }
+
+  /* Blur'suz ikiz — yoğun listeler / perf */
+  .glass-solid {
+    background-color: var(--glass-solid-bg);
+    border: 1px solid var(--glass-solid-border);
+  }
+
+  /* Yakamoz parıltısı — yalnız koyu temada anlamlı */
+  .text-glow { text-shadow: none; }
+  .dark .text-glow { text-shadow: 0 0 12px rgb(56 189 248 / 0.45); }
+
+  /* İnce yakamoz ayracı */
+  .wave-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(14 165 233 / 0.35), transparent);
+  }
+}
+
+/* ── Soru metni + KaTeX (components/MathMarkdown.tsx) ───────────────────────
+   Renk/boyut ASLA sabitlenmez: bileşen şık düğmesinin içinde de, çözüm panelinde de,
+   doğru/yanlış renklendirmesinin altında da kullanılıyor. `inherit` olmazsa formül
+   çevresindeki metinden farklı renge kaçar (ör. yeşil "doğru" şıkkında siyah formül). */
+.math { color: inherit; word-break: break-word; }
+.math--inline { display: inline; }
+.math p { margin: 0; color: inherit; }
+.math p + p { margin-top: 0.5rem; }
+.math .katex { color: inherit; font-size: 1.05em; }
+
+/* ⚠️ SATIR SONLARI: çözüm metni "Adım 1 …\nAdım 2 …" diye geliyor ve markdown TEK satır sonunu
+   boşluğa çevirir → adımlar tek satıra yapışır. `pre-line` bunu geri getirir.
+   Ama `pre-line`/`pre-wrap` KaTeX'in ÜRETTİĞİ HTML'de satır sonlarını görünür boşluğa çevirip
+   formülü bozar — bu yüzden .katex içinde `normal`a geri alınır. (Kapsayıcıya pre-wrap vermek
+   tam olarak bu yüzden yanlıştı: Coz.tsx'te inline style ile duruyordu, kaldırıldı.) */
+.math { white-space: pre-line; }
+.math .katex, .math .katex-display, .math .katex * { white-space: normal; }
+
+/* Uzun formüller taşmasın, kendi içinde kaysın (mobilde sayfayı yana kaydırmasın) */
+.math .katex-display { margin: 0.6rem 0; overflow-x: auto; overflow-y: hidden; }
+
+/* Eski ekranların beklediği keyframe'ler (geçiş dönemi) */
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes ping { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(1.6); opacity: 0; } }
+@keyframes flicker { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+
+/* Global animasyon sözlüğü — ekranlar kendi <style> bloğunu taşımasın */
+@keyframes heatIn { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes floatY { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
