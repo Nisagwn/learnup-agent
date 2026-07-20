@@ -5,10 +5,15 @@ node_modules/
 dist/
 
 # ORTAM (SECRET — service-role key, JWT secret, API anahtarları)
-.env
-.env.local
-.env.*.local
-# .env.example izlenir (secret içermez)
+#
+# ⚠️ ÖNCE HER .env* YOK SAYILIR, SONRA yalnız .env.example geri alınır.
+# Eski liste (.env / .env.local / .env.*.local) yalnız ÜÇ ADI kapsıyordu ve
+# `.env.bak-anthropic` bu ağdan kaçıyordu — içinde SUPABASE_SERVICE_ROLE_KEY,
+# OPENROUTER/OPENAI/ANTHROPIC anahtarları olan gerçek bir yedek. `git add .`
+# onu commit'e alırdı; GitHub'a giden anahtar geri alınamaz (anında taranır).
+# Beyaz liste yaklaşımı: yeni bir yedek adı uydurulsa bile ağa takılır.
+.env*
+!.env.example
 
 # loglar
 *.log
@@ -47,3 +52,7 @@ data/.sorular-vec.json
 # ingest-sorular'ın her koşuda yeniden yazdığı denetim raporu (elle eşlemenin
 # başlangıç noktasıydı; artık konu-kazanim.json otorite — bu sadece çıktı).
 data/konu-kazanim-oto.json
+eval-sonuclari/
+data/uretim-hata/
+data/*.log
+data/ab-*.json

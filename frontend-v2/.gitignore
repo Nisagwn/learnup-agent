@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+
+# İndirilmiş iskelet klasörü — kaynak ağacın parçası değil, diskte kalır.
+learnup-kaptan.app*/
