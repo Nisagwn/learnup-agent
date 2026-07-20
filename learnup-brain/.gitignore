@@ -56,3 +56,6 @@ eval-sonuclari/
 data/uretim-hata/
 data/*.log
 data/ab-*.json
+
+# Etiketleme checkpoint çıktısı — TÜREV veri, script yeniden üretir.
+data/*.jsonl
