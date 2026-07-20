@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, CheckCircle2, XCircle, BrainCircuit, Lightbulb, Loader2, Award, BookOpen, Star, X } from 'lucide-react';
-import { InlineMath, BlockMath } from 'react-katex';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { supabase } from '../supabase';
@@ -15,7 +14,13 @@ import { generateDynamicHint } from '../utils/aiService';
 import { generateQuiz } from '../services/aiService';
 import { loadEphemeralQuiz, clearEphemeralQuiz } from '../utils/ephemeralQuiz';
 import { celebrate } from '../utils/celebrate';
-import { autoWrapLatex } from '../utils/latex';
+// ⚠️ BU IMPORT HİÇ YOKTU (monorepo taşımasından beri — 8d031dd). `recordAnswer(...)` çağrısı
+// her cevapta ReferenceError fırlatıyordu; aşağıdaki try/catch onu yakalayıp "recordAnswer
+// başarısız" diye uyarı basıyor ve istemci-fallback'ine düşüyordu. Mesaj "sunucu çağrısı
+// başarısız oldu" gibi okunduğu için arıza SESSİZDİ: sunucu-otoriter puanlama hiç çalışmadı,
+// XP/seri/görev/rozet istemcinin kendi tahmininden yazıldı. Bkz. sendRecord.
+import { recordAnswer } from '../utils/gamificationApi';
+import MathMarkdown from '../components/MathMarkdown';
 import { Skeleton } from '../components/ui/Skeleton';
 import SessionSummary from '../components/quiz/SessionSummary';
 import { normalizeQuestion } from '../utils/normalizeQuestion';
@@ -651,9 +656,22 @@ export default function Quiz() {
     // Efemeral yolda ek alanlar (mobil paritesi). Pool/adaptif/review yolu DEĞİŞMEZ.
     const eph = ephemeralRef.current;
     const opts = Array.isArray(q?.options) ? q.options : [];
+
+    // ⚠️ ŞIK HARFİ GÖNDERİLMEK ZORUNDA — yoksa sunucu her cevabı YANLIŞ sayar.
+    // Sunucu `isCorrect` iddiamıza bakmıyor (bilerek: istemci iddiası sınırsız XP sömürüsüydü);
+    // doğruluğu KENDİ hesaplıyor ve bunun için şık HARFİNE ihtiyacı var:
+    //   · YKS havuzu → selectedOption === correct_option ('A'..'E')
+    //   · eski havuz → options[harf-65] === correct_answer (metin)
+    // Harf gönderilmezse ikisi de `null === 'C'` → false döner: dogrulandi=true olduğu için
+    // DOĞRU cevap bile 2 XP'lik "yanlış" olarak yazılır ve mastery/ATLAS'a yanlış sinyal gider.
+    // Burada `options` METİN dizisidir (normalizeQuestion, {A..E} map'ini Object.values ile
+    // düzleştirir → sıra A..E korunur); indeks harfe çevrilerek sunucunun beklediği biçime dönülür.
+    const secilenIdx = selectedOptionRef.current != null ? opts.indexOf(selectedOptionRef.current) : -1;
+    const selectedOptionHarf = secilenIdx >= 0 ? String.fromCharCode(65 + secilenIdx) : null;
+
     const extra = (ephemeralMode && eph) ? {
       source: eph.source || 'ai_free',
-      selectedIndex: selectedOptionRef.current != null ? opts.indexOf(selectedOptionRef.current) : -1,
+      selectedIndex: secilenIdx,
       correctIndex: opts.indexOf(q?.correctAnswer),
       timeSpentMs: Math.round((Number(durationSec) || 0) * 1000),
       difficulty: q?.difficulty || eph.difficulty || 'medium',
@@ -668,7 +686,11 @@ export default function Quiz() {
         subject,
         topic: q?.topic || null,
         subTopic: q?.sub_topic || null,
+        // isCorrect yine gönderiliyor ama BAĞLAYICI DEĞİL: sunucu soruyu DB'de bulabiliyorsa
+        // bu iddiayı yok sayıp doğruluğu selectedOption'dan kendi hesaplar (answers.ts).
+        // Yalnız soru bulunamazsa (efemer) bu değere düşer — ve o durumda XP zaten verilmez.
         isCorrect,
+        selectedOption: selectedOptionHarf,
         isSkipped,
         attemptNumber,
         durationSec,
@@ -860,52 +882,16 @@ export default function Quiz() {
     }
   };
 
-  const renderContent = (text) => {
-    if (!text) return null;
-    // Yazar $...$ kullanmadıysa çıplak LaTeX desenlerini otomatik sar — eski
-    // seed verilerindeki "\frac{d}{dx}", "x^2" gibi formüller de render olsun.
-    const normalized = autoWrapLatex(String(text));
-    const regex = /(\$.*?\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\])/g;
-    const parts = normalized.split(regex);
-    
-    return parts.map((part, index) => {
-      if (!part) return null;
-
-      let mathContent = part.trim();
-      let isMath = false;
-      let isBlock = false;
-
-      if (mathContent.startsWith('$') && mathContent.endsWith('$')) {
-        mathContent = mathContent.slice(1, -1).trim();
-        isMath = true;
-      } else if (mathContent.startsWith('\\(') && mathContent.endsWith('\\)')) {
-        mathContent = mathContent.slice(2, -2).trim();
-        isMath = true;
-      } else if (mathContent.startsWith('\\[') && mathContent.endsWith('\\]')) {
-        mathContent = mathContent.slice(2, -2).trim();
-        isMath = true;
-        isBlock = true;
-      }
-
-      if (isMath) {
-        if (mathContent.startsWith('\\(') && mathContent.endsWith('\\)')) {
-          mathContent = mathContent.slice(2, -2).trim();
-        } else if (mathContent.startsWith('\\[') && mathContent.endsWith('\\]')) {
-          mathContent = mathContent.slice(2, -2).trim();
-        }
-        
-        mathContent = mathContent.replace(/\\quad/g, ' ').replace(/\\;/g, ' ');
-
-        return isBlock ? (
-          <BlockMath key={index} math={mathContent} />
-        ) : (
-          <InlineMath key={index} math={mathContent} />
-        );
-      }
-
-      return <span key={index} className="whitespace-pre-wrap">{part}</span>;
-    });
-  };
+  // ⚠️ ELLE YAZILMIŞ `renderContent` KALDIRILDI — MathMarkdown ile birleştirildi.
+  // Bu ekran, uygulamadaki soruların İKİNCİ bir matematik yolunu taşıyordu: react-katex +
+  // regex ile bölme. Diğer 9 ekran (QuestionPool, BookmarksList, AssignmentSolve, …) aynı
+  // veriyi MathMarkdown ile çiziyordu. İki yol = iki davranış:
+  //   · regex `\frac{\sqrt{2}}{2}` gibi iç içe süslü parantezde yanlış bölüyordu,
+  //   · markdown hiç desteklenmiyordu (çözüm metnindeki listeler/kalın ham görünüyordu),
+  //   · `part.trim()` formül çevresindeki boşluğu yiyordu ("x=$5$ tir" → "x=5tir").
+  // Aynı soru, öğrenci Quiz'den mi yoksa Havuz'dan mı açtığına göre FARKLI görünüyordu.
+  // Tek yol → tek davranış; KaTeX ayarları da artık tek yerde (MathMarkdown) ve brain'in
+  // doğrulama kapısıyla aynı (learnup-brain/src/utils/latex.ts).
 
   // ── Sahne arka planı (orb'lar) — tüm durumlarda ortak (kararlı JSX, remount yok) ──
   const quizOrbs = (
@@ -1122,9 +1108,9 @@ export default function Quiz() {
               )}
             </div>
 
-            {/* Soru metni — ortalı */}
+            {/* Soru metni — ortalı. inline: <h2> içine blok eleman (<p>/<div>) giremez. */}
             <h2 className="quiz-question">
-              {renderContent(currentQuestion.text)}
+              <MathMarkdown inline>{currentQuestion.text}</MathMarkdown>
             </h2>
 
             {/* ── İpucu / Boş geç ── */}
@@ -1214,7 +1200,7 @@ export default function Quiz() {
                     className={`quiz-opt ${stateClass}`}
                   >
                     <span className="quiz-opt-letter">{letter}</span>
-                    <span className="quiz-opt-text">{renderContent(opt)}</span>
+                    <span className="quiz-opt-text"><MathMarkdown inline>{opt}</MathMarkdown></span>
                     {icon}
                   </Motion.button>
                 );
@@ -1236,7 +1222,7 @@ export default function Quiz() {
                       <BookOpen size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
                       <div className="quiz-reveal-text">
                         <div className="quiz-reveal-title">Çözüm</div>
-                        {renderContent(currentQuestion.explanation)}
+                        <MathMarkdown>{currentQuestion.explanation}</MathMarkdown>
                       </div>
                     </div>
                   </div>

@@ -1,10 +1,15 @@
 import React from 'react';
 import { Sparkles, BookOpen } from 'lucide-react';
 import parseInlineActions from '../utils/parseInlineActions';
+import MathMarkdown from './MathMarkdown';
 
 // Bot mesaj metnini segmentlere bölüp [QUIZ:..]/[KONU:..] etiketlerini
-// tıklanabilir pill'lere çevirir. Düz metin segmentleri olduğu gibi render edilir
-// (kapsayıcı bubble'daki whiteSpace:pre-line korunur).
+// tıklanabilir pill'lere çevirir.
+//
+// ⚠️ DÜZ METİN SEGMENTLERİ ARTIK KaTeX'TEN GEÇİYOR. Eskiden `<span>{seg.text}</span>` idi:
+// Kaptan bir soruyu açıklarken formül yazıyor ("$\frac{1}{2}$") ve öğrenci sohbette birebir
+// dolar işaretlerini okuyordu — aynı formül Çöz ekranında düzgün çiziliyorken. Ekranlar
+// arasındaki bu tutarsızlığın sebebi teknikti, ürün kararı değil.
 export default function InlineActionMessage({ text, onQuiz, onTopic, disabled = false }) {
   const segments = parseInlineActions(text);
 
@@ -37,7 +42,8 @@ export default function InlineActionMessage({ text, onQuiz, onTopic, disabled = 
             </button>
           );
         }
-        return <span key={i}>{seg.text}</span>;
+        // inline: bu segmentler pill'lerle AYNI satırın parçası — blok eleman akışı bozar.
+        return <MathMarkdown key={i} inline>{seg.text}</MathMarkdown>;
       })}
     </>
   );

@@ -8,6 +8,25 @@
   display: inline;
 }
 
+/* ⚠️ SATIR SONLARI — markdown TEK satır sonunu boşluğa çevirir, oysa çözüm metni
+   "Adım 1 …\nAdım 2 …" diye geliyor: adımlar tek satıra yapışırdı. Quiz.jsx'in kaldırılan
+   elle yazılmış renderer'ı bunu `whitespace-pre-wrap` ile çözüyordu; MathMarkdown'a
+   geçince o davranış buraya taşındı (yoksa birleştirme sessiz bir gerileme olurdu). */
+.math-content {
+  white-space: pre-line;
+}
+
+/* ⚠️ KaTeX BEYAZ-BOŞLUK MİRASINDAN KORUNUR — bu satır olmadan formüller BOZULUR.
+   KaTeX konumlandırmayı kendi <span> ağacıyla yapar ve ürettiği HTML satır sonları içerir;
+   `pre-line`/`pre-wrap` bunları GÖRÜNÜR boşluğa çevirir (üs/indis kayar, kesir çizgisi bölünür).
+   Yalnız yukarıdaki kural değil, KAPSAYICILAR da tehlike: sohbet balonu (Chatbot/FloatingAI)
+   `white-space: pre-line` taşıyor ve miras yoluyla KaTeX'in içine sızıyordu. Burada kesiliyor. */
+.math-content .katex,
+.math-content .katex-display,
+.math-content .katex * {
+  white-space: normal;
+}
+
 /* react-markdown blok <p> üretir; gereksiz boşlukları temizle */
 .math-content p {
   margin: 0;
