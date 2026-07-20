@@ -1,608 +1,878 @@
-# YKS "Beyin" Servisi — Sistem Mimarisi & Araç Envanteri (Master Doküman)
+# LearnUp — Sistem Mimarisi & İşletme Kılavuzu
 
-> **Amaç:** YKS soru-üretim ve çok-ajanlı öğretim çekirdeğinin **üretime hazır** sistem mimarisi, veri akışları, veritabanı şemaları ve kod blueprint'leri.
-> **Stack (nihai karar):** Next.js (App Router) · Supabase (PostgreSQL + pgvector + ltree + Realtime) · Redis (ioredis, **Streams**) · **OpenRouter** üzerinden **OpenAI-uyumlu `openai` SDK** · **DeepSeek** modelleri · Embeddings = **OpenAI `text-embedding-3-small` (768d)**.
-> **Bağımlılık kararı:** Anthropic, Voyage ve doğrudan Google SDK bağımlılıkları **kaldırıldı**. Tüm LLM trafiği tek `openai` npm paketi üzerinden konuşur.
-> **Kapsam:** Yalnızca yeni "beyin" servisi. Bu doküman tasarım/mimari referansıdır — kod bloklarını *blueprint* olarak içerir.
-
----
-
-## ⚠️ Migrasyon Bayrakları (önce oku — üretimde kırılmaması için)
-
-Bu üç nokta sessizce uygulanırsa çalışmaz; kararları netleştir:
-
-| # | Konu | Gerçek | Bu dokümandaki çözüm |
-|---|---|---|---|
-| **F1** | **Embedding boyutu** | `text-embedding-3-small` **native 1536d**'dir. `dimensions` parametresi verilmezse 1536 döner. | Embeddings çağrısına **`dimensions: 768`** ver (Matryoshka kısaltma). Ayrıca app-level **drift-guard** (`EMBED_DIM=768` sabiti + `vec.length` assertion) — bkz. §11.2, §12. |
-| **F2** | **OpenRouter embeddings sunmaz** | OpenRouter bir **chat/completions** router'ıdır; `/embeddings` endpoint'i güvenilir değildir. | Embeddings **doğrudan OpenAI endpoint'ine** gider (aynı `openai` paketi, **ikinci client**, farklı `baseURL`+key). LLM trafiği OpenRouter'da kalır. |
-| **F3** | **`deepseek/deepseek-flash` yok** | "flash" Google adlandırmasıdır; DeepSeek slug'ları `deepseek/deepseek-chat` (V3) ve `deepseek/deepseek-r1` (reasoner). | Rol dağılımınız korunur; `MODELS.GENERATE` slug'ını canlı OpenRouter kataloğuyla **doğrula**. Doğrulama (verify) adımı için **`deepseek-r1` (reasoner)** önerilir. |
-
-**Ayrıca değişen mimari varsayımlar (OpenAI-uyumlu API):**
-- **`temperature` / `top_p` GERİ GELDİ.** OpenAI-uyumlu API bunları destekler → eski "STRICT / DERIVE / CREATIVE" sıcaklık-katmanlı motoru **yeniden kullanılabilir** (Claude'da yasaktı).
-- **`cache_control` YOK.** Anthropic'e özgü prompt caching kalktı. DeepSeek **otomatik context caching** yapar (sunucu-taraf, prefix-tabanlı, disk cache) → **stabil bağlamı prompt'un başına koy** ki otomatik cache isabet etsin. Ama OpenRouter üzerinden bu **garanti değil** → maliyet kaldıracını cache'e değil, **model seçimi + context injection'ın kompaktlığına** dayandır.
-- **`thinking:{adaptive}` YOK.** Muhakeme gereken adımlar (doğrulama) için **reasoning modeli** (`deepseek-r1`) kullan; `reasoning_content` alanını oku.
-- **Yapısal çıktı:** `response_format:{type:"json_object"}` (JSON mode) + uygulama-tarafı şema doğrulaması. `json_schema` desteği modele göre kısmi.
+> **Tek doküman.** Daha önce altı ayrı `.md` vardı (`THE-LEARNUP-MASTER-PLAN`, `MIGRATION-MAP`,
+> `ARCHITECTURE_UNIFIED_DATA`, `learnup-brain/KILAVUZ`, `learnup-brain/README`,
+> `learnup-brain/BUN`); hepsi buraya toplandı ve **koda karşı doğrulandı**. Eskimiş
+> varsayımlar (Next.js, `user_activities`, `yks_style_exemplars`, HS256 JWT) düzeltilerek
+> alındı — silinmedi, **yanlış oldukları için değiştirildi**.
+>
+> **Tasarım mantrası:** *Deterministik çekirdek, LLM kenarlar, tek ses.* Matematik olabilen
+> her şey matematiktir. LLM yalnız üç yerde harcanır: **dil** (Kaptan), **teşhis**
+> (Atlas/Nabız), **damıtma** (Kâtip).
+>
+> **Dürüstlük sözleşmesi (bu sistemin en önemli kuralı):** `null` = "ölçülmedi", `0` = "ölçüldü,
+> sıfır çıktı". İkisi asla karıştırılmaz. Veri yoksa panel kendini gizler — yer tutucu sayı
+> **uydurulmaz**. Denetlenmemiş bir hattı "sıfır sorunlu" göstermek, bu sistemin önlemek için
+> var olduğu şeydir.
 
 ---
 
 ## İçindekiler
-1. [Genel Bakış — Grounded Generation + Context Injection](#1)
-2. [Teknoloji Yığını & Araç Envanteri](#2)
-3. [Bileşen Mimarisi (Katmanlar)](#3)
-4. [Veri Katmanı — Supabase & Redis (vector(768))](#4)
-5. [RAG & Üretim Pipeline + Dinamik Context Injection](#5)
-6. [Müfredat Hiyerarşisi (ltree) & Test Modları](#6)
-7. [Çok-Ajanlı Orkestrasyon (Pusula ↔ Ritim)](#7)
-8. [Komuta Merkezi Chatbot (Kaptan)](#8)
-9. [Model & Maliyet + OpenRouter/DeepSeek API Notları](#9)
-10. [API Yüzeyi (Route Map)](#10)
-11. [Kod Blueprint'leri (clients · rag · generation + Context Injection)](#11)
-12. [Veritabanı Migrasyonu (0001_extensions.sql) + Drift-Guard](#12)
-13. [Dağıtım Topolojisi & Kod Yerleşimi](#13)
-14. [Uygulama Sırası (Build Order)](#14)
+
+1. [Ne bu — iki dünya](#1)
+2. [Kilitli kararlar](#2)
+3. [Teknoloji yığını](#3)
+4. [Katman modeli ve ajan kadrosu](#4)
+5. [Bellek mimarisi](#5)
+6. [Veri katmanı](#6)
+7. [RAG ve üretim hattı](#7)
+8. [Müfredat (ltree) ve test modları](#8)
+9. [**Roller ve yetkiler (RBAC)**](#9)
+10. [**Öğretmen paneli**](#10)
+11. [**Yönetici paneli (Kule)**](#11)
+12. [API yüzeyi](#12)
+13. [Migration tarihçesi](#13)
+14. [Frontend — COASTAL](#14)
+15. [İşletme kılavuzu](#15)
+16. [Altyapı, arıza modları, deploy](#16)
+17. [Açık işler](#17)
 
 ---
 
 <a name="1"></a>
-## 1. Genel Bakış — Grounded Generation + Context Injection
+## 1. Ne bu — iki dünya
 
-"Beyin", ÖSYM (TYT-AYT) üslubunda **müfredat-sınırlı, tek-cevaplı, doğrulanmış** sorular üreten ve öğrenciyi çok-ajanlı yönlendiren **ayrı bir servistir**. Fine-tuning ve operasyonel eğitim yükü yerine, **her istekte modelin önüne geçmiş verileri seren** iki mekanizma kullanılır:
+LearnUp bir YKS hazırlık platformu. Kod tabanında **birbirine karışmayan iki soru dünyası** var:
 
-1. **RAG (yapısal):** müfredat/olgu sınırı için metadata-filtreli + Contextual Retrieval + rerank.
-2. **Dinamik Context Injection:** öğrencinin `user_activities` (Supabase) + gün-içi durum (Redis) geçmişi her prompt'a **kompakt biçimde gömülür** → model "sıfır beyinle" başlamaz (bkz. §5.3, §11.3).
+| Dünya | Tablolar | Şık | Kim okur |
+|---|---|---|---|
+| **Beyin** | `yks_questions` (ÖSYM çıkmış) · `yks_ai_questions` (AI üretimi) · `yks_knowledge` · `yks_exemplars` | 5 | RAG, ajanlar, "Çıkmış Sorular" ekranı, ödev atölyesi |
+| **App** | `questions` · adaptif motor · gamification · bahçe | 4 | Öğrencinin günlük çözme akışı, ödevler |
 
-| Problem | Yanlış | Doğru (bu mimari) |
-|---|---|---|
-| **Olgusal/müfredat sınırı** | "Benzer soru çek" | **Yapısal RAG**: metadata-filtreli + Contextual Retrieval + rerank |
-| **Üslup/pedagoji** (ÖSYM dili, çeldirici) | RAG *değil* | **Exemplar-conditioning** + System Instructions'a kazınmış çeldirici taksonomisi |
-| **Doğrulama** | Tek-atış üretim | **Çift-geçişli** bağımsız denetçi (reasoner) + RAG-temelli olgu denetimi |
-| **Kişiselleştirme** | Genel prompt | **Context Injection** — öğrenci geçmişi prompt'a gömülür |
+**Kaynak ayrımı bir ürün kuralıdır, DB'de kilitlidir.** `question_source` enum'u
+(`osym_cikmis · ai_generated · ogretmen`) + insert sonrası **değiştirilemezlik trigger'ı**
+(0004). Adaptif montaj her zaman `source_type='ai_generated' AND verified` okur — çıkmış soru
+adaptif havuza **asla** sızmaz. Çıkmışlar ayrı serviste yaşar ve arayüzde brass "ÖSYM ÇIKMIŞ
+SORU" mührüyle gösterilir. `yks_exemplars` çıkmışların *üslup/few-shot kaynağıdır*: AI sorular
+çıkmışlardan beslenir ama onlarla karışmaz.
 
-### En üst seviye akış
+### Depolar
 
-```
-┌──────────┐   HTTPS/SSE   ┌─────────────────────────────────────────────┐
-│  İstemci │◀─────────────▶│            Next.js (App Router)              │
-└──────────┘   Realtime    │   /api/tests · /api/chat · /api/telemetry    │
-      ▲          ▲          └───┬────────────┬──────────┬────────────┬─────┘
-      │          │              │            │          │            │
-      │          │        ┌─────▼─────┐ ┌────▼─────┐ ┌──▼──────┐ ┌───▼────┐
-      │          │        │OpenRouter │ │  OpenAI  │ │Supabase │ │ Redis  │
-      │          │        │ (openai   │ │ embed    │ │Postgres │ │Streams │
-      │          │        │  SDK)     │ │3-small   │ │+pgvector│ │ + JSON │
-      │          │        │ DeepSeek  │ │768d      │ │+ltree   │ │        │
-      │          │        └───────────┘ └──────────┘ └────┬────┘ └───┬────┘
-      │          └───────── Supabase Realtime (Postgres CDC) ◀────────┘
-      └──────────────────── "Pusula planlıyor… Ritim çalışıyor…"
-```
-
-**Değişmez ayrım:** **Postgres = Hakikat · Redis = Hot-Path.** Postgres kalıcı hakikat (soru havuzu, telemetri, görev defteri); Redis olay veriyolu + çalışma belleği; Realtime istemciye push. (Bu motto ve Streams/CDC katmanı **aynen korundu**.)
+| Dizin | Ne |
+|---|---|
+| `learnup-brain/` | Tek merkezî backend. Express + Bun + TypeScript (ESM). 16 eski Edge Function route olarak içeride; Deno Edge Functions **emekli**. |
+| `frontend-v2/` | Güncel arayüz. Vite + React 19 + Tailwind v4. **Next.js DEĞİL.** |
+| `frontend/` | Eski Firebase/Firestore arayüzü. Bakım modunda; yeni iş buraya yazılmaz. |
+| `supabase/migrations/` | App şeması (0001–0003) |
+| `learnup-brain/migrations/` | Beyin şeması (0001–0020) |
 
 ---
 
 <a name="2"></a>
-## 2. Teknoloji Yığını & Araç Envanteri
+## 2. Kilitli kararlar
 
-| Araç | Sürüm/Model | Rolü (nerede) | Neden | Reddedilen / kaldırılan |
-|---|---|---|---|---|
-| **Next.js** | App Router | API host + orkestrasyon | Hafif backend, SSE, serverless | Express standalone |
-| **`openai` npm** | v4+ | **Tüm LLM trafiği** (OpenAI-uyumlu) | Tek SDK ile OpenRouter + OpenAI embed | Anthropic/Voyage/Google SDK'ları **kaldırıldı** |
-| **OpenRouter** | `/api/v1` | Chat/completions router → DeepSeek | Tek endpoint'ten çoklu model, `defaultHeaders` ile attribution | Doğrudan model API'leri |
-| **DeepSeek** | `deepseek-chat` (V3) · `deepseek-r1` (reasoner) | Üretim · **bağımsız denetçi** · Kaptan chatbot | Güçlü muhakeme + uygun maliyet; OpenAI-uyumlu | Claude / Gemini |
-| **OpenAI Embeddings** | `text-embedding-3-small` **@ 768d** | RAG embedding (korpuslar, dedup) | OpenAI/DeepSeek vektör uyumu; `dimensions:768` ile kısalt | Voyage `voyage-3.5` (**kaldırıldı**) |
-| **Supabase / Postgres** | 15+ | Kalıcı hakikat + Realtime + RLS + Auth | Tek üründe pgvector + CDC | PG + harici vektör DB |
-| **pgvector** | HNSW `m=16, ef_construction=64` | Vektör benzerliği — **`vector(768)`** | Postgres içinde metadata JOIN ücretsiz | ivfflat / harici DB |
-| **ltree** | Postgres eklentisi | Müfredat ağacı + hiyerarşik filtre | Alt-ağaç tek sorguda (`path <@`) | recursive CTE |
-| **Redis (ioredis)** | **Streams** + JSON | Olay veriyolu, çalışma belleği, hot-path | Kalıcı + consumer-group + XACK + replay | pub/sub (mesaj kaybolur) |
-| **Supabase Realtime** | Postgres CDC/WS | İstemciye anlık durum push'u | Polling'siz; `version` tetikler | istemci polling |
-| **Mathpix / Doc AI** | — | Ingestion OCR + matematik (LaTeX) | ÖSYM PDF'leri matematik-yoğun | düz Tesseract |
-| **BullMQ / Inngest** (ops.) | Redis üzeri | Dayanıklı arka-plan job'ları (Makro) | Serverless timeout'a takılmadan | el-yazımı do-loop |
-
-### Karar özeti (sabit)
-- **LLM erişimi = OpenRouter + `openai` SDK** · **Üretim = `deepseek-chat`** (slug'ı doğrula) · **Doğrulama & Kaptan = `deepseek-chat`/`deepseek-r1`**.
-- **Embedder = OpenAI `text-embedding-3-small` @ `dimensions:768`** (doğrudan OpenAI endpoint'i).
-- **Vektör boyutu = 768** her yerde (kolon, RPC, drift-guard).
-- **Şıklar = 5'li (A–E)** · **Hiyerarşi = ltree** · **Haberleşme = Redis Streams**.
+| # | Karar |
+|---|---|
+| 1 | **Tek merkezî Bun backend** (`learnup-brain`); Edge Functions emekli |
+| 2 | Ücretsiz OpenRouter modelleriyle çalışır (`:free` slug + paralı fallback) |
+| 3 | **Tek persona:** öğrenci yalnız **Kaptan** ile konuşur; uzmanlar görünmez |
+| 4 | Ölçek hedefi rafta — ileride ölçek = replika + config, kod değil |
+| 5 | Postgres = tek hakikat · Redis = atılabilir hızlandırıcı · LLM = bütçeli kıt kaynak |
+| 6 | **Kaynak ayrımı** DB düzeyinde enum + trigger ile kilitli (§1) |
+| 7 | **Rol `profiles`'tan okunur, JWT'den DEĞİL** (§9 — gerekçe orada) |
+| 8 | Gamification (`lib/gamification.ts`) %100 deterministik; **asla ajan olmaz** |
 
 ---
 
 <a name="3"></a>
-## 3. Bileşen Mimarisi (Katmanlar)
+## 3. Teknoloji yığını
 
-| Katman | Sorumluluk | Araçlar |
-|---|---|---|
-| **(a) Ingestion** (offline batch) | Ham PDF → yapısal embedlenmiş chunk | Mathpix · `deepseek-chat` (contextual önek) · OpenAI embed |
-| **(b) Veri** | Kalıcı hakikat + hot-path | Supabase (Postgres/pgvector/ltree) · Redis (Streams/JSON) |
-| **(c) Üretim & Doğrulama** | generateVerifiedSet do-loop | OpenRouter/DeepSeek · Supabase RPC |
-| **(d) Orkestrasyon** | Gerçek-zamanlı görev dağıtımı & steer | Redis Streams · `agent_tasks` |
-| **(e) API** | İstemci ↔ beyin sözleşmesi | Next.js route handlers · SSE |
-| **(f) Realtime** | İstemciye anlık durum | Supabase Realtime (CDC) |
+**Backend (`learnup-brain`)**
+- Runtime **Bun** · Express · TypeScript (ESM/NodeNext). Bun TS'i doğrudan çalıştırır, `.env`'i otomatik yükler.
+- LLM: OpenRouter üzerinden `openai` SDK · **DeepSeek** ailesi
+- Embeddings: OpenAI `text-embedding-3-small` **@768** — doğrudan OpenAI endpoint'ine (OpenRouter `/embeddings` sunmaz), `dimensions: 768` parametresi **zorunlu** (native 1536d'dir)
+- Veri: Supabase (Postgres + pgvector `vector(768)` + ltree) — **service-role** anahtarıyla → **RLS tamamen bypass**. Bu yüzden yetki denetimi tamamen uygulama katmanındadır (§9).
+- Auth: Bearer JWT **lokal** doğrulama (JWKS/ES256, ağ round-trip'i yok)
+- Hot-path: Redis **Streams**
 
-> **Not:** Contextual önek üretimi (ingestion) artık Haiku yerine **`deepseek-chat`** ile yapılır (ucuz, hızlı kısa çıktı).
+**Frontend (`frontend-v2`)**
+- Vite + React 19 + strict TS + react-router-dom 7
+- Tailwind v4 **CSS-first** — `tailwind.config.js` YOK, tüm tema `src/index.css` `@theme{}` içinde
+- framer-motion · recharts 3 · cmdk · sonner · Radix
+
+> **Bağımlılık kararı:** Anthropic, Voyage ve doğrudan Google SDK bağımlılıkları kaldırıldı.
+> Tüm LLM trafiği tek `openai` paketi üzerinden konuşur.
 
 ---
 
 <a name="4"></a>
-## 4. Veri Katmanı — Supabase & Redis
+## 4. Katman modeli ve ajan kadrosu
 
-### 4a. Supabase tablo envanteri (embedding kolonları **vector(768)**)
+```
+┌─ SİNYAL (algı) ─────────────────────────────────────────────────┐
+│  Saf fonksiyonlar, cevap-başına, sıfır LLM: gecikme z-skoru,     │
+│  hata serisi, tuzak isabeti, yorgunluk işaretleri                │
+└───────────────┬──────────────────────────────────────────────────┘
+                ▼
+┌─ BİLİŞ (4 görünmez beyin) ──────────────────────────────────────┐
+│  ATLAS          PUSULA         NABIZ           KÂTİP             │
+│  bilişsel harita strateji      duygu/motivasyon hafıza yazıcısı  │
+│  + yanılgı teşhisi + taktik    + yük tavanı    + damıtma         │
+│         her biri Koç Masası'na TEK kompakt brief yazar           │
+└───────────────┬──────────────────────────────────────────────────┘
+                ▼
+┌─ SES (tek persona) ─────────────────────────────────────────────┐
+│  KAPTAN — masayı okur, öğrenciye dokunan HER kelimeyi o söyler   │
+└───────────────┬──────────────────────────────────────────────────┘
+                ▼
+┌─ ATÖLYE (kas — worker süreci) ──────────────────────────────────┐
+│  Tüm async işler: soru demirhanesi, teşhis, plan, damıtma, nudge │
+└──────────────────────────────────────────────────────────────────┘
+```
 
-| Tablo | Rolü | Kritik kolonlar |
-|---|---|---|
-| `curriculum_nodes` | Müfredat ağacı | `parent_id`, `code` (MEB), **`path ltree`**, `osym_weight` |
-| `yks_knowledge_base` | Grounding korpusu (MEB) | `content`, `context`, **`embedding vector(768)`**, `kazanim_id`, `path` |
-| `yks_style_exemplars` | Üslup korpusu (ÖSYM) | `options jsonb` (A–E), `correct_option`, `solution`, **`embedding vector(768)`**, `distractor_patterns`, `path` |
-| `yks_questions` | Üretilmiş + **verified** havuz | `path`, `options jsonb` (5 şık), `distractor_logic`, `verified`, **`embedding vector(768)`** |
-| `user_activities` | Telemetri (Context Injection kaynağı) | `event_type`, `test_mode`, `attempt_id`, `kazanim_id`, `is_correct`, **`selected_option`**, aylık partition |
-| `agent_tasks` | Kalıcı görev defteri | `agent_role`, `status`, `input/output jsonb`, `attempts` |
-| `study_roadmaps` | Plan (Pusula sahibi, Kaptan değiştirir) | `phases jsonb`, `daily_plan`, **`version int`** (Realtime tetikler) |
-| `chat_messages` | Sunucu-taraf sohbet | `role`, `content`, `tool_calls jsonb` |
-| `user_question_states` | Canvas (öğrenci çizim) | `strokes/notes jsonb` (normalize 0-1), `canvas_meta` |
+### 4.1 KAPTAN — yüz
+Öğrenci-yüzlü **her** cümle. Hesaplamaz; masayı okur, konuşur. SSE ile `chat_messages`'a yazar.
+Persona sözleşmesi `src/persona/kaptan.charter.ts` (tek export); `speakAsKaptan()` chat dışındaki
+öğrenci-yüzlü metnin **tek** üreticisi. Uzmanlar asla kendi cümlesini kurmaz.
 
-> **Migrasyon:** eski `vector(1024)` kolonlarının tamamı → **`vector(768)`**. HNSW index tipi aynı, sadece boyut değişir. Tam DDL ve drift-guard için **§12**.
+Yasaklar: cevabı doğrudan verme, tıbbi/psikolojik teşhis dili, boş motivasyon klişesi.
 
-### 4b. Retrieval RPC'leri (imza **vector(768)**)
+### 4.2 ATLAS — bilişsel haritacı
+Kazanım düzeyinde ustalık + **kavram yanılgısı teşhisi ve kapanış takibi**. Yeni graf deposu yok:
+`curriculum_nodes` (ltree) topoloji, `user_mastery` öğrenci overlay'i, `prereq_paths` önkoşul kenarları.
 
-| RPC | İş |
-|---|---|
-| `match_yks_knowledge(query_embedding vector(768), filter_subject, filter_paths[], match_count)` | ltree ön-ekli + vektör sıralı grounding retrieval — tek RPC üç modu karşılar |
-| `match_yks_exemplars(...)` | Simetrik: subject + paths + difficulty → altın soru few-shot |
-| `weak_kazanimlar(user_id, min, limit)` | Kronik zayıf kazanım alt-ağaçları (Context Injection + Mezo) |
-| `distractor_traps(user_id, limit)` | En sık düşülen çeldiriciler (`selected_option` sayesinde) |
+**Deterministik çekirdek — BKT-lite** (`lib/mastery.ts`, cevap akışında sync, LLM yok):
+```
+expected = m·(1−SLIP) + (1−m)·GUESS       # GUESS=0.2 (5 şık), SLIP=0.1
+m'       = clamp(0.01, 0.99, m + K·(outcome − expected))   # K=0.15; yerleştirmede 0.3
+m_eff    = m · exp(−gün / (7·(1+stability)))               # OKUMA anında çürüme
+```
+Doğru-ama-2×-yavaş cevap yarım kredi (`outcome = 0.5`) alır.
 
-### 4c. RLS
-- Korpuslar / telemetri / havuz / görev defteri: **yalnız servis-rolü** yazar; istemci kendi/verili satırları okur.
-- `user_question_states`: **istisna** — öğrenci `auth.uid()=user_id` ile yazar+okur.
+> ⚠️ **Çürüme formülünün ÜÇ kopyası var:** TS `effectiveMastery()` (`lib/mastery.ts:36`),
+> `weak_kazanimlar` RPC (0005), ve 0016'nın üç sınıf RPC'si. Üçü bayt-bayt aynı olmak
+> **zorunda**; sapma sessizce farklı sayılar üretir. Canlı veride ~5e-7 uyum doğrulandı.
 
-### 4d. Redis anahtar şeması (**aynen korundu**)
+**Yanılgı adli analizi** (`diagnose` görevi): kanıt paketi topla (aynı `(kazanim, selected_option)`
+tuzağının son 3+ isabeti) → r1 soruları **sıfırdan çözer**, yanlış şıkkı hangi zihinsel adımın
+üreteceğini geriye izler → taksonomiye bağlar:
 
-| Anahtar | Tip | Rol |
-|---|---|---|
-| `agent:tasks` | Stream | Görev kuyruğu (consumer-group per rol) |
-| `agent:events:{taskId}` | Stream | Durum↑ (orchestrator XREAD) |
-| `agent:control:{taskId}` | Stream | Steer↓ (worker XREAD) |
-| `agent:control:pusula:{userId}` | Stream | Kaptan → Pusula "yeniden planla" |
-| `telemetry:{userId}` | Stream | Anlık öğrenci sinyalleri (worker canlı okur) |
-| `task:{taskId}` | JSON/Hash | Çalışma belleği (blackboard) |
-| `user:{userId}:context` | JSON | Gün-içi durum — Context Injection'a girer |
-| `task:{taskId}:memory` | LIST | Döngüsel gözlem tamponu (RPUSH+LTRIM 0 49) |
+```json
+{
+  "misconception_id": "ic_turev_ihmal",
+  "taxonomy": "prosedur_atlama",
+  "evidence": "3 soruda da dış fonksiyon türetilmiş, iç türev çarpanı yok",
+  "confidence": 0.85,
+  "prereq_hypothesis": "matematik.fonksiyonlar.bileske",
+  "remediation": { "review_kazanim": "bileske_fonksiyon", "then_microset": {...} },
+  "student_facing_hint": "İçteki fonksiyonun türevini çarpmayı unutuyorsun"
+}
+```
+Taksonomi: `islem_hatasi | kavram_karismasi | prosedur_atlama | temsil_hatasi | onkosul_bosluk`.
 
-**Neden Streams, pub/sub değil?** Pub/sub fire-and-forget → dinleyen yoksa mesaj gider. Ajan görevleri + durum raporları kaybolmamalı. Streams: kalıcı log + consumer-group + `XACK` (at-least-once) + replay.
+**Kapanış doğrulaması:** remediation sonrası aynı tuzak tipinde 3 soru izlenir → 3/3 temizse
+`resolved` (tarihçesiyle saklanır, Kaptan "geçen hafta kırdığın tuzak" diyebilir), değilse
+`persists` + bir kademe derin remediation.
+
+### 4.3 PUSULA — stratejist
+*Sınav gününe kadar saat başına beklenen net kazancını maksimize et.* **LLM'siz optimizer**
+(`lib/planner.ts`):
+```
+skor(kazanım) = blueprint_ağırlığı × (1 − m_eff) × aciliyet(sınava_gün) × srs_vade_katsayısı
+```
+Greedy blok seçimi + serpiştirme (her blok: 1 zayıf kazanım + 1 SRS tekrarı + 1 komşu konu;
+hedef %70–80 başarı = arzu edilen zorluk) + Nabız yük tavanı. Sonra **tek** LLM çağrısı planı
+Kaptan'ın anlatacağı brief'e dönüştürür.
+
+### 4.4 NABIZ — empati nöbetçisi
+Heuristik-önce (`agents/nabiz.ts` — planlanan `lib/affect.ts` açılmadı, mantık ajanın içinde):
+hata serisi ≥4, gecikme z>2 (yorgunluk) veya z<−2 + hatalar (acele), rage-quit (<30 sn), gece
+yarısı çalışması, seri kırılma günü. Kural ateşlenince LLM sınıflar:
+`{state: motive|nötr|hüsran|kaygı|tükenmiş, evidence, coaching_stance, load_cap}` — çıktı
+`AffectSemasi` (zod) ile doğrulanır, uymayan sınıflama **nötr'e düşer**.
+
+### 4.5 KÂTİP — hafıza yazıcısı
+Oturum-sonu: istatistik (deterministik) + sohbet dökümü (LLM) → ≤5 maddelik özet →
+`session_summaries` + 768d embedding. Gece: son 7 günün özetlerini `semantic`'e katlar; kalıcıları
+terfi ettirir, bayatları emekli eder, çelişkileri revize eder. Her brief ≤300 token, masa ≤1200.
+
+### 4.6 Kural kitabı — `src/persona/`
+
+Bu klasör LLM'e söylediğimiz **her şeyin** tek kaynağıdır. Bir ajanın davranışını değiştirmek
+istiyorsan kodu değil, buradaki charter'ı düzenlersin.
+
+> ⚠️ **Temel ilke: dilek ≠ sözleşme.** Prompt'a bir kural yazmak, o kuralın uygulanacağı anlamına
+> **gelmez.** Bu proje bunu pahalı öğrendi: `OSYM_YAZAR_SYSTEM` içinde *"Doğru cevabı her soruda
+> A'ya koyma — harfi DENGELİ dağıt"* satırı vardı. Model bunu okudu ve **8 sorunun 6'sında yine
+> A'ya koydu** (ölçüldü). Sorunu prompt çözmedi, `generation.siklariDuzenle` çözdü — şık harfini
+> **deterministik kodun** belirlediği bir fonksiyon.
+>
+> **Zorlanabilir her kural KODDA zorlanır. Prompt yalnız modele niyeti anlatır.**
+
+| Kural | Prompt der ki | GERÇEK zorlayıcı | Garanti? |
+|---|---|---|---|
+| 5 şık, tek doğru | `osym.charter` | `parseTagged` — uymayan soru **düşürülür** | ✅ Kod |
+| Doğru cevap A'ya yığılmasın (metinsel) | `osym.charter` | `siklariDuzenle` → Fisher–Yates | ✅ Kod |
+| Doğru cevap A'ya yığılmasın (sayısal) | `osym.charter` | Yok — sayısal şıklar ÖSYM kuralı gereği artan sıralanır | ⚠️ Kısmi |
+| Soru müfredata bağlı | `osym.charter` | Bağımsız denetçi (`curriculumBound`) + `isAccepted` | ✅ Kapı |
+| Soru iç tutarlı | `osym.charter` | Denetçi (`internallyConsistent`) | ✅ Kapı |
+| İşaretlenen cevap doğru | `osym.charter` | Denetçi soruyu **sıfırdan çözer** (`matchesMarked`) | ✅ Kapı |
+| Taksonomi dışına çıkma | `atlas.charter` | `TeshisSemasi` (zod) — uymayan teşhis **yazılmaz** | ✅ Kod |
+| Duygu listesi dışına çıkma | `nabiz.charter` | `AffectSemasi` (zod) — uymayan sınıflama **nötr'e düşer** | ✅ Kod |
+| Nudge cümlesini uzman kurmaz | `nabiz.charter` | `speakAsKaptan` — tek çıkış noktası | ✅ Mimari |
+| Planı LLM kurmaz | `pusula.charter` | `planner.buildPlan` — deterministik optimizer | ✅ Mimari |
+| **Teşhis dili yok** | `ortak.TESHIS_DILI_YOK` | **Yok** | ❌ Yalnız rica |
+| **Cevabı doğrudan verme** | `ortak.OGRENCI_YUZLU` | **Yok** | ❌ Yalnız rica |
+| Uydurma yok (sayı/kaynak) | `ortak.ORTAK_KURALLAR` | Kısmen: RAG zemini + denetçi | ⚠️ Kısmi |
+
+Son üç satır **dürüstlük içindir**: bunlar garanti değil. "Kaptan cevabı direkt verdi" şikâyeti
+gelirse sebebi bu tabloda yazılı.
+
+**Dosyalar:** `ortak.ts` (paylaşılan değişmezler — tek kaynak) · `kaptan.charter.ts` +
+`voice.ts` (öğrenciyle konuşan tek yüzey) · `atlas` / `nabiz` / `pusula` / `katip` /
+`osym.charter.ts` (öğrenciyle konuşmaz). **RİTİM'in charter'ı yoktur** — LLM prompt'u yok, o bir
+görev dağıtıcısı; simetri olsun diye sahte charter açılmadı.
+
+**Enum'lar neden persona'da?** `TAKSONOMI` ve `DUYGU_DURUMLARI` üç yerde birden yaşıyordu (TS
+union, prompt içindeki şema dizesi, doğrulayıcı yok) ve `as` cast'i modelin uydurduğu değeri
+sessizce DB'ye geçiriyordu. Artık **tip de, prompt metni de, zod doğrulayıcısı da aynı objeden
+türer** — kayma imkânsız.
+
+**Charter değiştirirken:** (1) davranış değişimini `gen-smoke.ts` / `sik-dagilim.ts` ile **ölç**,
+yaramadıysa kod tarafına geç. (2) Ortak kuralı **tek yerde** değiştir — `ortak.ts`'ten kopyalayıp
+bir charter'a yapıştırma; kayma tam olarak böyle başlar. (3) Şema alanı eklediysen zod'u da
+güncelle, yoksa model o alanı doldurur ve sen görmezsin.
 
 ---
 
 <a name="5"></a>
-## 5. RAG & Üretim Pipeline + Dinamik Context Injection
+## 5. Bellek mimarisi
 
-### 5a. İki korpus, iki strateji
-- **Korpus A — `yks_knowledge_base`:** MEB → olgusal sınır + kazanım kapsamı.
-- **Korpus B — `yks_style_exemplars`:** ÖSYM geçmiş sorular + çözüm → üslup few-shot + çeldirici desenleri. **1 soru = 1 chunk** (atomik).
+| Katman | İçerik | Depo | Ömür |
+|---|---|---|---|
+| **Working** | sinyal penceresi, sohbet penceresi, affect, masa | Redis (`lb:*`) | dk–48h; **tamamı PG'den yeniden kurulabilir** |
+| **Episodic** | `user_logs`, `chat_messages`, `session_summaries` | Postgres | özet sonrası ham sohbet >30g budanabilir |
+| **Semantic** | `user_mastery`, `student_memory`, `roadmaps` | Postgres | Kâtip küratörlüğünde |
 
-### 5b. Ingestion pipeline (offline batch)
+**Redis anahtarları:** `lb:desk:{uid}` (48h) · `lb:signals:{uid}` (24h) · `lb:chatwin:{uid}` (24h)
+· `lb:affect:{uid}` (24h) · `lb:ctx:{uid}` (24h) · `lb:emb:{sha256}` (30g) · `lb:llm:*` (≤48h) ·
+`lb:tasks` / `lb:events:{taskId}` · `yetki:kimlik:{uid}` (60 sn, §9).
 
+**Neden Streams, pub/sub değil?** Pub/sub fire-and-forget — dinleyen yoksa mesaj gider. Görev ve
+durum raporları kaybolmamalı. Streams kalıcı log + consumer-group + `XACK` (at-least-once) + replay.
+
+### Kaptan'ın dört halkalı bağlamı (`composeChatContext`)
 ```
-PDF ─▶ OCR/Mathpix ─▶ Yapısal chunking ─▶ Contextual önek ─▶ embed ─▶ Supabase
-     (LaTeX korunur) (kazanım-çıpalı,    (deepseek-chat:  (OpenAI 3-small,  (kazanim_id
-                      parent-child)       "Bu chunk 11.sınıf dimensions:768)  + path ile)
-                                          Fizik…")
+[1] Charter + Koç Masası          (stabil prefix → sağlayıcı-taraf otomatik cache)
+[2] Semantik gerçekler            (hedef, kısıtlar, kişisel bağlam)
+[3] Oturum-içi pencere            (son 12 tur ham + öncesi Kâtip ara özeti)
+[4] Episodik anı çağırma          (match_session_memories — pgvector)
 ```
-
-### 5c. **Dinamik Context Injection** (modelin her istekte sıfır beyinle başlamasını engeller)
-Retrieval'a ek olarak, her üretim/chat isteğinde öğrenci geçmişi **kompakt bir bağlam bloğuna** derlenip prompt'a gömülür:
-
-```
-Girdi: userId + {kazanım, konu, zorluk}
-─ Supabase: weak_kazanimlar(userId) + distractor_traps(userId) + son N answer
-─ Redis:    user:{userId}:context  (energy, prefer, overrides)
-────────────────────────────────────────────────────────────
-buildStudentContext() → "ÖĞRENCİ BAĞLAMI" bloğu (bkz. §11.3)
-+ Q1 grounding (match_yks_knowledge) + Q2 exemplar (match_yks_exemplars)
-────────────────────────────────────────────────────────────
-Prompt = [System Instructions (ÖSYM felsefesi + çeldirici taksonomisi)]
-       + [ÖĞRENCİ BAĞLAMI]  ← Context Injection
-       + [BİLGİ BAĞLAMI (grounding)] + [STİL ÖRNEKLERİ] + [GÖREV]
-```
-
-> **Caching notu (F-değişiklik):** `cache_control` yok. Stabil blokları (System Instructions + çeldirici taksonomisi) **prompt'un en başına** koy → DeepSeek'in **otomatik prefix cache**'i (sunucu-taraf) isabet edebilsin. OpenRouter üzerinden garanti değil; maliyet için Context Injection'ı **kompakt** tut (özetlenmiş brief, ham log değil).
-
-### 5d. Çift-geçişli doğrulama do-loop
-
-```
-GENERATE (deepseek-chat, temperature=CREATIVE) ─▶ N+2 aday (tagged format)
-   │  her aday için:
-VERIFY (deepseek-r1 reasoner, temperature=STRICT, BAĞIMSIZ bağlam):
-   1) Soruyu SIFIRDAN çöz (reasoning_content) → işaretle eşleşiyor mu?
-   2) Tek doğru mu?  3) RAG olgu denetimi (knowledge_base yeniden sorgu)
-   4) Zorluk + ÖSYM-üslup skoru (1-5)
-   └─▶ verdict (JSON mode): ACCEPT | REPAIR | REJECT
-REPAIR (≤1 tur) → yeniden doğrula
-TOP-UP: kabul < hedef ise başa dön (≤3 tur)
-```
-
-Yalnızca tüm kapıları geçen sorular `verified:true` → `yks_questions`. **Sıcaklık geri geldi** → STRICT/DERIVE/CREATIVE katmanları yeniden kullanılabilir (§9).
+Halka 4 örneği: *"Geçen salı zincir kuralında iç türevi unutuyordun — bugün o tuzağı kırmışsın."*
+Disiplin: interaktif prompt ≤4k token.
 
 ---
 
 <a name="6"></a>
-## 6. Müfredat Hiyerarşisi (ltree) & Test Modları
+## 6. Veri katmanı
 
-`curriculum_nodes` self-ref + ltree materialized path (`matematik.turev.turev_kurallari.teget_egimi`). `path <@ 'matematik.turev'` → tüm alt-ağaç tek sorguda. Üç mod ortak **`Segment`** atomu üzerinden `generateVerifiedSet`'i besler.
+### Ana tablolar
 
-| Mod | Kim başlatır | Kapsam | `filter_paths` | Süre |
-|---|---|---|---|---|
-| **Mikro** | Öğrenci | Tek kazanım | `[tek_path]` | — |
-| **Mezo** | Ajan (Pusula) | `weak_kazanimlar` → N alt-ağaç, sarmal | `[path1, path2, …]` | — |
-| **Makro** | Öğrenci/zamanlı | `osym_blueprint` ders dağılımı | ders alt-ağaçları | 165/180 dk |
+| Tablo | Rolü | Kritik kolonlar |
+|---|---|---|
+| `curriculum_nodes` | Müfredat ağacı | `parent_id`, `code`, **`path ltree`**, `osym_weight`, `prereq_paths ltree[]` |
+| `yks_knowledge` | Grounding korpusu (MEB) | `content`, **`embedding vector(768)`**, `kazanim_id`, `path` |
+| `yks_exemplars` | Üslup korpusu (ÖSYM) | `options jsonb`, `correct_option`, `solution`, `embedding`, `difficulty`, `exam_year/label` |
+| `yks_questions` | ÖSYM çıkmış havuzu | `source_type='osym_cikmis'`, `exam_year`, `exam_label` |
+| `yks_ai_questions` | AI üretimi havuz (0013'te ayrıldı) | `verified`, `quality`, `difficulty`, `kazanim_id` |
+| `questions` | App soruları (4 şık) | `options` **dizi**, `correct_answer` **metin**, `kaynak_soru_id` (0018) |
+| `user_logs` | **Kanonik telemetri** | `student_id`, `kazanim_id`, `is_correct`, `selected_option`, `duration_ms`, `teacher_id` |
+| `user_mastery` | Bilişsel graf | `mastery`, `stability`, `attempts`, `srs_box`, `misconceptions jsonb` |
+| `student_memory` | Koç Masası | `semantic jsonb`, `briefs jsonb` |
+| `session_summaries` | Anı endeksi | `summary`, `embedding vector(768)` |
+| `agent_tasks` | Görev defteri | `kind`, `status`, `attempts`, `locked_by`, `locked_at` |
+| `profiles` | Kullanıcı + rol + sınıf | `role`, `is_approved`, `teacher_id`, `teacher_ids jsonb`, `class_code` |
+| `yonetim_denetim` | **Yönetici eylem defteri** (0020) | append-only, §11 |
 
-`buildMicro/Meso/MacroTest` (`lib/test-modes.ts`) · `assembleSegment` (havuz → AI top-up). Canvas: normalize 0-1 vektör path (raster değil), "Hatalı Sorularım"da replay.
+> ⚠️ Eski dokümanlardaki `user_activities`, `yks_style_exemplars`, `study_roadmaps` isimleri
+> **yanlıştır**; kanonik isimler yukarıdakilerdir. İki cevap tablosu (çatallı telemetri) bilinçli
+> olarak yasaklandı: `user_logs` tektir.
+
+### Retrieval RPC'leri (imza `vector(768)`)
+
+| RPC | İş |
+|---|---|
+| `match_yks_knowledge(query_embedding, filter_subject, filter_paths[], match_count)` | ltree ön-ekli + vektör sıralı grounding |
+| `match_yks_exemplars(...)` | Simetrik; **zorluğu tutan örnek önce** (0017) |
+| `weak_kazanimlar(user_id, ...)` | Kronik zayıf kazanımlar (çürüme-farkındalıklı) |
+| `distractor_traps(user_id, limit)` | En sık düşülen çeldiriciler |
+| `match_session_memories(user_id, query_embedding, count)` | Kaptan'ın anı çağırması |
+| `record_answer(...)` | **Atomik** cevap kaydı: user_logs + srs_cards + gamification |
+| `sinif_ozeti / sinif_isi_haritasi / sinif_zayif_kazanimlar` | Sınıf analitiği (0016), §10 |
+
+### PostgREST tuzağı — `fetchAll` şart
+
+PostgREST **1000 satırda sessizce keser**. Sınırsız bir küme okuyan her yer `src/lib/pg.ts`
+içindeki `fetchAll()` kullanmak zorunda. 1200 kişilik bir mevcut sessizce 1000'e düşerse her
+sınıf ortalaması bozulur ve kimse fark etmez.
 
 ---
 
 <a name="7"></a>
-## 7. Çok-Ajanlı Orkestrasyon (Pusula ↔ Ritim)
+## 7. RAG ve üretim hattı
 
-| Ajan | Rol | Model |
-|---|---|---|
-| **Pusula** | Orchestrator — yol haritası kurar, oturum devreder | `deepseek-chat` |
-| **Ritim** | Worker — oturumu yürütür, telemetriye uyum, durum yayınlar | `deepseek-chat` (+ mikro-karar) |
-| **Kaptan** | Chatbot — planı değiştirir, human-in-the-loop | `deepseek-chat` |
-| **Denetçi** | Bağımsız doğrulama (do-loop) | **`deepseek-r1`** (reasoner) |
+### İki korpus, iki strateji
+- **`yks_knowledge`** (MEB) → olgusal sınır + kazanım kapsamı
+- **`yks_exemplars`** (ÖSYM) → üslup few-shot + çeldirici desenleri. **1 soru = 1 chunk** (atomik).
 
-### Delegasyon akışı (Redis Streams, gerçek-zamanlı — **aynen korundu**)
-
+### Dinamik Context Injection
 ```
-Pusula                                        Ritim
-  │ delegate_session (tool call)
-  ├─ INSERT agent_tasks(PENDING) ────────────▶ Postgres (defter)
-  ├─ XADD agent:tasks ───────────────────────▶ [görev↓]
-  │                                   XREADGROUP◀── (group 'ritim') → RUNNING
-  │      [telemetry:{uid}] ◀─── öğrenci cevabı (/api/telemetry)
-  │                                            │ do-loop: XREAD telemetry → zorluk/ipucu uyum
-  │  XREAD agent:events ◀─ XADD ───────────────┤ XADD events {progress}         [durum↑]
-  ├─ XADD agent:control ──────────────────────▶ XREAD control → steer            [steer↓]
-  │  XREAD {completed} ◀─ XADD ─────────────────  XADD {completed,gatePassed} → COMPLETED
-  └─ tool_result = {gatePassed} → modele geri besle
+Prompt = [System (ÖSYM felsefesi + çeldirici taksonomisi)]   ← stabil, en başta (prefix cache)
+       + [ÖĞRENCİ BAĞLAMI]        ← weak_kazanimlar + distractor_traps + Redis ctx
+       + [BİLGİ BAĞLAMI]          ← match_yks_knowledge
+       + [STİL ÖRNEKLERİ]         ← match_yks_exemplars
+       + [GÖREV]
 ```
+`cache_control` yok; stabil blokları başa koymak DeepSeek'in **otomatik prefix cache**'ini
+tetikleyebilir. Garanti değil → Context Injection **kompakt** tutulur (özet brief, ham log değil).
 
-> **Tool-use deseni:** Anthropic'in `tool_use` bloğu yerine artık **OpenAI-uyumlu `tools` + `tool_calls`** kullanılır (`chat.completions.create({ tools, tool_choice })`, `finish_reason === "tool_calls"` → `message.tool_calls` işle → `role:"tool"` sonucu geri besle). Manuel tool-loop mantığı aynıdır.
+### Çift geçişli doğrulama (`generateVerifiedSet`)
+```
+GENERATE (temperature=CREATIVE) ─▶ N+2 aday
+   │ her aday:
+KOD KAPILARI: LaTeX/KaTeX · çeldirici kuşatması · şık uzunluk sızıntısı ·
+              gövde uzunluğu · Jaccard 4-gram özgünlük bariyeri
+VERIFY (r1, BAĞIMSIZ bağlam): soruyu SIFIRDAN çöz → işaret eşleşiyor mu?
+              tek doğru mu? RAG olgu denetimi? zorluk + üslup skoru (1–5)
+   └─▶ ACCEPT | REPAIR | REJECT
+REPAIR (≤1 tur) → yeniden doğrula
+TOP-UP: kabul < hedef ise başa dön (≤3 tur)
+```
+Yalnız tüm kapıları geçen soru `verified:true` ile `yks_ai_questions`'a yazılır.
+
+**Havuz-önce yasası:** pratik/test servisi **0 LLM** — doğrulanmış havuzdan, kullanıcının
+görmediklerinden. Canlı üretim yalnız havuz boşsa son çare. Gece demirhanesi
+(`topup-planner`, 02:00–06:00 TSİ) ince hücreleri doldurur.
+
+> ⚠️ **Elenen aday hiçbir yere yazılmıyor** — `generateVerifiedSet` içinde **9 ayrı `return null`**,
+> sıfır kalıcılık. Eval anlıkları tanım gereği yalnız *havuza girmiş* soruları ölçer. Bu yüzden
+> "hangi kapı kaçını eledi" sorusu bugün **cevapsızdır** ve cevabı hayatta kalanlardan türetmek
+> uydurma olur. Çözüm §17'de (A5).
 
 ---
 
 <a name="8"></a>
-## 8. Komuta Merkezi Chatbot (Kaptan)
+## 8. Müfredat (ltree) ve test modları
 
-**Model:** `deepseek-chat` (uzun bağlam hafızalı). Pusula ile **paylaşılan tool registry**.
+`curriculum_nodes` self-ref + materialized path (`matematik.turev.turev_kurallari.teget_egimi`).
+`path <@ 'matematik.turev'` → tüm alt ağaç tek sorguda.
 
-**Bellek hidrasyonu (Context Injection):** `deepseek-chat`, son 30 gün `user_activities`'i kompakt öğrenci brief'ine özetler (`weak_kazanimlar` + `distractor_traps`), Redis `user:{uid}:context`'i ekler → system'e gömülür. `cache_control` olmadığından brief **kısa** tutulur ve stabil bloklar prefix'e alınır.
+| Mod | Kim başlatır | Kapsam | Süre |
+|---|---|---|---|
+| **Mikro** | Öğrenci | Tek kazanım | — |
+| **Mezo** | Pusula | `weak_kazanimlar` → N alt ağaç, sarmal | — |
+| **Makro** | Öğrenci/zamanlı | `osym_blueprint` ders dağılımı | 165/180 dk |
 
-| Araç | İş | Yazdığı yer |
-|---|---|---|
-| `get_student_memory` / `drill_memory` | 30-gün brief / derin analiz | read |
-| `launch_practice` | Ritim'e oturum devret | `agent:tasks` |
-| `modify_roadmap` | Fazı ertele/değiştir | `study_roadmaps` + Realtime |
-| `set_daily_context` | Günlük durum | Redis `user:{uid}:context` |
-| `signal_pusula` | "Yeniden planla" | `agent:control:pusula:{uid}` |
-
-**Sunum:** Plan **sayfada canlı** çizilir — `study_roadmaps.version` artınca Supabase Realtime push eder. (PDF değil; PDF yalnızca opsiyonel dışa-aktarım.) **SSE** ile istemciye canlı yazım. **Guardrail:** yıkıcı değişiklik onay ister; `signal_pusula` idempotent.
+`buildMicro/Meso/MacroTest` (`lib/test-modes.ts`) · `assembleSegment` (havuz → AI top-up).
 
 ---
 
 <a name="9"></a>
-## 9. Model & Maliyet + OpenRouter/DeepSeek API Notları
+## 9. Roller ve yetkiler (RBAC)
 
-### 9a. Model katmanlaması (OpenRouter slug'ları)
+### Rol nereden gelir
 
-| Katman | Model | Kullanım |
+Tek kaynak: **`profiles.role`** — `student | teacher | admin` (0016 CHECK'i).
+
+> ⚠️ **Rol JWT'den OKUNMAZ.** İki gerekçe:
+> 1. `handle_new_user()` rolü `raw_user_meta_data`'dan alıyordu ve o alan **istemci
+>    yazılabilir**. 0016 bunu beyaz listeyle sertleştirdi, ama JWT'ye rol koymak aynı güven
+>    zincirini geri getirirdi.
+> 2. `is_approved` iptal edildiğinde etki **saniyeler** içinde geçmeli. JWT'ye yazılsaydı token
+>    yenilenene kadar (~1 sa) yetkisi alınmış öğretmen bütün sınıfı görmeye devam ederdi.
+>
+> Bedeli: istek başına bir `profiles` okuması. `kimlikAl()` iki kademeli önbellekle
+> (süreç-içi Map 60 sn + FIFO tavan 5000 → Redis 60 sn) bunu kullanıcı başına ~dakikada bire
+> indirir. **Redis yoksa DB'ye düşer, asla "izin ver"e düşmez.**
+
+### İki kapı — `src/middleware/requireRole.ts`
+
+```
+requireRole('teacher') → role==='teacher' && is_approved===true
+requireRole('admin')   → role==='admin'
+```
+
+> ⚠️ **ADMİN, ÖĞRETMEN UÇLARINDAN GEÇMEZ.** Öğretmen uçları sınıfı `req.userId`'den türetiyor;
+> admin oraya girseydi hata almaz, **sessizce boş sınıf** görürdü. Sessiz yanlış, gürültülü
+> hatadan kötüdür. İki yüzey kesin ayrı kalır — yöneticinin sınıf verisine tek meşru penceresi
+> `GET /admin/kullanici/:id`'dir.
+
+### Yetki matrisi
+
+| Yüzey | Öğrenci | Öğretmen | Admin |
+|---|---|---|---|
+| `/mastery`, `/answers`, `/practice`, `/garden`… (kendi verisi) | ✅ | ✅ (boş) | ✅ (boş) |
+| `/sinif/*` — katıl / ayrıl | ✅ | ⛔ `ogrenci_degil` | ⛔ `ogrenci_degil` |
+| `/teacher/*` — 13 uç | ⛔ 403 | ✅ | **⛔ 403** |
+| `/admin/*` — 11 uç | ⛔ 403 | ⛔ 403 | ✅ |
+
+### İki katmanlı savunma: RLS satırı, GRANT kolonu
+
+> 🚨 **0019 — kanıtlanmış ayrıcalık yükseltme açığı, kapatıldı.**
+> `profiles_update` politikası **satırı** kısıtlıyordu ("yalnız kendi satırın") ama **kolonu**
+> kısıtlamıyordu — Postgres'te RLS politikası kolon bazlı değildir. Sonuç: giriş yapmış herhangi
+> bir öğrenci tarayıcı konsolundan tek satırla kendini yönetici yapabiliyordu:
+> ```js
+> supabase.from('profiles').update({ role: 'admin' }).eq('id', myId)   // KABUL EDİLİYORDU
+> ```
+> `requireRole` rolü `profiles`'tan okuduğu için **tüm RBAC bu açıkla geçersizdi.** 0019
+> blanket UPDATE'i geri alıp kolon bazlı GRANT verdi. Canlıda doğrulandı: aynı istek artık
+> **403 / 42501** ile reddediliyor.
+
+İstemcinin yazabildiği kolonlar: `name · avatar · grade · student_class · school · branch · bio ·
+daily_goal · notifications_enabled · teacher_notif_prefs · total_chat_messages ·
+last_goal_reached_date · last_solved_question · updated_at`
+
+**Yalnız service_role:** `role · is_approved · teacher_id · teacher_ids · class_code · students ·
+stats* · mastery* · gamification · level_data · unlocked_badges · email · created_at`
+
+### Sahiplik denetimi — `src/lib/yetki.ts`
+
+Middleware **değil**: `studentId` route parametresinden gelir ve denetimin kullanım noktasında
+görünür kalması gerekir.
+
+- `assertTeacherOwnsStudent(teacherId, studentId)` → geçer: `role='student'` **ve**
+  (`teacher_id` eşleşir **veya** `teacher_ids` içerir). Geçmezse **404, 403 DEĞİL** — 403,
+  uuid'nin gerçek bir öğrenciye ait olduğunu doğrular ve ucu numaralandırma kehanetine çevirirdi.
+  Ayrım sunucuda `warn` ile loglanır.
+- `sinifOgrencileri(teacherId)` → **`fetchAll` ile** (§6 tuzağı).
+- Önbellek: pozitif 60 sn, **negatif 10 sn** (uzun negatif, yeni kaydolan öğrenciyi bozuk gösterir).
+- `sinifiUnut(teacherId)` kayıt/çıkarma sonrası **zorunlu** — bunsuz yeni öğrenci 60 sn görünmez
+  ve öğretmen "katılım çalışmıyor" sanır.
+
+### Sınıf modeli
+
+**Ayrı `classes` tablosu YOK.** Sınıf = `profiles.class_code` (öğretmen kaydında üretilen 6 haneli
+büyük harf hex); üyelik = `profiles.teacher_id` (tekil) veya `teacher_ids jsonb` (çoklu).
+Gerekçe: her join zaten indeksli, `user_logs.teacher_id` yazma anında denormalize, ve sınıf bugün
+öğretmenle 1:1 — tablo "öğretmen başına tam bir satır" olurdu. Dürüst sınır API'de görünür:
+bir öğretmenin bir sınıfı vardır, `classId` path parametresi yoktur.
+
+### Kayıt akışı
+
+| Yol | Uç | Kural |
 |---|---|---|
-| **Fast/Util** | `deepseek/deepseek-chat` | Contextual önek, sınıflama, bellek brief |
-| **Generate** | `deepseek/deepseek-chat` *(veya doğrulanmış hızlı slug)* | Soru üretimi |
-| **Verify** | `deepseek/deepseek-r1` (reasoner) | Bağımsız doğrulama — muhakeme kritik |
-| **Embed** | `text-embedding-3-small` @768 *(doğrudan OpenAI)* | RAG vektör |
+| Öğrenci kodu girer | `POST /sinif/katil` | Kod yanlış da olsa öğretmen onaysız da olsa **aynı mesaj** — hangi kodların gerçek olduğu sızmasın |
+| Öğretmen e-posta ile ekler | `POST /teacher/ogrenci` | **Başka sınıftaki öğrenci 409 ile reddedilir** ↓ |
+| Yönetici taşır | `POST /admin/kullanici/:id/sinif` | İzli, §11 |
 
-### 9b. OpenAI-uyumlu API kısıt/olanakları (Claude'dan farklar)
-- **`temperature` / `top_p` VAR** → STRICT≈0.2 / DERIVE≈0.5 / CREATIVE≈0.8 sıcaklık motoru geri gelir.
-- **`cache_control` YOK** → stabil prefix + kompakt Context Injection; DeepSeek otomatik cache'e *bel bağlama*.
-- **Reasoning** → `deepseek-r1`; yanıt `choices[0].message.reasoning_content` (DeepSeek) / OpenRouter `reasoning` alanı.
-- **JSON çıktı** → `response_format:{type:"json_object"}` + prompt'ta "JSON döndür" + uygulama-tarafı (Zod) doğrulama. `json_schema` desteği modele göre kısmi.
-- **Streaming** → `stream:true` (uzun çıktı/`max_tokens` yüksekse zorunlu); chunk'ları biriktir.
-- **OpenRouter headers** → `defaultHeaders: { "HTTP-Referer", "X-Title" }` (attribution/rank).
-- **Embeddings** → OpenRouter'da **yok**; doğrudan OpenAI (`dimensions:768` zorunlu).
-
-### 9c. Guardrail'ler
-- Her do-loop'a tur/token bütçesi; `agent_tasks.attempts` retry sınırı.
-- Doğrulama kapısını geçmeyen soru **havuza yazılmaz**.
-- Stream `XACK` at-least-once → yan-etkiler idempotent (task.id dedup).
+> ⚠️ **Sessiz devralma kapatıldı.** Önceden `POST /teacher/ogrenci` `teacher_id`'yi koşulsuz
+> üzerine yazıyordu: öğretmen A, e-postasını bilerek öğretmen B'nin öğrencisini alabiliyordu.
+> Ne B haberdar oluyordu ne de öğrenciye soruluyordu — B'nin sınıf ortalaması ve ısı haritası
+> sebepsiz değişiyordu. Devir meşru olabilir, ama kararı **devralan öğretmen veremez**: ya
+> öğrenci kendisi katılır ya yönetici taşır.
 
 ---
 
 <a name="10"></a>
-## 10. API Yüzeyi (Route Map)
+## 10. Öğretmen paneli
 
-| Route | Metod | İş |
-|---|---|---|
-| `/api/tests/generate` | POST | mode: micro/meso/macro → build*Test → assembleSegment |
-| `/api/question-state` | GET·POST | Canvas replay / upsert (debounce'lı) |
-| `/api/telemetry` | POST | Hot-path (Redis stream) + durable (Supabase); `testMode, attemptId, kazanimId, selectedOption` |
-| `/api/chat` | POST·SSE | Kaptan: hydrateMemory → tool-loop → chat_messages |
-| `/api/agents/dispatch` | POST | runPusula (arka plan / BullMQ·Inngest) |
+**Görür:** sınıf özeti + 84 günlük trend · mevcut listesi · kazanım ısı haritası · motorun
+işaretlediği zayıf kazanımlar · **öğrencinin tam bilişsel röntgeni** · cevap logları · ödev
+geçmişi · soru havuzu.
+
+**Yapar:** havuzdan ödev derler · hedefli set gönderir · e-postayla öğrenci ekler · sınıftan çıkarır.
+
+### Teşhis dili öğretmende AÇIK
+
+`TESHIS_DILI_YOK` teşhis dilini **öğrenciye** yasaklıyor. Öğretmen kuralın muhatabı değil
+**koçudur** → `rontgenGovdesi(userId, { teshisGoster })`. `misconceptions` anahtarı yalnız
+`teshisGoster: true` iken **eklenir**; öğrenci ucunun yanlışlıkla taksonomi sızdırması
+yapısal olarak imkânsızdır.
+
+### Sınıf analitiği RPC'leri (0016) — N+1 katilleri
+
+| RPC | Kapattığı N+1 |
+|---|---|
+| `sinif_ozeti(teacher_id, days)` | roster + öğrenci başına 3 sorgu = `1+3N` → **1** |
+| `sinif_isi_haritasi(...)` | 30 öğrenci × ~900 düğüm = 27k satır → **1** |
+| `sinif_zayif_kazanimlar(...)` | öğrenci başına `weak_kazanimlar` → **1** |
+
+> ⚠️ **`v_mastery_rollup` KULLANILMAZ** — `avg(mastery)` ham, çürütülmemiş değerdir (0014 bunu
+> zaten kusur olarak yazıyor). Öğrenciye gösterilmesi engellenen şişik sayıyı öğretmene
+> göstermek aynı yalandır, üstelik daha zararlıdır: **öğretmen ona bakıp müdahale etmez.**
+
+> ⚠️ **Isı haritası iki katmanlı ortalama alır** (önce öğrenci-içi, sonra öğrenciler arası).
+> Tek katmanlı `avg(m_eff)`, 40 düğüme dokunmuş öğrenciyi 2 düğüme dokunmuşun 20 katı
+> ağırlıklandırır — "sınıf ortalaması" o zaman sınıfın değil, en çalışkanın haritası olur.
+
+> ⚠️ **Zayıf kazanımlar yaygınlığa göre sıralanır**, şiddete göre değil. Sınıf müdahalesi
+> yaygınlığı hedefler; bireysel şiddet zaten öğrenci röntgeninde.
+
+### Ödev derleme — iki şekil arasındaki sessiz kırılma
+
+```
+havuz     : options = {"A":"…","B":"…"}   correct_option = 'C'    (HARF)
+questions : options = ["…","…"]           correct_answer = "…"    (METİN)
+```
+Havuz uuid'lerini doğrudan `question_ids`'e yazmak öğrenciye **sıfır soru** gösterirdi, hatasız.
+`lib/odev-derle.ts` dönüşümü yapar; doğru şıkkın metni çözülemeyen soruyu **atlar** (aksi hâlde
+"her zaman yanlış" olurdu) ve ayrıca sayar.
+
+**Geniş havuza hazır:** `havuzdanSec()` `order by random()` yerine rastgele pencere örneklemesi
+kullanır (`pencere = min(toplam, max(adet*5, 50))` + Fisher–Yates) — ölçekte tam tarama yapmaz.
+Kazanım başına kota + `kaynak_soru_id` (0018) ile tekrar gönderim dışlaması.
+
+`POST /teacher/odev` **LLM ÇAĞIRMAZ** — mevcut havuzdan derler. `generateVerifiedSet`'e bağlamak,
+öğretmenin tıklamasının arkasına 97–199 sn'lik senkron LLM zinciri koymak olurdu. Havuz yetmezse
+**soru uydurulmaz**, eksik görünür olur.
 
 ---
 
 <a name="11"></a>
-## 11. Kod Blueprint'leri
+## 11. Yönetici paneli (Kule)
 
-> `openai` npm paketi (v4+) ile. **İki client:** OpenRouter (chat) + OpenAI (embed).
+Motor dairesi + kullanıcı yönetimi. Dört ekran: **Kule · Kullanıcılar · Soru Havuzu · Özgünlük**.
 
-### 11.1 `lib/clients.ts`
-```ts
-import OpenAI from 'openai'
-import { createClient } from '@supabase/supabase-js'
-import Redis from 'ioredis'
+### Okuyan uçlar
 
-// (1) LLM trafiği → OpenRouter (OpenAI-uyumlu)
-export const openrouter = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY!,
-  defaultHeaders: {
-    'HTTP-Referer': process.env.APP_URL ?? 'https://learnup.app', // OpenRouter attribution
-    'X-Title': 'LearnUp YKS Beyin',
-  },
-})
+| Uç | Önbellek | Gerekçe |
+|---|---|---|
+| `/admin/havuz`, `/admin/eval`, `/admin/ozgunluk` | 10 dk | Kişisel veri yok, her admin için aynı |
+| `/admin/gorevler` | **yok** | Ops sağlığı. Önbellekli "takılan yok" panelsizlikten kötüdür |
+| `/admin/kullanicilar`, `/admin/denetim` | **yok** | Onay ve denetim anında yansımalı |
+| **tüm `/teacher/*`** | **yanıt önbelleği YOK** | Anahtarsız modül önbelleği **öğretmenler arası veri sızıntısıdır** — 0014'ün kapatmak için yazıldığı hatanın aynısı |
 
-// (2) Embeddings → doğrudan OpenAI (OpenRouter embeddings sunmaz — bkz. F2)
-export const openaiEmbed = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,     // default baseURL = api.openai.com
-})
+### Yazan uçlar — üç ortak disiplin (`admin-yonetim.routes.ts`)
 
-export const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
-export const redis         = new Redis(process.env.REDIS_URL!) // komut/XADD
-export const redisBlocking = new Redis(process.env.REDIS_URL!) // BLOCK'lu XREAD ayrı bağlantı
+1. **Her mutasyon denetlenir.** `yonetim_denetim`e yazılır; yazılamazsa yanıt
+   `denetimYazildi: false` döner ve **ekranda uyarı çıkar**. Sessizce izsiz kalan bir yetki,
+   yetki değil açıktır.
+2. **Her mutasyon önbellek düşürür** (`kimligiUnut` / `sinifiUnut`) — yoksa yetki katmanı
+   60 saniye eski gerçeği söyler.
+3. **Kendi rolünü değiştiremezsin.** Bu panelin onarılamaz TEK hatası kendini
+   yetkisizleştirmektir; kurtarmak elle SQL gerektirir.
 
-// Tek kaynak-hakikat model + boyut sabitleri
-export const MODELS = {
-  GENERATE: 'deepseek/deepseek-chat',   // slug'ı OpenRouter kataloğuyla DOĞRULA (F3)
-  VERIFY:   'deepseek/deepseek-r1',     // reasoner — bağımsız doğrulama
-  FAST:     'deepseek/deepseek-chat',   // contextual önek, sınıflama, brief
-} as const
+| Uç | Notlar |
+|---|---|
+| `POST /admin/ogretmen/:id/onay` | Onay **verme** tek tık; **kaldırma** diyalogdan geçer (öğretmen 60 sn'de sınıfını kaybeder) |
+| `POST /admin/kullanici/:id/rol` | ↓ üç yan etki |
+| `POST /admin/kullanici/:id/sinif` | Öğrenciyi taşı/çıkar. Onaysız öğretmene atama reddedilir — o sınıf hiçbir panelde görünmez |
+| `POST /admin/gorev/:id/yeniden` | ↓ `attempts` tuzağı |
 
-export const EMBED_MODEL = 'text-embedding-3-small' as const
-export const EMBED_DIM = 768 as const   // drift-guard tek-kaynağı (F1)
+**Rol değişiminin yan etkileri (hepsi zorunlu):**
+- `teacher →` başka rol: **sınıfı boşalır.** Yapılmasaydı öğrenciler artık öğretmen olmayan bir
+  id'ye bağlı kalır — hiçbir panelde görünmez, kimse ödev atayamaz, **sessizce kaybolurlar.**
+- `→ teacher`: sınıf kodu üretilir + `is_approved = true` (yönetici elle terfi ettiriyor;
+  ikinci tıklama beklemek yeni öğretmeni sebepsiz 403'te bırakırdı)
+- `→ student dışı`: kendi `teacher_id`'si de kopar (öğretmenin bir sınıfta "öğrenci" olarak
+  durması `GET /sinif` ile `sinif_mevcudu`'nu çelişkiye düşürürdü)
+- `son_yonetici` koruması: pratikte erişilemez (tek yönetici varsa o sensindir ve `kendi_rolun`
+  kapısına takılırsın) ama kural açık yazılı durur
 
-// Sıcaklık katmanları geri geldi (OpenAI-uyumlu API)
-export const TEMP = { STRICT: 0.2, DERIVE: 0.5, CREATIVE: 0.8 } as const
-```
+> ⚠️ **`attempts` sıfırlanmadan görev yeniden kuyruklanamaz.** Bekçi
+> ([atolye.worker.ts:66](learnup-brain/src/workers/atolye.worker.ts#L66)) `attempts >= 3` olan her
+> PENDING görevi anında FAILED'a çeviriyor — sıfırlanmasaydı uç görünürde çalışır, görev 5 dakika
+> içinde sessizce geri düşerdi. Yanıttaki `akisaItildi: false` ise görev kaybolmaz, **gecikir**
+> (bekçi 5 dk içinde toplar) — bunu söylemek yöneticinin arka arkaya tıklamasını engeller.
 
-### 11.2 `lib/rag.ts` — embedding (768 + drift-guard) + filtreli retrieval
-```ts
-import { openaiEmbed, supabase, EMBED_MODEL, EMBED_DIM } from './clients'
+### Denetim defteri — `yonetim_denetim` (0020)
 
-// Drift-guard: dimensions:768 verilmezse 1536 döner (F1). Uzunluğu SERT doğrula.
-export async function embed(texts: string[]): Promise<number[][]> {
-  const r = await openaiEmbed.embeddings.create({
-    model: EMBED_MODEL,
-    input: texts,
-    dimensions: EMBED_DIM,               // ← 768'e kısalt (zorunlu)
-  })
-  const vecs = r.data.map(d => d.embedding)
-  for (const v of vecs) {
-    if (v.length !== EMBED_DIM) {         // fail-fast: DB insert'ten ÖNCE yakala
-      throw new Error(`EMBED_DIM drift: beklenen ${EMBED_DIM}, gelen ${v.length}`)
-    }
-  }
-  return vecs
-}
+**Append-only.** `UPDATE`/`DELETE` satır tetikleyicisiyle, **`TRUNCATE` statement
+tetikleyicisiyle** engellenir.
 
-export type GroundingChunk = { id: number; content: string; context: string | null; kazanim_code: string | null; similarity: number }
+> ⚠️ Satır düzeyi tetikleyici TRUNCATE'te **çalışmaz**. İlk sürümde bu açıktı: kilit yerindeyken
+> bile `truncate yonetim_denetim` bütün defteri silerdi. Doğrulama sırasında yakalandı, ikinci
+> tetikleyiciyle kapatıldı.
 
-export async function retrieveGrounding(p: { subject: string; paths: string[]; query: string; k?: number }) {
-  const [qe] = await embed([p.query])
-  const { data, error } = await supabase.rpc('match_yks_knowledge', {
-    query_embedding: qe,                  // vector(768)
-    filter_subject: p.subject,
-    filter_paths: p.paths,                // ltree ön-ekleri (mode'a göre 1..N)
-    match_count: p.k ?? 8,
-  })
-  if (error) throw error
-  return data as GroundingChunk[]
-}
+Alanlar: `admin_id · eylem · hedef_id · hedef_tur · detay jsonb · created_at`.
+Eylemler: `ogretmen_onay · rol_degis · sinif_ata · gorev_yeniden`.
+RLS açık + politika yok → `authenticated` hiçbir satır göremez; okuma yalnız
+`GET /admin/denetim` üzerinden, `requireRole('admin')` kapısının ardından.
 
-export type Exemplar = { question_text: string; options: Record<string, string>; correct_option: string; solution: string }
-export async function retrieveExemplars(p: { subject: string; topic: string; difficulty: string; query: string; k?: number }) {
-  const [qe] = await embed([p.query])
-  const { data, error } = await supabase.rpc('match_yks_exemplars', {
-    query_embedding: qe, filter_subject: p.subject, filter_topic: p.topic,
-    filter_difficulty: p.difficulty, match_count: p.k ?? 4,
-  })
-  if (error) throw error
-  return data as Exemplar[]
-}
-```
-
-### 11.3 `lib/generation.ts` — Context Injection + üretim + bağımsız doğrulama
-
-**(a) Dinamik Context Injection — modelin "sıfır beyinle" başlamasını engeller**
-```ts
-import { openrouter, supabase, redis, MODELS, TEMP } from './clients'
-import { retrieveGrounding, retrieveExemplars, type GroundingChunk, type Exemplar } from './rag'
-
-// Supabase (user_activities RPC'leri) + Redis'ten öğrenci geçmişini toplayıp
-// kompakt "ÖĞRENCİ BAĞLAMI" bloğuna derler → prompt'a gömülür.
-export async function buildStudentContext(userId: string): Promise<string> {
-  const [weak, traps, ctxRaw] = await Promise.all([
-    supabase.rpc('weak_kazanimlar', { p_user_id: userId, p_limit: 4 }),
-    supabase.rpc('distractor_traps', { p_user_id: userId, p_limit: 5 }),
-    redis.get(`user:${userId}:context`),           // gün-içi durum (energy/prefer)
-  ])
-  const daily = ctxRaw ? JSON.parse(ctxRaw) : {}
-  const weakLines = (weak.data ?? []).map((w: any) =>
-    `- ${w.subject}/${w.title}: hata oranı %${Math.round(w.wrong_rate * 100)}`).join('\n')
-  const trapLines = (traps.data ?? []).map((t: any) =>
-    `- kazanım#${t.kazanim_id} en sık YANLIŞ seçilen şık: ${t.selected_option} (${t.miss_count}×)`).join('\n')
-
-  // KOMPAKT tut: cache_control yok, uzun bağlam maliyeti artırır (§5c notu)
-  return [
-    '### ÖĞRENCİ BAĞLAMI (kişiselleştirme için — soruyu buna göre hedefle)',
-    weakLines ? `Zayıf kazanımlar:\n${weakLines}` : 'Zayıf kazanım verisi yok.',
-    trapLines ? `Sık düşülen çeldiriciler:\n${trapLines}` : '',
-    daily.energy ? `Günlük durum: enerji=${daily.energy}, tercih=${daily.prefer ?? '-'}` : '',
-  ].filter(Boolean).join('\n')
-}
-```
-
-**(b) System Instructions (ÖSYM felsefesi + çeldirici taksonomisi) + üretim**
-```ts
-const OSYM_SYSTEM = `Sen ÖSYM (TYT-AYT) üslubunda soru yazan uzman bir ölçme-değerlendirme editörüsün.
-KURALLAR:
-- SADECE verilen "BİLGİ BAĞLAMI" ve belirtilen kazanımla sınırlı kal; müfredat dışına ASLA çıkma.
-- ÖSYM formatı: 5 şık (A-E), TEK doğru.
-- Her çeldirici SPESİFİK bir yanılgıyı hedefler: işlem hatası | kavram yanılgısı | birim/işaret | eksik-adım | yakın-değer tuzağı. Rastgele yanlış ÜRETME.
-- "STİL ÖRNEKLERİ"nin dilini/kurgusunu taklit et; KOPYALAMA — sıfırdan özgün üret.
-- "ÖĞRENCİ BAĞLAMI" varsa: öğrencinin zayıf kazanımını ve sık düştüğü çeldirici tipini hedefle.
-- Ezber değil; muhakeme/uygulama sorusu.
-ÇIKTI SÖZLEŞMESİ (LaTeX korunur):
-[SORU]/[A]/[B]/[C]/[D]/[E]/[DOGRU]/[COZUM]/[KAZANIM]/[ZORLUK]/[CELDIRICI_MANTIK]`
-
-export type TaggedQuestion = { soru: string; siklar: Record<'A'|'B'|'C'|'D'|'E', string>; dogru: string; cozum: string; kazanim: string; zorluk: string }
-
-export async function generateQuestions(a: {
-  userId: string; subject: string; kazanim: string; topic: string; difficulty: string; count: number
-  grounding: GroundingChunk[]; exemplars: Exemplar[]
-}): Promise<TaggedQuestion[]> {
-  const studentCtx = await buildStudentContext(a.userId)                 // ← Context Injection
-  const grounding = a.grounding.map((g, i) => `[BAĞLAM ${i+1}] ${g.context ?? ''}\n${g.content}`).join('\n\n')
-  const style = a.exemplars.map((e, i) => `[ÖRNEK ${i+1}] ${e.question_text}\nŞıklar: ${JSON.stringify(e.options)}\nDoğru: ${e.correct_option}\nÇözüm: ${e.solution}`).join('\n\n')
-
-  const res = await openrouter.chat.completions.create({
-    model: MODELS.GENERATE,
-    temperature: TEMP.CREATIVE,                                          // sıcaklık geri geldi
-    max_tokens: 8000,
-    messages: [
-      { role: 'system', content: OSYM_SYSTEM },                         // stabil → prefix (auto-cache adayı)
-      { role: 'user', content:
-        `${studentCtx}\n\n### STİL ÖRNEKLERİ (${a.subject}/${a.topic}/${a.difficulty})\n${style}\n\n` +
-        `### BİLGİ BAĞLAMI (kazanım ${a.kazanim})\n${grounding}\n\n` +
-        `### GÖREV\nBu kazanım/bağlamla SINIRLI, ${a.difficulty} zorlukta ${a.count} özgün ÖSYM sorusu üret. Çıktı sözleşmesine birebir uy.` },
-    ],
-  })
-  return parseTagged(res.choices[0].message.content ?? '')
-}
-```
-
-**(c) Bağımsız doğrulama (reasoner + JSON mode)**
-```ts
-export async function verifyQuestion(q: TaggedQuestion, grounding: GroundingChunk[]) {
-  const render = `[SORU] ${q.soru}\n` + (['A','B','C','D','E'] as const).map(l => `[${l}] ${q.siklar[l]}`).join('\n') + `\n[İŞARETLİ] ${q.dogru}`
-  const evidence = grounding.map(g => g.content).join('\n---\n')
-  const res = await openrouter.chat.completions.create({
-    model: MODELS.VERIFY,                                               // deepseek-r1 (reasoner)
-    temperature: TEMP.STRICT,
-    response_format: { type: 'json_object' },                          // JSON mode
-    messages: [
-      { role: 'system', content: 'Sen titiz, BAĞIMSIZ bir sınav denetçisisin. Soruyu sıfırdan kendin çöz; üreticinin işaretine güvenme. Sadece geçerli JSON döndür.' },
-      { role: 'user', content:
-        `SORU:\n${render}\n\nMÜFREDAT KANITI:\n${evidence}\n\n` +
-        `Şu şemada JSON döndür: {"solvedAnswer":"A-E","matchesMarked":bool,"singleCorrect":bool,"curriculumBound":bool,"osymStyleScore":1-5,"verdict":"ACCEPT|REPAIR|REJECT","critique":"..."}` },
-    ],
-  })
-  return JSON.parse(res.choices[0].message.content ?? '{}') as {
-    solvedAnswer: string; matchesMarked: boolean; singleCorrect: boolean;
-    curriculumBound: boolean; osymStyleScore: number; verdict: 'ACCEPT'|'REPAIR'|'REJECT'; critique: string
-  }
-}
-// parseTagged / repairQuestion / generateVerifiedSet: do-loop mantığı §5d'deki gibi
-// (GENERATE→VERIFY→REPAIR→TOP-UP); yalnız verdict=ACCEPT & osymStyleScore>=4 havuza yazılır.
-```
+**`/uretim-hatti` kasten YOK** — §17.
 
 ---
 
 <a name="12"></a>
-## 12. Veritabanı Migrasyonu (`0001_extensions.sql`) + Drift-Guard
+## 12. API yüzeyi
 
-```sql
--- 0001_extensions.sql
-create extension if not exists vector;
-create extension if not exists ltree;
+Tüm route'lar hem `/api` hem `/api/v1` altında mount edilir (`app.ts`).
 
--- ── EMBEDDING BOYUTU: tüm vektör kolonları vector(768) ──────────────
--- (text-embedding-3-small @ dimensions:768 — bkz. F1)
-
--- Grounding korpusu
-alter table yks_knowledge_base  alter column embedding type vector(768);
--- Üslup korpusu
-alter table yks_style_exemplars alter column embedding type vector(768);
--- Üretilmiş havuz (dedup)
-alter table yks_questions       alter column embedding type vector(768);
-
--- HNSW index (tip aynı, boyut 768) — mevcut index'leri düşürüp yeniden kur:
-drop index if exists yks_kb_vec;   create index yks_kb_vec on yks_knowledge_base using hnsw (embedding vector_cosine_ops) with (m=16, ef_construction=64);
-drop index if exists yks_ex_vec;   create index yks_ex_vec on yks_style_exemplars using hnsw (embedding vector_cosine_ops) with (m=16, ef_construction=64);
-
--- ── DRIFT-GUARD (sertleştirilmiş) ───────────────────────────────────
--- 1) Kolon tipi vector(768) zaten insert-anında boyutu ZORLAR (yanlış boyut → hata).
--- 2) Ek güvence: yanlışlıkla NULL/0-boyut embedding'i reddet.
-alter table yks_knowledge_base  add constraint kb_dim_768 check (embedding is null or vector_dims(embedding) = 768);
-alter table yks_style_exemplars add constraint ex_dim_768 check (embedding is null or vector_dims(embedding) = 768);
-alter table yks_questions       add constraint yq_dim_768 check (embedding is null or vector_dims(embedding) = 768);
-
--- 3) RPC imzaları vector(768)'e güncellenir:
---    match_yks_knowledge(query_embedding vector(768), ...)  ← 1024 değil
---    match_yks_exemplars(query_embedding vector(768), ...)
 ```
+/chat                 SSE — compression YOK, chatLimiter
+/tests /agents /questions /ai       llmLimiter
+/telemetry /question-state /answers /questions/osym /questions/ai
+/practice /mastery /assignments /gamification /garden /account   standardLimiter
+/sinif                requireAuth  (rol kontrolü handler içinde)
+/teacher              requireAuth → standardLimiter → requireRole('teacher')
+/admin                requireAuth → standardLimiter → requireRole('admin')
+```
+`standardLimiter` **`requireRole`'dan önce** — rol yoklayan döngü de sınırlansın.
 
-**Uygulama-tarafı drift-guard (üç kademe):**
-1. **Sabit tek-kaynak:** `EMBED_DIM = 768` (`lib/clients.ts`) — model+boyut birlikte değişir.
-2. **Fail-fast assertion:** `embed()` içinde `v.length !== EMBED_DIM → throw` (DB'ye gitmeden yakalar — §11.2).
-3. **DB check + kolon tipi:** yukarıdaki `check (vector_dims = 768)` + `vector(768)` tipi.
+**Öğretmen (13):** `GET /ozet · /sinif · /sinif/isi-haritasi · /sinif/zayif-kazanimlar ·
+/ogrenci/:id · /ogrenci/:id/rontgen · /ogrenci/:id/loglar · /odevler · /soru-havuzu` ·
+`POST /odev · /hedefli-odev · /ogrenci` · `DELETE /ogrenci/:id`
 
-> Boyutu değiştirmek isteyen biri **üç yeri birden** güncellemek zorunda kalır → sessiz drift imkânsız.
+**Yönetici (11):** `GET /havuz · /eval · /ozgunluk · /gorevler · /kullanicilar · /kullanici/:id ·
+/denetim` · `POST /ogretmen/:id/onay · /kullanici/:id/rol · /kullanici/:id/sinif ·
+/gorev/:id/yeniden`
+
+**Sınıf (3):** `GET /sinif` · `POST /sinif/katil · /sinif/ayril`
+
+### Hata sözleşmesi
+`HttpHatasi(status, code, message)` → gövde `{ error, message }`. `middleware/error.ts` yalnız
+**kasıtlı** hataların mesajını dışarı verir; 4xx `warn`, 5xx `error` loglanır. Ham `err.message`
+sızdırılmaz — Postgres hataları tablo/kolon adı taşır.
 
 ---
 
 <a name="13"></a>
-## 13. Dağıtım Topolojisi & Kod Yerleşimi
+## 13. Migration tarihçesi
 
-- **Next.js serverless route'lar** (`/api/*`): kısa istekler (telemetry, question-state, test tetikleme, chat SSE).
-- **Uzun-yaşayan worker** (ayrı process): **Ritim loop** (`XREADGROUP` bloklu) + Makro üretim → **BullMQ/Inngest**; `runPusula` buraya devredilir (edge timeout'a takılma).
-- **Ingestion:** offline batch (request-path değil).
-- **Realtime:** Supabase yönetir (istemci subscribe).
+Supabase Dashboard → SQL Editor → dosya içeriğini yapıştır → RUN. **Hepsi idempotent.**
 
-```
-lib/
-  clients.ts     # openrouter + openaiEmbed + supabase + redis + MODELS + EMBED_DIM + TEMP
-  rag.ts         # embed(768+drift-guard) · retrieveGrounding · retrieveExemplars
-  generation.ts  # OSYM_SYSTEM · buildStudentContext (Context Injection) · generate · verify · do-loop
-  curriculum.ts  # resolveKazanim · getWeakPaths · osymBlueprint
-  test-modes.ts  # buildMicro/Meso/MacroTest · assembleSegment
-  canvas.ts      # question-state save/load
-  agents/{ orchestrator.ts(Pusula) · worker.ts(Ritim) · chatbot.ts(Kaptan) }
-```
+| # | Dosya | Ne yapar |
+|---|---|---|
+| 0001 | `init` | Beyin çekirdeği: 9 tablo (curriculum ltree, yks_questions, knowledge/exemplars 768d, question_states, roadmaps, agent_tasks, chat_messages, osym_blueprint) + RLS |
+| 0003 | `functions` | Retrieval RPC'lerinin `public.`-nitelikli kanonik kopyası + HNSW/GiST indeksler |
+| 0004 | `unification` | Birleşme + **kaynak ayrımı** (enum + değişmezlik trigger'ı) + **`record_answer` atomik RPC** + agent_tasks kilit kolonları + Realtime + md5 dedup |
+| 0005 | `agents` | Ajan katmanı: `user_mastery` · `student_memory` · `session_summaries` (+768d) · `nudges` · `prereq_paths` · `weak_kazanimlar` rewrite · `match_session_memories` · `v_mastery_rollup` |
+| 0006 | `cleanup` | Eski `user_activities` artığını siler. **Yalnız 0004+0005'ten sonra** |
+| 0007 | `curriculum_code_unique` | `(subject, code)` UNIQUE |
+| 0008 | `yks_knowledge_unique` | `(subject, kazanim_code)` UNIQUE + mükerrer temizliği |
+| 0009 | `sorular` | ÖSYM çıkmış sorular (2018–2025) şema hazırlığı |
+| 0010 | `osym_kunye` | 0009'un fazlalığı: `yks_questions.source` kaldırılır |
+| 0011 | `atomik_ekonomi` | Coin · envanter · bahçe · görev ödülü atomik |
+| 0012 | `brief_atomik` | Ajan brief'leri atomik yazılır |
+| 0013 | `ai_ayrik_tablo` | AI soruları kendi tablosuna: `yks_ai_questions` |
+| 0014 | `mastery_rollup_guvenlik` | `v_mastery_rollup` RLS baypasını kapatır |
+| 0015 | `exemplar_kunye` | TYT/AYT çapası + kazanım bağlantısı |
+| 0016 | `rol_ve_panel` | **`admin` rolü** + `handle_new_user()` beyaz listesi + onay geri-doldurması + 2 indeks + 4 sınıf RPC'si |
+| 0017 | `zorluk_eslesmeli_ornek` | `match_yks_exemplars` zorluğu tutan örneği öne alır |
+| 0018 | `odev_kaynak_izi` | `questions.kaynak_soru_id` — tekrar gönderim dışlaması |
+| 0019 | `profil_kolon_yetkisi` | 🚨 **Ayrıcalık yükseltme açığını kapatır** (§9) |
+| 0020 | `yonetim_denetim` | Yönetici eylem defteri, append-only (§11) |
 
-**Ortam değişkenleri:** `OPENROUTER_API_KEY` · `OPENAI_API_KEY` (embeddings) · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` · `REDIS_URL` · `APP_URL` (HTTP-Referer) · (ops.) `MATHPIX_APP_ID/KEY`.
+**0016'nın hayat kurtaran ayrıntısı:** `is_approved` `default false` ve kod hiçbir yerde `true`
+yapmıyordu. Geri-doldurma olmadan onay kapısı **deploy günü her öğretmeni kilitlerdi**.
+
+**İlk yönetici elle verilir:**
+`update public.profiles set role='admin' where email='…';`
+`ADMIN_BOOTSTRAP_EMAIL` gibi env-güdümlü otomatik terfi **eklenmeyecek** — yanlış yapılandırılmış
+bir deploy'u bekleyen ayrıcalık yükseltmesidir.
 
 ---
 
 <a name="14"></a>
-## 14. Uygulama Sırası (Build Order)
+## 14. Frontend — COASTAL
 
-1. **Kararlar sabit:** OpenRouter+DeepSeek · `openai` SDK · embed `text-embedding-3-small@768` · 5 şık · ltree.
-2. **Migrasyon `0001_extensions.sql`:** vektör kolonları → `vector(768)`, HNSW yeniden kur, RPC imzaları güncelle, **drift-guard** ekle (§12).
-3. **`lib/clients.ts` + `lib/rag.ts`:** iki OpenAI client + `embed()` drift-guard'ı doğrula (768 geliyor mu?).
-4. **`curriculum_nodes` seed** + `osym_blueprint`.
-5. **Ingestion pilotu** (1 ders/1 kazanım): PDF→OCR→chunk→contextual(`deepseek-chat`)→embed(768)→Supabase.
-6. **`generateVerifiedSet` (Mikro) uçtan uca** — Context Injection + `deepseek-chat` üret / `deepseek-r1` doğrula → `yks_questions`.
-7. **Meso/Makro + assembleSegment** (havuz → AI top-up).
-8. **Redis Streams delegasyon** (Pusula↔Ritim) + `/api/telemetry`.
-9. **Canvas** + `/api/question-state`.
-10. **Kaptan chatbot** (`deepseek-chat`): hydrateMemory + tool-loop + `/api/chat` SSE.
-11. **Supabase Realtime** canlı durum (yol haritası + ajan).
+İki tema: **Kıyı** (açık) / **Okyanus** (koyu). `.glass` / `.glass-solid`, `--data-hue`,
+`--heat-zero`, `--page-bg`.
+
+**İmza yerleşim:** `lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]`
+**Sarmalayıcı:** `mx-auto max-w-7xl px-[clamp(16px,3.5vw,44px)] pb-20 pt-9`
+
+### Bütçeler (aşılmaz)
+- Görünüm başına **≤5 bulanık yüzey**
+- Sayfa başına **1 kalıcı `GlowBorder`** — sayfanın tek neonu, bakılması gereken tek sayıya gider
+- Sayfa başına **1 `PingDot`** — zaten `ProfileMenu` tarafından harcandı → **yeni ekran PingDot kullanmaz**, canlılık için `StatusLine`
+- **Brass yalnız ÖSYM mührünün kimliğidir** — başka hiçbir yerde kullanılmaz
+
+### Reveal kadansı
+başlık `0` → KPI `0.04` → sol `0.10/0.16/0.20` → sağ `0.14/0.18/0.22/0.26`.
+Sol ve sağ iç içe geçer (göz çapraz okur). **`0.3` aşılmaz** — ötesi koreografi değil gecikme.
+
+### Ekranlar
+
+| Rol | Nav | Ekranlar |
+|---|---|---|
+| Öğrenci | 7 sekme | Bugün · Harita · Rota · Kaptan · Arşiv · Bahçe · Ben |
+| Öğretmen | 5 sekme | SinifPanosu · SinifIsi · OdevAtolyesi · Karsilastir · Ben |
+| Yönetici | 4 sekme | Kule · Kullanicilar · SoruHavuzu · OzgunlukBariyeri |
+
+**Nav eklemeli değil, kapsamlı.** Öğretmen `/harita`, `/bahce`, `/rota` görmez — bunlar öğretmen
+hesabında **verisi olmayan** kişisel ekranlar. Üç rolü birleştirmek 16 sekmelik bir nav üretirdi.
+
+`/ben` rol duyarlı: rütbe halkası, lig, günlük görevler, rozet galerisi yalnız öğrencide;
+öğretmen/yöneticide yalnız avatar + Hesap kalır.
+
+### `RolGecidi` — üç hâl, ikisi değil
+
+```
+profilYukleniyor → <PanoIskeleti/>     ← ASLA yönlendirme yok
+reddedildi       → <YetkiYok/>          ← sessiz redirect değil
+geçti            → <Outlet/>            (gerekirse SinifSaglayici ile sarılı)
+```
+
+> ⚠️ **Bekleme hâlinin varlığı bu panelin en kritik detayı.** `auth.tsx`'teki `loading` yalnız
+> **oturumu** kapsıyor; `profile` ikinci bir effect'te geliyor ve o pencerede `null`. `profile.role`
+> okuyan naif bir kapı **her sert yenilemede "yetkiniz yok" diye yanıp söner.** Çözüm:
+> `profilYukleniyor` bayrağı.
+
+### Diğer disiplinler
+- **Asla yalnız renk:** her risk satırı kelimeli rozet taşır ("yüksek risk"), her seçim ikon taşır
+- **İyimser güncelleme yok:** öğretmen/yönetici mutasyonları sunucu hakikatini değiştirir → dönen ikon + devre dışı buton → `reload()`
+- **Yıkıcı eylem = Radix `Dialog`**, asla `window.confirm`
+- **Drill-down state URL'de:** `?ders=` `?ogrenci=a,b,c` — "şu Kimya sütununa bak" öğretmenin gerçekten attığı mesaj. `setParams(p, {replace: true})` — onsuz on filtre tıklaması on geri tuşu demek
+- **`useAsync` bağımlılıkları İLKEL geçilir** (`[ders, sirala]`, asla `[filtreler]`) — nesne = sonsuz refetch
+- **⌘K mutasyon içermez.** Bulanık aramanın arkasındaki yıkıcı eylem ayak kurşunudur; palet gezinme + tema ile sınırlı
 
 ---
 
-### Ek: Doğrulama & açık uçlar
-- **F3 (kritik):** `MODELS.GENERATE` slug'ını (`deepseek/deepseek-chat` mi, başka mı?) canlı OpenRouter kataloğuyla doğrula; `deepseek/deepseek-flash` mevcut değilse `deepseek-chat`'te kal.
-- **F2:** OpenRouter ileride embeddings sunarsa `openaiEmbed`'i tek client'a indirebilirsin; şimdilik ikinci client zorunlu.
-- **Caching:** DeepSeek otomatik cache'i sunucu-taraftır; OpenRouter üzerinden isabet garanti değil — maliyet ölçümünü canlı yap, Context Injection'ı kompakt tut.
-- `Postgres = Hakikat · Redis = Hot-Path`, Redis Streams worker'ları ve Supabase CDC katmanı **aynen korunmuştur**.
+<a name="15"></a>
+## 15. İşletme kılavuzu
+
+### Kurulum
+```bash
+# Bun (Windows PowerShell):  irm bun.sh/install.ps1 | iex
+cd learnup-brain && bun install
+cp .env.example .env          # SUPABASE_*, OPENROUTER_API_KEY, OPENAI_API_KEY
+bun run typecheck             # sıfır hata beklenir
+bun run start                 # API :8080
+```
+```bash
+cd frontend-v2 && bun install && bun run dev     # :5174
+```
+> ⚠️ `frontend-v2`'de **typescript ve eslint kurulu değil** — `bun run lint` çalışmaz ve
+> `vite build` tipleri **denetlemez**, yalnız soyar. Tip denetimi için:
+> `../learnup-brain/node_modules/.bin/tsc --noEmit -p tsconfig.json`
+
+### Soru üretim hattı
+```
+çıkmış sorular (ÖSYM)
+   │  etiketle              ($0, ücretsiz model, ~1000 istek/gün kotası)
+   ▼
+data/etiketler-cikmis.jsonl        ← önce DOSYAYA, asla doğrudan DB'ye
+   │  etiket-yaz --evet             (yalnız difficulty kolonu)
+   ▼
+yks_questions + yks_exemplars
+   │  havuz-doldur                  (yazar LLM → kod kapıları → bedava denetçi)
+   ▼
+yks_ai_questions
+   │  eval                          ($0 — "bozdum mu?" kapısı)
+   ▼
+öğrenciye servis
+```
+
+| Komut | İş | Maliyet |
+|---|---|---|
+| `bun run eval` | Altın-set regresyonu + yapısal karşılaştırma + drift. İhlalde exit 1 | $0 |
+| `bun run eval --hakem --evet` | + LLM'li hakem tutarlılık sınavı | ~$0.01 |
+| `bun run etiketle` | Zorluk etiketi (checkpoint'li, kaldığı yerden sürer) | $0 |
+| `bun run etiket-yaz` / `--evet` | Kuru koşu / DB'ye yaz | $0 |
+| `bun src/scripts/havuz-doldur.ts --hedef N [--only mat]` | Havuzu N doğrulanmış soruya tamamla | yazar modeline bağlı |
+| `bun src/scripts/ab-uretim.ts --etiket X --hedef N --tavan USD` | Tek yazar modelle üretim kolu, sert dolar tavanlı | tavan kadar |
+| `bun src/scripts/ab-karsilastir.ts kol1 kol2` | İki kolun tablosu + tam metinler | $0 |
+| `bun src/scripts/denetci-sinav.ts` | Denetçi adayı modelin sınavı (8 vaka) | $0 |
+
+### Model rolleri
+**Tek kaynak `src/lib/model-router.ts` CHAINS** — `.env` override'ı BAYATLAR, kullanma.
+
+- **Yazar (generate):** `deepseek-v4-pro` — soru başına ~$0.025 (maliyetin ~%80'i düşünme token'ı).
+  Ücretsiz alternatif `gemma-4-26b:free` — kabul kalitesi eşdeğer (hakem 4.43 vs 4.2) ama yavaş
+  ve zor kademesinde ayrıştırma kayıplı.
+- **Denetçi (verify):** `nemotron-3-ultra-550b:free` — sınavla doğrulandı (7/8; çekirdek 8/8).
+- **Yazar ≠ denetçi, AYRI model ailesinden olmalı** — kendini denetleyen model cömerttir (ölçüldü).
+
+**Yönlendirici:** `route(role) → [birincil :free, alternatif :free, PAID]`. Dakika penceresi
+(`INCR lb:llm:win:{dk}`, 18'de kes), günlük sayaç (1000/gün), devre kesici
+(`lb:llm:cb:{slug}`, 429/5xx'te 30 sn→5 dk üstel soğuma). **Zincir daima paid slug'da biter** —
+öğrenci sohbet ortasında asla hata görmez.
+
+### Sabit kurallar
+1. **Harcama onayı:** paralı koşu öncesi tahmini maliyet söylenir, onay alınır. Sert tavan
+   (`--tavan` / `maliyetTavani()`) — aşacak çağrı **hiç gönderilmez**.
+2. **DB'ye yazım iki aşamalı:** önce dosyaya, incelenip onaylanınca DB'ye.
+3. **Zamanlanmış görev yok:** her koşu elle başlatılır.
+4. **Eşikler ölçümden türetilir** (yüzdelik + yanlış-alarm tablosu), asla uydurulmaz; gerekçe
+   eşiğin yanına yorum olarak yazılır.
+5. **Commit'i kullanıcı atar.**
+
+### Özgünlük eşikleri (Jaccard 4-gram, `utils/benzerlik.ts`)
+Matematik 0.75 · Türkçe 0.85 · Biyoloji 0.70 · Kimya 0.56 · Türk Dili ve Edebiyatı 0.43 · taban 0.35
+
+---
+
+<a name="16"></a>
+## 16. Altyapı, arıza modları, deploy
+
+### İki süreç, nokta
+
+| Süreç | Giriş | Rol |
+|---|---|---|
+| **api** | `src/server.ts` | HTTP + SSE. Stateless. `keepAliveTimeout=65s`, `requestTimeout=0` |
+| **worker** | `src/workers/atolye.worker.ts` | `lb:tasks` consumer'ı + gömülü zamanlayıcı |
+
+Görev kinds: `forge_topup · plan · diagnose · affect · compact · nudge · closure_check`.
+
+**Bekçi (janitor), 5 dk:** bayat `RUNNING` → `PENDING` + re-XADD; `attempts≥3` → `FAILED`.
+`RUNNING_BAYAT_MS = 15 dk` — **en uzun görevden uzun olmak zorunda.** Eskiden 2 dk idi ve worker A
+hâlâ üretirken bekçi görevi "takılmış" sanıp yeniden kuyruğa atıyordu; worker B aynı işi baştan
+yapıyordu → **LLM faturası iki katına çıkıyordu.**
+
+**Idempotency:** `agent_tasks` + CAS-claim (`UPDATE ... WHERE status='PENDING' OR (RUNNING AND
+locked_at < eşik) RETURNING`); CAS kaybeden teslimat sessizce ACK. Üretim insert'lerinde
+`md5(question_text)` partial-unique dedup.
+
+### Arıza modları
+
+| Arıza | Davranış |
+|---|---|
+| Free LLM 429/kota | Kesici → sonraki slug → paid. Pratik etkilenmez (havuz) |
+| Tüm LLM'ler çökük | Chat kibar Türkçe hata; pratik/test/gamification/bahçe tam çalışır |
+| **Redis çökük** | API tam servis; ajanlar in-process; **veri kaybı yok** (PG-önce). Yetki DB'ye düşer, "izin ver"e değil |
+| Supabase çökük | 503 — tek hakikat deposu |
+| Worker crash | ≤5 dk'da bekçi görevi geri kuyruğa alır; CAS + dedup çift işi önler |
+
+**Sıfır bellek kaybı iddiasının tamamı:** Postgres hiç yazılmamazlık etmez; Redis'teki her şey
+ya cache ya sinyaldir.
+
+### Deploy
+Tek VPS (~$5–15/ay): Docker Compose — `api` (bun) + `worker` (bun) + `redis:8-alpine` (AOF açık)
++ Caddy TLS. Supabase hosted.
+
+---
+
+<a name="17"></a>
+## 17. Açık işler
+
+### A5 — Üretim telemetrisi (onay bekliyor)
+
+**Sorun:** `generateVerifiedSet` içinde 9 ayrı `return null`, sıfır kalıcılık. Eval anlıkları
+tanım gereği yalnız havuza girmiş soruları ölçer. "Kaç aday üretildi, hangi kapı kaçını eledi,
+kaç onarım tuttu" bugün cevapsız.
+
+**Plan:**
+- Yeni `uretim_telemetri` tablosu (**0021**). Tane: **tur başına bir satır** (aday başına değil —
+  tur ≤3, huni tur düzeyinde zaten tam; aday başına satır yazımı ~5× artırır, bilgi eklemez)
+- `eleme jsonb` anahtarları `return null` noktalarıyla birebir: `plan · latex · kusatma ·
+  uzunluk_sizinti · kok_uzunlugu · ozgunluk · hakem_ret · hakem_onarim_ret · hata`
+- `onarim jsonb`: `latex · kusatma · uzunluk · hakem`
+- `generation.ts`'e **3 dokunuş**: koşum id'si, tur başına 13 sayaç, tur sonunda **ateşle-ve-unut**
+  yazım (`await` yok, `throw` yok — doğrulanmış, parası ödenmiş sorular telemetri yüzünden düşmez)
+- Sıfır-aday dalı da yazar, `aday: 0` ile. O bir **arıza**, eleme değil — sayaçlara karıştırılmaz
+- Sonra `/admin/uretim-hatti` + Kule'de `UretimHunisi`: **Sankey değil** (recharts 3'te yok,
+  `d3-sankey` tek grafik için yeni bağımlılık), orantılı `Meter` satırları + `−N (%x)` düşüş satırı
+
+**Neden bekliyor:** `generation.ts` havuz üretim hattının kalbi ve havuz doldurma **ayrı bir iş
+kolu**. Ayrıca huni boş tabloya karşı anlamsız; boş yayınlamak birinin onu eval JSON'undan
+"doldurmasını" davet eder — bu tasarımın önlemek için var olduğu uydurmanın ta kendisi.
+
+### Bilinen açık konular
+- Zorluk dağılımı kolaya çarpık (hakem muhafazakâr); etiketleme bitince eval'in ÖSYM-dağılım
+  karşılaştırmasıyla ele alınacak
+- Gemma zor kademesinde ayrıştırma kaybı — ham çıktılar `data/uretim-hata/`'ya düşüyor
+- Havuzda 1 bilinen ikiz çift (v4-pro uzaklık soruları, 0.620); parti-içi süzgeç yenilerini
+  engelliyor, mevcut çiftin biri temizlenmeli
+- **Havuz kapsaması:** 268/907 kazanımda (%29,5) soru var; Türk Dili ve Edebiyatı 8/244 (%3,3).
+  Triaj kuyruğu çoğu satırda "havuz boş" diyor — panel gerçeği doğru raporluyor
+- `school` alanı kayıtta `handle_new_user()` tarafından yazılmıyor. 0019 beyaz listesinde olduğu
+  için giriş sonrası istemci yazımı uygulanabilir bir çözüm
+- `teacher_ids` (çoklu öğretmen) **okunuyor ama hiçbir yerde yazılmıyor** — kayıt akışı yalnız
+  `teacher_id` yazar
+
+---
+
+*Her LLM kuruşu ya öğrenciye dokunan bir cümleye, ya bir yanılgının teşhisine, ya da bir anının
+damıtılmasına gider — başka hiçbir şeye.*
