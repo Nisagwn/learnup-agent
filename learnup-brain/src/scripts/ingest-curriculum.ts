@@ -147,11 +147,37 @@ for (const n of nodes) {
 const dupes = [...seen.entries()].filter(([, c]) => c > 1)
 
 /**
+ * KAPSAM SINIRI CÜMLELERİNİ pedagoji metninden KURTAR.
+ *
+ * `uygulama` ("Öğrenme-öğretme uygulaması") ÖĞRETMENE ders anlatma talimatıdır: "öğrenciler
+ * gruplara ayrılabilir", "drama etkinliği yapmalarını (OB9) ister", "poster hazırlayabilir".
+ * Soru üretimi için değersizdir — ama İÇİNE resmî KAPSAM SINIRLARI gömülmüştür ve onlar altındır:
+ *   "Ray sisteminde çembersel hareketle ilgili matematiksel işlemlerden kaçınılır."
+ *   "Bu süreçte mikrofilament ve arafilament kavramlarına girilmez."
+ * Bunlar modele NEYİ SORMAYACAĞINI söyler → müfredat dışına taşan soruyu doğmadan engeller.
+ *
+ * ÖLÇÜLDÜ: `kapsamDisi` ALANI yalnız 42 kayıtta dolu, ama sınır cümlesi 68 kayıtta `uygulama`
+ * metninin içinde gizli (Fizik: 3'e karşı 26). Yani pedagojiyi TOPTAN atmak, 23 Fizik kazanımının
+ * resmî sınırını da çöpe atardı. Süzüp kurtarıyoruz: gürültü gidiyor, sınır kalıyor.
+ */
+const SINIR_DESENI =
+  /kaçınıl|verilmez|değinilmez|girilmez|sınırlı kalın|yer verilmez|yapılmaz|beklenmez|dahil edilmez|inilmez/i
+const sinirCumleleri = (uygulama: string): string[] =>
+  uygulama
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 15 && SINIR_DESENI.test(s))
+
+/**
  * yks_knowledge grounding metni — RAG'in dayandığı gövde.
  * Resmî belgede ne varsa o girer; eksik alan atlanır (asla uydurulmaz).
  *
- * ÖNEMLİ: `Kapsam dışı` bölümü, ajanların soru üretirken kapsamı AŞMAMASI için kritik
- * ("… değinilmez / verilmez" — resmî sınırlar).
+ * ⚠️ `Öğrenme-öğretme uygulaması` BİLEREK GİRMİYOR — geri ekleme. Chunk'ların %42'siydi ve
+ * tamamı öğretmene ders anlatma talimatıydı; RAG'in işi modele fizik ÖĞRETMEK değil (model
+ * zaten biliyor) SINIR ÇİZMEK. Sınırı çizen kısımlar `İçerik çerçevesi` + `Anahtar kavramlar`
+ * + `KAPSAM DIŞI` — onlar duruyor. Pedagoji yalnız token yiyor ve dikkati dağıtıyordu
+ * (8 parçalık prompt: ~6.900 → ~4.000 token). İçindeki sınır cümleleri sinirCumleleri() ile
+ * kurtarılıp KAPSAM DIŞI'na taşınır → bilgi kaybı YOK.
  */
 const buildContent = (n: Node): string => {
   const p = [`${n.code} ${n.title}`]
@@ -159,12 +185,13 @@ const buildContent = (n: Node): string => {
   if (n.icerik) p.push(`İçerik çerçevesi: ${n.icerik}`)
   if (n.terms) p.push(`Anahtar kavramlar: ${n.terms}`)
   if (n.symbols) p.push(`Sembol ve gösterimler: ${n.symbols}`)
-  if (n.kapsamDisi.length) {
+  // Resmî alan + pedagoji metninden kurtarılanlar, tek listede (aynı cümle iki kez girmesin).
+  const sinirlar = [...new Set([...n.kapsamDisi, ...sinirCumleleri(n.uygulama)])]
+  if (sinirlar.length) {
     p.push('KAPSAM DIŞI (resmî program bunlara yer vermez — soru üretiminde AŞILMAZ):\n' +
-      n.kapsamDisi.map((s) => `- ${s}`).join('\n'))
+      sinirlar.map((s) => `- ${s}`).join('\n'))
   }
   if (n.aciklama) p.push(`Açıklama: ${n.aciklama}`)
-  if (n.uygulama) p.push(`Öğrenme-öğretme uygulaması: ${n.uygulama}`)
   return p.join('\n')
 }
 const buildContext = (n: Node): string =>
@@ -189,8 +216,12 @@ console.log(`  ünite/tema        : ${cov((n) => !!n.unit)}`)
 console.log(`  süreç bileşenleri : ${cov((n) => n.surec.length > 0)}`)
 console.log(`  içerik çerçevesi  : ${cov((n) => !!n.icerik)}`)
 console.log(`  anahtar kavramlar : ${cov((n) => !!n.terms)}`)
-console.log(`  uygulama          : ${cov((n) => !!n.uygulama)}`)
-console.log(`  KAPSAM DIŞI sınırı: ${cov((n) => n.kapsamDisi.length > 0)}   ← soru üretiminde kapsamı korur`)
+// `uygulama` artık content'e GİRMİYOR (bkz. buildContent) — yalnız içindeki sınır cümleleri
+// kurtarılıyor. Rapor bunu ayrı ayrı gösterir; yoksa "3/106" deyip 26 sınırı gizlerdi.
+console.log(`  uygulama (ATILIYOR): ${cov((n) => !!n.uygulama)}   ← pedagoji; content'e girmez`)
+console.log(`  KAPSAM DIŞI — resmî alan   : ${cov((n) => n.kapsamDisi.length > 0)}`)
+console.log(`  KAPSAM DIŞI — pedagojiden kurtarılan: ${cov((n) => sinirCumleleri(n.uygulama).length > 0)}`)
+console.log(`  KAPSAM DIŞI — TOPLAM: ${cov((n) => n.kapsamDisi.length + sinirCumleleri(n.uygulama).length > 0)}   ← soru üretiminde kapsamı korur`)
 console.log(`  açıklama (eski tip): ${cov((n) => !!n.aciklama)}`)
 
 if (dupes.length) {

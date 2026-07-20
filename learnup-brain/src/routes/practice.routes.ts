@@ -7,6 +7,7 @@ import {
 import { processAnswer } from '../lib/answers.js'
 import { resolveKazanimByTopic } from '../lib/curriculum.js'
 import { buildMicroTest } from '../lib/test-modes.js'
+import { poolTopics } from './aiquestions.routes.js'
 
 /** Adaptif pratik motoru + otoriter gamification yazımı.
  *  (Edge: submit-answer [adaptif sıradaki soru], record-answer [XP/seri/görev/rozet/SRS]) */
@@ -36,6 +37,89 @@ function shapeQuestion(q: any) {
     explanation: q.explanation ?? '',
   }
 }
+
+/**
+ * GET /api/practice/suggest — "Koç seçsin": bugün çalışılacak kazanımı öner.
+ *
+ * Kural: pratik YALNIZ havuzdan okur (canlı üretim yok) → öneri de havuzda sorusu olan
+ * kazanımlardan olmalı, yoksa öğrenci boş sete düşer. İki katman:
+ *   1) EN ZAYIF ∩ HAVUZ: weak_kazanimlar (mastery) ile havuz konularını kesiştir.
+ *   2) YEDEK (yeni öğrenci — mastery henüz yok, attempts<3): havuzun EN DOLU konusu.
+ * Öneri yoksa (havuz tümüyle boş) reason='empty' döner → istemci "havuzu doldur" der.
+ */
+practiceRouter.get('/suggest', async (req, res, next) => {
+  try {
+    const userId = req.userId!
+    const topics = await poolTopics()
+    if (!topics.length) {
+      res.json({ kazanim: null, reason: 'empty' })
+      return
+    }
+    const havuzda = new Set(topics.map((t) => t.kazanimId))
+
+    // 1) Zayıf ∩ havuz
+    const { data: zayif } = await supabase.rpc('weak_kazanimlar', { p_user_id: userId, p_limit: 20 })
+    const eslesen = (zayif ?? []).find((z: any) => havuzda.has(Number(z.kazanim_id)))
+    const t = eslesen ? topics.find((x) => x.kazanimId === Number(eslesen.kazanim_id)) : null
+    if (eslesen && t) {
+      res.json({
+        kazanim: { kazanimId: t.kazanimId, code: t.code, title: t.title, subject: t.subject, count: t.count },
+        reason: 'weak',
+        wrongRate: Number(eslesen.wrong_rate) || null,
+      })
+      return
+    }
+
+    // 2) Yedek: havuzun en dolu konusu (poolTopics zaten adete göre sıralı)
+    const y = topics[0]
+    res.json({
+      kazanim: { kazanimId: y.kazanimId, code: y.code, title: y.title, subject: y.subject, count: y.count },
+      reason: 'fallback',
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/practice/review — SRS vadesi gelen kartlardan Çöz'e hazır tekrar seti.
+ * Leitner kutuları applySrsAnswer ile ilerliyor ama vade hiçbir yerde GÖRÜNMÜYORDU.
+ * Sorular yks tablolarından YALNIZ verified=true çekilir — cevaplanabilir_sorular
+ * view'inde verified kolonu YOK (0013), oradan servis etmek denetimsiz soru sızdırırdı.
+ */
+practiceRouter.get('/review', async (req, res, next) => {
+  try {
+    const userId = req.userId!
+    const simdi = new Date().toISOString()
+    const { data: due, error } = await supabase
+      .from('srs_cards')
+      .select('question_id, next_review_at')
+      .eq('user_id', userId)
+      .not('next_review_at', 'is', null)
+      .lte('next_review_at', simdi)
+      .order('next_review_at', { ascending: true })
+      .limit(30)
+    if (error) throw error
+    const kartlar = due ?? []
+    if (!kartlar.length) {
+      res.json({ count: 0, questions: [] })
+      return
+    }
+    const ids = [...new Set(kartlar.map((k) => String(k.question_id)))]
+    const SECIM = 'id, subject, kazanim_id, question_text, options, correct_option, solution, difficulty'
+    const [ai, osym] = await Promise.all([
+      supabase.from('yks_ai_questions').select(SECIM).in('id', ids).eq('verified', true),
+      supabase.from('yks_questions').select(SECIM + ', exam_year, exam_label, source_type').in('id', ids).eq('verified', true),
+    ])
+    const byId = new Map<string, unknown>()
+    for (const q of [...(ai.data ?? []), ...(osym.data ?? [])]) byId.set(String((q as { id: string }).id), q)
+    // Vade sırası korunur; eski `questions` (öğretmen) havuzuna ait kartlar sessizce atlanır
+    const questions = ids.map((id) => byId.get(id)).filter(Boolean).slice(0, 10)
+    res.json({ count: kartlar.length, questions })
+  } catch (err) {
+    next(err)
+  }
+})
 
 // POST /api/practice/next — cevabı analitik kaydeder ve SIRADAKI adaptif soruyu döndürür.
 practiceRouter.post('/next', async (req, res, next) => {

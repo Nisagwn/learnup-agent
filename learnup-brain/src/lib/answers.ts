@@ -48,7 +48,12 @@ export type AnswerBody = {
  * Soru DB'de bulunabiliyorsa doğruluk SUNUCUDA hesaplanır ve istemcinin iddiası YOK SAYILIR.
  * İki havuz var, ikisi de kontrol edilir:
  *   questions.correct_answer  → şık METNİ  (eski/öğretmen havuzu, options bir dizi)
- *   yks_questions.correct_option → 'A'..'E' (YKS havuzu)
+ *   cevaplanabilir_sorular.correct_option → 'A'..'E' (YKS havuzu)
+ *
+ * ⚠️ cevaplanabilir_sorular bir VIEW'dir (0013): yks_questions (çıkmış) + yks_ai_questions (AI).
+ * AI ve çıkmış sorular FİZİKSEL olarak ayrı tablolarda; ama öğrenci ikisini de çözer ve doğruluk
+ * `id` ile bakılır. Tek tabloyu sorgulamak, öbür kaynağın sorusunu "doğrulanamaz → XP=0" yapardı.
+ * View ikisini id uzayında birleştirir; buradaki tek okuma her iki kaynağı da çözer.
  *
  * Soru bulunamazsa (efemer/anlık üretilmiş) doğruluk DOĞRULANAMAZ → cevap yine kaydedilir
  * ama XP VERİLMEZ. Doğrulanamayan bir iddia ödüllendirilemez; aksi hâlde saldırgan sadece
@@ -61,9 +66,9 @@ async function dogrulukKontrol(
 ): Promise<{ isCorrect: boolean | null; dogrulandi: boolean }> {
   if (!questionId) return { isCorrect: istemciIddiasi, dogrulandi: false }
 
-  // YKS havuzu (şık harfi)
+  // YKS havuzu (şık harfi) — AI + çıkmış birleşik görünüm
   const { data: yks } = await supabase
-    .from('yks_questions').select('correct_option').eq('id', questionId).maybeSingle()
+    .from('cevaplanabilir_sorular').select('correct_option').eq('id', questionId).maybeSingle()
   if (yks?.correct_option) {
     return { isCorrect: selectedOption === yks.correct_option, dogrulandi: true }
   }

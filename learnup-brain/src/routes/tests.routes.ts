@@ -6,7 +6,7 @@ export const testsRouter = Router()
 
 /** İstemciden gelen sayıyı SINIRLA — bu sayı doğrudan LLM çağrı sayısına dönüşüyor.
  *  Havuz yetmezse generateVerifiedSet devreye girer: her tur 1 üretim + aday başına 1
- *  bağımsız doğrulama + olası onarım çağrısı (Sonnet, max_tokens 8000). Sınırsız `count`,
+ *  bağımsız doğrulama + olası onarım çağrısı (max_tokens 8000). Sınırsız `count`,
  *  TEK HTTP isteğiyle ciddi bir fatura demek. `/questions/generate` zaten sınırlıyor
  *  (Math.min(10,…)); burada eksikti. */
 const sinirla = (v: unknown, varsayilan: number, tavan: number): number => {

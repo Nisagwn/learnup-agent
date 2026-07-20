@@ -8,6 +8,48 @@ export const gamificationRouter = Router()
 
 const MAX_FREEZES = 2
 
+/** GET /api/v1/gamification/league — bu haftanın lig tablosu (kullanıcının tier'ı).
+ *  İsimler lider tablosu İÇİN yazılıyor (displayName, league_entries.name) — sızıntı değil ürün. */
+gamificationRouter.get('/league', async (req, res, next) => {
+  try {
+    const userId = req.userId!
+    const weekId = getWeekId()
+    const { data: benim } = await supabase
+      .from('league_entries')
+      .select('tier, weekly_xp')
+      .eq('week_id', weekId)
+      .eq('uid', userId)
+      .maybeSingle()
+    const tier = (benim?.tier as string) ?? 'bronze'
+    const { data: tablo, error } = await supabase
+      .from('league_entries')
+      .select('uid, name, weekly_xp')
+      .eq('week_id', weekId)
+      .eq('tier', tier)
+      .eq('role', 'student')
+      .order('weekly_xp', { ascending: false })
+      .limit(50)
+    if (error) throw error
+    const liste = tablo ?? []
+    const benimIdx = liste.findIndex((r) => r.uid === userId)
+    res.json({
+      weekId,
+      tier,
+      top: liste.slice(0, 10).map((r, i) => ({
+        rank: i + 1,
+        name: r.name as string,
+        weeklyXP: Number(r.weekly_xp ?? 0),
+        ben: r.uid === userId,
+      })),
+      benimSira: benimIdx >= 0 ? benimIdx + 1 : null, // ilk 50'de değilse null → UI "50+"
+      benimXP: Number(benim?.weekly_xp ?? 0),
+      katilimci: liste.length,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // POST /api/gamification/daily — açılışta: bugünün görevleri + haftanın lig kaydı.
 gamificationRouter.post('/daily', async (req, res, next) => {
   try {

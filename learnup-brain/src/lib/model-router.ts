@@ -1,5 +1,4 @@
 import OpenAI from 'openai'
-import Anthropic from '@anthropic-ai/sdk'
 import { openrouter } from '../clients/openrouter.js'
 import { redis } from '../clients/redis.js'
 import { logger } from '../utils/logger.js'
@@ -12,69 +11,27 @@ const groq: OpenAI | null = process.env.GROQ_API_KEY
   ? new OpenAI({ baseURL: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY })
   : null
 
-/** BİRİNCİL sağlayıcı: Anthropic (resmi SDK — OpenAI-shim değil). ANTHROPIC_API_KEY yoksa atlanır.
- *  Embeddings Anthropic'te YOK → vektörler OpenRouter'da kalır (rag.ts, değişmedi). */
-const anthropic: Anthropic | null = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null
-
-type Provider = 'openrouter' | 'groq' | 'anthropic'
+/**
+ * ANTHROPIC KALDIRILDI (bilinçli — geri eklemeden önce oku).
+ *
+ * Sağlayıcı olarak Anthropic ve Messages API adaptörü tamamen söküldü: LLM trafiğinin tamamı
+ * OpenAI-uyumlu (OpenRouter, opsiyonel Groq). Bu yalnız "kullanmıyoruz" değil, bir SADELEŞME:
+ * adaptör iki şekil arasında çeviri yapıyordu (thinking/effort, sıcaklık yasağı, stream ve tools
+ * desteklememe, `stop_reason` eşlemesi) ve her biri kendi arıza sınıfını üretmişti. Tek şekil
+ * kalınca `routedChat`/`routedStream` içindeki sağlayıcı dallanmaları da gitti.
+ *
+ * Geri eklemek isteyen: bu bir slug değişikliği DEĞİLDİR. Anthropic OpenAI-uyumlu değildir;
+ * adaptör, `thinking` bütçe tuzağı (max_tokens = düşünme + metin) ve stream/tools boşlukları
+ * geri gelir. Zincire 'anthropic:...' yazmak artık hiçbir şey yapmaz — o önek tanınmıyor,
+ * girdi OpenRouter slug'ı sanılır ve 404'e düşer.
+ */
+type Provider = 'openrouter' | 'groq'
 const parseEntry = (entry: string): { provider: Provider; model: string } => {
   if (entry.startsWith('groq:')) return { provider: 'groq', model: entry.slice(5) }
-  if (entry.startsWith('anthropic:')) return { provider: 'anthropic', model: entry.slice(10) }
   return { provider: 'openrouter', model: entry }
 }
-const clientOf = (p: Provider): OpenAI | null => (p === 'groq' ? groq : p === 'anthropic' ? null : openrouter)
+const clientOf = (p: Provider): OpenAI | null => (p === 'groq' ? groq : openrouter)
 
-/** Anthropic Messages API adaptörü — OpenAI-biçimli params'ı çevirir, yanıtı OpenAI şekline sarar.
- *  Not: tools/stream desteklemez (o çağrılar zincirde sonraki sağlayıcıya akar).
- *  Sıcaklık geçilmez (Sonnet 5 default-dışı sampling'i 400'ler); JSON istekleri system'e yönerge ekler. */
-async function anthropicChat(
-  model: string,
-  params: ChatParams,
-  signal: AbortSignal,
-): Promise<OpenAI.Chat.Completions.ChatCompletion> {
-  const sysParts: string[] = []
-  const msgs: Anthropic.MessageParam[] = []
-  for (const m of params.messages) {
-    const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '')
-    if (m.role === 'system') sysParts.push(text)
-    else if (m.role === 'user' || m.role === 'assistant') msgs.push({ role: m.role, content: text })
-  }
-  if ((params.response_format as { type?: string } | undefined)?.type === 'json_object') {
-    sysParts.push('Yanıtını YALNIZ geçerli bir JSON objesi olarak ver; başka hiçbir metin yazma.')
-  }
-  if (msgs.length === 0 || msgs[0].role !== 'user') msgs.unshift({ role: 'user', content: 'Devam et.' })
-
-  const res = await anthropic!.messages.create(
-    {
-      model,
-      max_tokens: params.max_tokens ?? 2048,
-      system: sysParts.length ? sysParts.join('\n\n') : undefined,
-      messages: msgs,
-    },
-    { signal },
-  )
-  const text = res.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('')
-  return {
-    id: res.id,
-    object: 'chat.completion',
-    created: Math.floor(Date.now() / 1000),
-    model: res.model,
-    choices: [{
-      index: 0,
-      message: { role: 'assistant', content: text, refusal: null },
-      finish_reason: res.stop_reason === 'max_tokens' ? 'length' : 'stop',
-      logprobs: null,
-    }],
-    usage: {
-      prompt_tokens: res.usage.input_tokens,
-      completion_tokens: res.usage.output_tokens,
-      total_tokens: res.usage.input_tokens + res.usage.output_tokens,
-    },
-  }
-}
 
 /**
  * MODEL YÖNLENDİRİCİ (§5.4) — ücretsiz-önce zincir + bütçe + devre kesici + timeout.
@@ -90,29 +47,88 @@ export type LlmPriority = 'P0' | 'P1' | 'P2'
 
 /** Ücretsiz slug'lar zamanla değişebilir → env ile ezilebilir (virgülle ayrık zincir).
  *  2026-07-12 canlı katalog doğrulaması: DeepSeek :free varyantları KALKTI (404);
- *  gpt-oss-120b:free + nemotron:free + qwen3-next:free geçerli ve test edildi. */
+ *  gpt-oss-120b:free 2026-07-19'da KALKTI (404: "paid version available") → yerine nemotron-3-super-120b:free
+ *  kondu (aynı gün canlı katalogdan doğrulandı). nemotron:free + qwen3-next:free hâlâ geçerli. */
 const CHAINS: Record<LlmRole, string[]> = {
   chat: chainFromEnv('LLM_CHAIN_CHAT', [
-    'anthropic:claude-haiku-4-5',            // $1/$5 MTok — chat/ipucu (~$0.003/mesaj)
-    'groq:llama-3.3-70b-versatile',
-    'openai/gpt-oss-120b:free',
+    'deepseek/deepseek-v4-flash',             // $0.098/$0.196 MTok — P0 sohbet: düşünmesiz → hızlı
+    'deepseek/deepseek-v3.2',
+    'nvidia/nemotron-3-super-120b-a12b:free',
     'meta-llama/llama-3.3-70b-instruct:free',
   ]),
+  /**
+   * ÖSYM üretimi — v4-pro. UCUZ SLUG'A GEÇMEDEN ÖNCE BU ÖLÇÜMÜ OKU.
+   *
+   * Token fiyatı yanıltıcıdır; doğru ölçüt KABUL EDİLEN SORU BAŞINA MALİYET. Gerçek hatta
+   * (aynı charter, aynı denetçi kapısı, 3 ders × 4 soru) ölçüldü:
+   *   v4-pro    → kabul %92 · ort skor 4.83 · KABUL BAŞINA $0.0089
+   *   v4-flash  → kabul %25 · ort skor 3.42 · KABUL BAŞINA $0.0196   (token'da 4.4× ucuz!)
+   *   v3.2      → kabul %17 · ort skor 3.27 · KABUL BAŞINA $0.0411   + 4 istenince 8 soru üretti,
+   *                bir derste hiç ayrıştırılabilir çıktı vermedi → eleme.
+   * (Bu rakamlar sağlayıcı sabitlemesinden ÖNCEki fiyatlarla; kabul ORANLARI hâlâ geçerli,
+   *  yalnız fiyat düştü. Sonra iki şey ucuzladı: üretim 3.2× (sağlayıcı → DeepSeek $0.96/MTok)
+   *  ve denetim 43× (hakem r1 → v4-flash). Fiyat oranından türetilen bugünkü değer: kabul başına
+   *  ~$0.002 — UÇTAN UCA YENİDEN ÖLÇÜLMEDİ, tahmindir. Baskın kalem yine ÜRETİM (~%90).)
+   * Flash token'da 4.4× ucuz ama ürettiğinin 3/4'ü kapıdan dönüyor ve REDDEDİLEN soru da tam
+   * denetim faturası ödetiyor. Baskın kalem ÜRETİM DEĞİL DENETİM: kusurlu sorular denetçiyi
+   * daha çok düşündürdüğü için flash'ın denetim faturası ($0.055) pro'nunkinden ($0.031) YÜKSEK.
+   * (Uyarı: pro'nun %92'si kendi kendini denetlediği turdan gelir → şişkin. Yön nettir, sayı değil.)
+   */
   generate: chainFromEnv('LLM_CHAIN_GENERATE', [
-    'anthropic:claude-sonnet-5',             // $3/$15 (intro $2/$10) — ÖSYM üretimi
-    'groq:openai/gpt-oss-120b',
-    'openai/gpt-oss-120b:free',
+    'deepseek/deepseek-v4-pro',
+    // Yedek — yalnız pro'nun kesicisi açılınca girer. Kalitesi düşük (yukarı bak) ama
+    // "soru yok" demektense zayıf aday üretip denetçi kapısına yollamak yeğdir.
+    'deepseek/deepseek-v4-flash',
     'nvidia/nemotron-3-super-120b-a12b:free',
-  ]),
-  verify: chainFromEnv('LLM_CHAIN_VERIFY', [
-    'anthropic:claude-sonnet-5',             // adaptif düşünme yerleşik — bağımsız denetçi
-    'groq:deepseek-r1-distill-llama-70b',
-    'openai/gpt-oss-120b:free',
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   ]),
+  /**
+   * DENETÇİ — v4-flash. r1'den 43× ucuz; farkı KOD KAPISI kapatıyor.
+   *
+   * ⚠️ BURAYA generate'İN BAŞINDAKİ SLUG'I YAZMA. Charter'ın kuralı: yazar ve denetçi AYRI LLM
+   * (bkz. persona/osym.charter.ts) — tek modele "yaz ve kendini denetle" demek, kendi hatasını
+   * göremeyen bir hakem kurmaktır. Bu teorik değil, ÖLÇÜLDÜ: v4-pro kendi sorularını denetleyince
+   * %92 kabul verdi; aynı hakem flash'ın sorularına %25 verdi. Kendini denetleyen model cömerttir.
+   * .env'de LLM_CHAIN_VERIFY generate ile aynı başlıyorsa kapı çalışıyor GİBİ görünür ama süzmez.
+   *
+   * ALTIN SET ÖLÇÜMÜ (kusuru önceden bilinen 4 soru — sağlam / işaret yanlış / kök çelişkili /
+   * çeldirici tek yanda):
+   *   r1        4/4 · denetim başına $0.00513 · 85sn
+   *   v3.2      3/4 · $0.00033 · 25sn
+   *   v4-flash  3/4 · $0.00012 · 8sn      ← seçilen
+   *   v4-flash + reasoning:{enabled:true} → JSON HİÇ DÖNMEDİ (response_format bozuldu) → kullanma.
+   * Ucuz hakemlerin kaçırdığı TEK kusur "çeldirici tek yanda"ydı; o artık kodda ve KESİN
+   * (utils/shufflers.celdiriciKusatmasi, generation.denetle içinde LLM'den önce çalışır).
+   * Yani r1'in tek üstünlüğü satın alınmadı, ÇÖZÜLDÜ.
+   *
+   * ⚠️ "flash düşünmez" DEMEK YANLIŞ — SAĞLAYICIYA BAĞLI. Ölçüldü: DeepInfra reasoning=0,
+   * StreamLake/GMICloud/DeepSeek reasoning>0. Yani yukarıdaki $0.00012 rakamı DeepInfra'da
+   * alınmıştı; üretimde GMICloud'a düşüldü ve denetim ~$0.001 oldu (10×). Bu rolde düşünme
+   * BİLEREK açık bırakıldı (DUSUNME_KAPALI.verify=false): hakem soruyu sıfırdan çözüyor,
+   * çözemezse matchesMarked=false → SAĞLAM soruyu eler → yeniden üretim ~$0.005, yani
+   * tasarrufun 5 katı zarar. Denetimde ucuzluk buradan geçmez.
+   * İZLE: havuz dolarken `uretilen` vs `yazilan` oranına bak; kabul belirgin düşerse hakemi
+   * 'deepseek/deepseek-v3.2' ya da 'deepseek/deepseek-r1' yap — .env'den de ezilebilir.
+   *
+   * 2026-07-19 — ZİNCİR BAŞI ultra-550b:free OLDU. Denetçilik sınavı (üretim istemiyle birebir,
+   * scripts/denetci-sinav.ts, 8 çağrı, $0): çekirdek görevlerin TAMAMI doğru — sağlam kabul,
+   * yanlış işareti düzeltilmiş harfle yakalama, kök çelişkisi 2/2 ("birlikte 6 sa > tek başına
+   * 4 sa" tuzağı — flash sınıfının tarihsel zaafı), eksik-veri yakalama (kutular; kod kapıları
+   * bunu GÖREMEZ, tek savunma denetçi), kolay soruda mekanizma uydurmama. JSON 8/8 ilk denemede,
+   * gecikme 18-67sn (flash ~8sn — arka plan üretimi için kabul edilebilir). Tek zayıflık:
+   * mekanizma-tarama KARARLILIĞI (Hayber: 1. koşu AYIRT ETME, 2. koşu boş) → türetilen "zor"
+   * muhafazakâr kalır; flash'tan kötü değil (flash HİÇ mekanizma bulamıyordu, 0/12 kararlı zor).
+   * Flash paralı emniyet ağı olarak 2. sırada: ücretsiz kapasite 502'si / günlük tavan →
+   * zincir kendiliğinden paralıya düşer, üretim durmaz.
+   */
+  verify: chainFromEnv('LLM_CHAIN_VERIFY', [
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'deepseek/deepseek-v4-flash',
+    'deepseek/deepseek-v3.2',
+    'nvidia/nemotron-3-super-120b-a12b:free',
+  ]),
   fast: chainFromEnv('LLM_CHAIN_FAST', [
-    'anthropic:claude-haiku-4-5',
-    'groq:llama-3.1-8b-instant',
+    'deepseek/deepseek-v4-flash',             // sınıflama/özet — düşünmesiz slug tam da bu rol için
     'nvidia/nemotron-nano-9b-v2:free',
     'meta-llama/llama-3.2-3b-instruct:free',
   ]),
@@ -127,17 +143,29 @@ function chainFromEnv(name: string, fallback: string[]): string[] {
 
 const isFree = (entry: string): boolean => entry.endsWith(':free') || entry.startsWith('groq:')
 /** Rol başına timeout. `generate` 60sn'ydi ve YETMİYORDU: tek çağrıda 4 tam ÖSYM sorusu
- *  + çözümleri (max_tokens 8000) yazılıyor; Sonnet bunu 60sn'de bitiremeyip abort ediliyordu.
+ *  + çözümleri (max_tokens 8000) yazılıyor; model bunu 60sn'de bitiremeyip abort ediliyordu.
  *  Üretim interaktif değil (P1 canlı top-up / P2 gece batch) → bekleyebilir. `chat` P0 kalır. */
-const TIMEOUT_MS: Record<LlmRole, number> = { chat: 45_000, generate: 150_000, verify: 120_000, fast: 30_000 }
+/**
+ * ⚠️ TIMEOUT'U KISMA — kısarsan zincirin BAŞI sessizce devre dışı kalır.
+ *
+ * `generate` 150sn'ydi ve v4-pro'yu ÖLDÜRÜYORDU. Ölçüldü (gerçek router, gerçek charter):
+ * çağrı 221sn sürdü → Pro 150sn'de timeout → kesici açıldı → zincir v4-flash'a düştü ve soruları
+ * FLASH yazdı. Yani "üretim modeli v4-pro" derken fiilen %25 kabul oranlı modeli kullanıyorduk;
+ * log'a bakmayan bunu FARK ETMEZ, çünkü istek başarıyla döner — sadece kalitesi düşüktür.
+ *
+ * İki sebep birleşti: (1) Pro adaptif düşünüyor, üretim 88–269sn bandında salınıyor;
+ * (2) sağlayıcı `sort:'price'` ile en ucuza sabitlendi ve en ucuz uç nokta aynı zamanda en yavaşı.
+ * Bu bilinçli bir takas: üretim interaktif DEĞİL (P1 top-up / P2 gece batch) → beklesin, ucuz olsun.
+ * `chat` P0 kalır (45sn) — orada öğrenci ekran başında.
+ */
+const TIMEOUT_MS: Record<LlmRole, number> = { chat: 45_000, generate: 300_000, verify: 240_000, fast: 30_000 }
 /** Sağlayıcı-başına dakika tavanı. */
-const MINUTE_CAP: Record<Provider, number> = { openrouter: 18, groq: 25, anthropic: 999 }
+const MINUTE_CAP: Record<Provider, number> = { openrouter: 18, groq: 25 }
 /** Sağlayıcı-başına günlük ücretsiz tavan (env ile ezilebilir).
  *  OpenRouter kredisiz hesapta 50/gün → güvenli 45; $10 sonrası OPENROUTER_FREE_DAILY=950 yap. */
 const DAY_CAP_BASE: Record<Provider, number> = {
   openrouter: Number(process.env.OPENROUTER_FREE_DAILY) || 45,
   groq: Number(process.env.GROQ_FREE_DAILY) || 900,
-  anthropic: 999_999, // paid — bütçe kapısına girmez (isFree=false)
 }
 /** Öncelik payı: P0 tam tavan, P1 %95, P2 %85 (interaktifin payı asla yenmez). */
 const PRIORITY_FACTOR: Record<LlmPriority, number> = { P0: 1, P1: 0.95, P2: 0.85 }
@@ -225,7 +253,7 @@ async function resetBreaker(slug: string): Promise<void> {
 /**
  * SDK hatasının GERÇEK sınıf adı.
  *
- * ⚠️ OpenAI ve Anthropic SDK'ları (ikisi de Stainless üretimi) hata sınıflarında
+ * ⚠️ OpenAI SDK'sı (Stainless üretimi) hata sınıflarında
  * `this.name` ATAMIYOR. `class APIConnectionError extends APIError` yazmak err.name'i
  * DEĞİŞTİRMEZ — 'Error' kalır. Ampirik doğrulandı:
  *     new OpenAI.APIConnectionError({message:'boom'})  →  name: "Error", status: undefined
@@ -260,11 +288,11 @@ const isRetryable = (err: unknown): boolean => {
 /**
  * TIMEOUT'U KENDİ ABORT'UMUZLA KUR — sonra onu açıkça TimeoutError'a çevir.
  *
- * NEDEN böyle: `AbortSignal.timeout()` kullanınca Anthropic SDK'sı `APIUserAbortError`
+ * NEDEN böyle: `AbortSignal.timeout()` kullanınca SDK `APIUserAbortError`
  * fırlatıyor; adı ne 'AbortError' ne 'TimeoutError' → isRetryable FALSE dönüyordu →
  * routedChat `throw err` yapıp ZİNCİRİ ÇÖKERTİYORDU. Yani birincil sağlayıcı zaman
  * aşımına uğradığı anda Groq/OpenRouter'a hiç geçilmiyordu — fallback'in tam olarak
- * gerektiği durumda devre dışıydı. (Ölçüldü: gen-smoke, Sonnet 60sn'yi aştı → script öldü.)
+ * gerektiği durumda devre dışıydı. (Ölçüldü: gen-smoke, üretim 60sn'yi aştı → script öldü.)
  *
  * "APIUserAbortError'ı da retryable say" demek YANLIŞ olurdu: o hata öğrenci akışı
  * iptal ettiğinde de fırlar; onu yeniden denemek iptal edilen isteği tekrar çağırmak olur.
@@ -297,6 +325,152 @@ const isSkippable = (err: unknown): boolean => {
 type ChatParams = Omit<OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, 'model'>
 type StreamParams = Omit<OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming, 'model' | 'stream'>
 
+/**
+ * OPENROUTER SAĞLAYICI TERCİHİ — sessiz 4× fazla ödemeyi kapatır. SİLME.
+ *
+ * Bir OpenRouter slug'ı TEK bir sağlayıcı değildir: deepseek-v4-pro'yu 16 firma sunuyor ve
+ * fiyatları 4× ayrışıyor (çıktı/MTok): DeepSeek resmi $0.87 · StreamLake $1.43 · DeepInfra $2.60
+ * · Fireworks/Together $3.48. Varsayılan yönlendirme bunlar arasında dolaşır.
+ *
+ * ÖLÇÜLDÜ (v4-pro, aynı istem, canlı):
+ *   tercih yok  → Alibaba    $3.10/MTok   ← eski hâl
+ *   sort:price  → DeepSeek   $0.96/MTok   ← şimdiki hâl, 3.2× ucuz
+ * Çağrıdan çağrıya token başına fiyat 4× oynuyordu — "model aynı, fatura farklı" gürültüsünün
+ * kaynağı buydu.
+ *
+ * İkinci ve daha sinsi kısım: PAHALI sağlayıcıların çoğu fp8/fp4 KUANTİZE, yani aynı model
+ * daha düşük hassasiyette. Rastgele yönlendirme hem fazla ödetiyor hem soru kalitesini
+ * sessizce düşürüyordu — ölçülemeyen bir kalite kaybı, çünkü slug adı değişmiyor.
+ * DeepSeek'in kendi uç noktası hem en ucuz HEM kuantize olmayan tek uç nokta → çifte kazanç.
+ *
+ * ⚠️ BU FİYAT KODA DEĞİL, HESAP AYARINA BAĞLI. DeepSeek'in kendi uç noktası OpenRouter'ın
+ * gizlilik/veri politikası ayarıyla ENGELLENEBİLİR ("No endpoints available matching your
+ * guardrail restrictions and data policy" → openrouter.ai/settings/privacy). Engelliyse bu kod
+ * sessizce StreamLake'e ($1.53/MTok) düşer — hata vermez, sadece fatura ~1.6× artar. Yani
+ * üretim maliyeti aniden yükseldiyse önce KODA DEĞİL, o ayara bak.
+ * (Takas bilinçli: DeepSeek istemleri eğitimde kullanabilir. Havuz üretimi öğrenci verisi
+ *  GÖNDERMEZ — gece demirhanesi nötr `00000000-…` kullanıcısıyla üretir, içerik saf müfredattır.)
+ *
+ * `sort: 'price'` en ucuzu seçer; ayar açıkken bu DeepSeek'tir, kapalıyken sıradaki en ucuz.
+ * `allow_fallbacks` açık kalır: en ucuz sağlayıcı düşerse OpenRouter sıradakine geçer, istek
+ * ölmez (zincirin devre kesicisi zaten üstte duruyor).
+ */
+const OR_SAGLAYICI = { sort: 'price', allow_fallbacks: true } as const
+
+/**
+ * DÜŞÜNMEYİ ROL BAZINDA KAPAT — faturayı sağlayıcı değil, TOKEN SAYISI belirliyor.
+ *
+ * ⚠️ AYNI SLUG, SAĞLAYICIYA GÖRE FARKLI MODEL GİBİ DAVRANIYOR. deepseek-v4-flash, ölçüldü:
+ *     DeepInfra  $0.090/$0.180  reasoning=0  ← düşünmez   · StreamLake $0.097/$0.193  düşünür
+ *     GMICloud   $0.098/$0.196  düşünür      · DeepSeek   $0.140/$0.280  düşünür (flash'ta EN PAHALI!)
+ * Token fiyatları %8 ayrışıyor ama FATURA ~10× ayrışıyor: düşünen sağlayıcıda aynı istek
+ * 70 token, düşünmeyende 8. `sort:price` bunu göremez — fiyat ETİKETİNE bakar, DAVRANIŞA değil.
+ * Bu yüzden doğruladığımız model çalışan model DEĞİLDİ: altın set ölçümü (flash hakem 3/4,
+ * $0.00012/denetim) DeepInfra'da yapılmıştı; üretimde GMICloud'a düşüldü ve denetim ~$0.001 oldu.
+ *
+ * ⚠️ DÜŞÜNMEYİ İSTEK PARAMETRESİYLE KAPATAMIYORUZ — DENENDİ, ÜÇÜ DE YOK SAYILDI.
+ * Sağlayıcı GMICloud'a SABİTLENİP ölçüldü (parametrenin etkisini sağlayıcı seçiminden ayırmak
+ * için — aksi hâlde "DeepInfra'ya düştü" ile "parametre çalıştı" karışır, bir kez karıştı):
+ *     parametre yok            → reasoning=29
+ *     reasoning:{enabled:false}→ reasoning=30   ← etkisiz
+ *     reasoning:{exclude:true} → reasoning=29   ← etkisiz
+ *     reasoning_effort:'minimal' → düşündü      ← etkisiz
+ * Yani düşünüp düşünmemeyi SAĞLAYICI belirliyor, istek değil. Tek kaldıraç sağlayıcı seçimi.
+ *
+ * ROL BAZINDA SAĞLAYICI — çünkü "en ucuz" her rolde doğru cevap değil:
+ *   chat/fast → DeepInfra: hem en ucuz hem düşünmez (~10× az token) hem en hızlı. Bu roller
+ *               sınıflama/sohbet; düşünme bedeli boşa. Kalite kapısı da yok.
+ *   verify    → DeepInfra HARİÇ, sonra en ucuz: hakem soruyu SIFIRDAN çözüyor, düşünme işin
+ *               TA KENDİSİ. DeepInfra ~$0.0009/denetim kazandırır ama çözemediği SAĞLAM soruyu
+ *               reddeder → yeniden üretim ~$0.005: tasarruf, kaybın 5'te biri.
+ *               ⚠️ `ignore` ŞART, yoksa sort:price hakemi de DeepInfra'ya yollar (ÖLÇÜLDÜ) ve
+ *               DeepInfra 429 verdiği anda düşünen sağlayıcıya kayar → KAPININ SERTLİĞİ ŞANSA
+ *               KALIR: aynı soru bir koşuda düşünen, ötekinde düşünmeyen hakemden geçer.
+ *               Belirsiz kapı, iki seçenekten de kötüdür. Hakem hep aynı cinsten olmalı.
+ *   generate  → sort:price → DeepSeek (v4-pro'da en ucuz VE kuantize olmayan tek uç nokta).
+ * DeepInfra fp4 kuantize ve bize 429 veriyor → chat/fast'te allow_fallbacks AÇIK: müsait değilse
+ * zincir düşünen bir sağlayıcıya kayar, istek ölmez (fatura artar; log'da `provider`a bak).
+ */
+const OR_SAGLAYICI_ROL: Partial<Record<LlmRole, object>> = {
+  chat: { order: ['deepinfra'], allow_fallbacks: true },
+  fast: { order: ['deepinfra'], allow_fallbacks: true },
+  verify: { ignore: ['deepinfra'], sort: 'price', allow_fallbacks: true },
+}
+
+/** OpenRouter'a giden gövdeye sağlayıcı tercihini ekler; Groq'a EKLEMEZ (o alanı bilmez). */
+const saglayiciEkle = <T extends object>(p: Provider, rol: LlmRole, govde: T): T =>
+  p === 'openrouter'
+    ? ({ ...govde, provider: OR_SAGLAYICI_ROL[rol] ?? OR_SAGLAYICI } as T)
+    : govde
+
+/**
+ * ── DOLAR SAYACI + SERT TAVAN ──
+ *
+ * Router ücretsiz İSTEK sayıyordu ama harcanan PARAYI saymıyordu; "20 senti geçince dur" gibi
+ * bir sınır bu yüzden hiçbir yerde zorlanamıyordu. Sayaç varsayılan olarak KAPALIDIR
+ * (tavan = Infinity) — normal üretim davranışı değişmez; yalnız `maliyetTavani(usd)` çağıran
+ * script'ler için işler.
+ *
+ * ⚠️ Tavan aşımı, çağrı GÖNDERİLMEDEN önce fırlatır — "bir tık aşarsa dursun" değil,
+ * "aşacaksa hiç gitmesin". Zincirde ilerlemez de (sonraki slug de para yakardı).
+ *
+ * ⚠️ FİYATLAR KODDA SABİT (aşağıdaki tablo). Sağlayıcı fiyatı değiştirirse sayaç YANILIR;
+ * bilinmeyen paralı slug için bilerek YÜKSEK varsayılan kullanılır (az tahmin edip tavanı
+ * sessizce aşmaktansa, fazla tahmin edip erken durmak yeğdir).
+ */
+const FIYAT: Record<string, { g: number; c: number }> = {
+  // $/MTok — 2026-07-19 canlı katalogdan
+  'deepseek/deepseek-v4-pro': { g: 0.435, c: 0.870 },
+  'deepseek/deepseek-v4-flash': { g: 0.098, c: 0.196 },
+  'deepseek/deepseek-v3.2': { g: 0.269, c: 0.400 },
+  'openai/gpt-oss-120b': { g: 0.037, c: 0.170 },
+  'nvidia/nemotron-3-super-120b-a12b': { g: 0.085, c: 0.400 },
+}
+const FIYAT_BILINMEYEN = { g: 1.0, c: 3.0 } // temkinli üst sınır
+
+let harcananUsd = 0
+let maliyetTavaniUsd = Number.POSITIVE_INFINITY
+
+export class MaliyetTavaniAsildi extends Error {
+  constructor(harcanan: number, tavan: number) {
+    super(`maliyet tavanı aşıldı: $${harcanan.toFixed(4)} ≥ $${tavan.toFixed(4)}`)
+    this.name = 'MaliyetTavaniAsildi'
+  }
+}
+
+/** Tavanı kurar ve sayacı sıfırlar. Tavansız çağrı (argümansız) sayacı yalnız sıfırlar. */
+export const maliyetTavani = (usd = Number.POSITIVE_INFINITY): void => {
+  maliyetTavaniUsd = usd
+  harcananUsd = 0
+}
+export const maliyetHarcanan = (): number => harcananUsd
+
+const maliyetEkle = (
+  slug: string,
+  role: LlmRole,
+  usage?: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } },
+): void => {
+  if (isFree(slug)) return // :free slug → $0, sayaca girmez
+  const f = FIYAT[slug] ?? FIYAT_BILINMEYEN
+  const girdi = usage?.prompt_tokens ?? 0
+  const cikti = usage?.completion_tokens ?? 0
+  const dusunme = usage?.completion_tokens_details?.reasoning_tokens ?? 0
+  const girdiUsd = (girdi * f.g) / 1e6
+  const ciktiUsd = (cikti * f.c) / 1e6
+  harcananUsd += girdiUsd + ciktiUsd
+  // ⚠️ ÇAĞRI BAŞINA DÖKÜM — "fatura neden yüksek?" sorusu tahminle cevaplanmasın.
+  // ÖLÇÜLDÜ (2026-07-20): tek bir "zor" üretim çağrısı 16.000 çıktı token'ının TAMAMINI
+  // düşünmeye harcayıp SIFIR metin üretti ($0.0139, karşılığı yok). Düşünme, çıktı fiyatından
+  // faturalanır; yani asıl maliyet kalemi ÜRETİLEN METİN DEĞİL, MODELİN DÜŞÜNMESİDİR.
+  // Bu satır olmadan kalem ayrımı yapılamıyordu (toplam sayaç "nereye gitti"yi söylemez).
+  logger.info(
+    { slug, role, girdi, cikti, dusunme, dusunmeOran: cikti ? Math.round((100 * dusunme) / cikti) : 0,
+      girdiUsd: Number(girdiUsd.toFixed(5)), ciktiUsd: Number(ciktiUsd.toFixed(5)),
+      cagriUsd: Number((girdiUsd + ciktiUsd).toFixed(5)), toplamUsd: Number(harcananUsd.toFixed(4)) },
+    'maliyet: çağrı dökümü',
+  )
+}
+
 /** Zincirden uygun slug'ları sırayla dener; hepsi düşerse son hatayı fırlatır. */
 export async function routedChat(
   role: LlmRole,
@@ -307,19 +481,45 @@ export async function routedChat(
   let lastErr: unknown = new Error(`model zinciri boş: ${role}`)
   for (const slug of CHAINS[role]) {
     const { provider, model } = parseEntry(slug)
-    // Anthropic: resmi SDK adaptörü (tools'lu istekler zincirde sonrakine akar)
-    if (provider === 'anthropic' && (!anthropic || params.tools?.length)) continue
     const client = clientOf(provider)
-    if (provider !== 'anthropic' && !client) continue // GROQ_API_KEY yoksa groq atlanır
+    if (!client) continue // GROQ_API_KEY yoksa groq atlanır
+    // Tavan dolduysa PARALI slug'a hiç gitme (ücretsiz slug bedava, o sürebilir).
+    if (!isFree(slug) && harcananUsd >= maliyetTavaniUsd) throw new MaliyetTavaniAsildi(harcananUsd, maliyetTavaniUsd)
     if (await breakerOpen(slug)) continue
     if (isFree(slug) && !(await freeBudgetOk(provider, priority))) continue // bütçe → sıradaki
     try {
-      const res = await withTimeout(TIMEOUT_MS[role], (signal) =>
-        provider === 'anthropic'
-          ? anthropicChat(model, params, signal)
-          : client!.chat.completions.create({ ...params, model }, { signal }),
-      )
+      // ⚠️ HTTP 200 + HATA GÖVDESİ — OpenRouter'ın SESSİZ arıza biçimi. Sağlayıcı kapasitesi
+      // dolduğunda gövde `{error:{...}}` döner ve `choices` HİÇ GELMEZ. Durum kodu 200 olduğu
+      // için SDK fırlatmaz, kesici açılmaz, zincir ilerlemez — çağıran `res.choices[0]` derken
+      // TypeError alır. ÖLÇÜLDÜ (2026-07-20 A/B koşusu): denetçi başı ultra:free iken HER aday
+      // "denetim başarısız" diye elendi; paralı üretim para yakarken havuza sıfır soru yazıldı.
+      // Arıza denetçide görünüyordu ama yeri BURASI: geçersiz yanıtı geçerli sayan router.
+      //
+      // ⚠️ ÜCRETSİZ UÇTA ÖNCE YERİNDE TEKRAR DENE, hemen zincire düşme. ÖLÇÜLDÜ (aynı gün,
+      // ultra:free'ye 3 ardışık çağrı): 1 başarısız + 2 başarılı; başarısız olan 1 SANİYEDE
+      // dönüyor ("Worker local total request limit reached") — yani geçici kapasite dalgası.
+      // Tek dalgada kesici açmak ücretsiz denetçiyi 30-120 sn devre dışı bırakır ve TÜM trafik
+      // paralı yedeğe akar: bedava hat, bedava olmayan bir sebeple kaybedilir. Tekrar bedava
+      // ve saniyelik; kesici ancak ısrarlı arızada açılır.
+      const dene = isFree(slug) ? 3 : 1
+      let res: OpenAI.Chat.Completions.ChatCompletion | null = null
+      let bosGovde: string | undefined
+      for (let d = 1; d <= dene; d++) {
+        const aday = await withTimeout(TIMEOUT_MS[role], (signal) =>
+          client.chat.completions.create(saglayiciEkle(provider, role, { ...params, model }), { signal }),
+        )
+        if (aday?.choices?.length) { res = aday; break }
+        bosGovde = (aday as unknown as { error?: { message?: string } })?.error?.message
+        if (d < dene) await new Promise((r) => setTimeout(r, 1_500))
+      }
+      if (!res) {
+        lastErr = new Error(`yanıtta choices yok (200+hata gövdesi): ${slug}`)
+        logger.warn({ slug, role, deneme: dene, hata: bosGovde }, 'geçersiz yanıt (choices yok) — zincirde ilerleniyor')
+        await tripBreaker(slug)
+        continue
+      }
       void resetBreaker(slug)
+      maliyetEkle(slug, role, res.usage)
       return res
     } catch (err) {
       lastErr = err
@@ -340,6 +540,10 @@ export async function routedChat(
 /**
  * Stream varyantı (Kaptan SSE). Fallback yalnız BAŞLATMA hatasında işler;
  * akış ortası kopmalar çağıranın sorumluluğudur (mesaj yine persist edilir).
+ *
+ * NOT: Anthropic sökülene kadar bu döngü zincirin BAŞINI atlıyordu ('anthropic:' girdilerinin
+ * stream adaptörü yoktu) — yani P0 sohbet, routedChat'in kullandığı modelden BAŞKA bir modele
+ * düşüyordu. Artık tüm sağlayıcılar OpenAI-uyumlu: stream ve non-stream aynı slug'ı kullanır.
  */
 export async function routedStream(
   role: LlmRole,
@@ -350,7 +554,6 @@ export async function routedStream(
   let lastErr: unknown = new Error(`model zinciri boş: ${role}`)
   for (const slug of CHAINS[role]) {
     const { provider, model } = parseEntry(slug)
-    if (provider === 'anthropic') continue // stream adaptörü yok — sonraki sağlayıcı akıtır
     const client = clientOf(provider)
     if (!client) continue
     if (await breakerOpen(slug)) continue
@@ -362,7 +565,7 @@ export async function routedStream(
       // akışa bağlı kalıyordu: 45sn'den uzun süren bir cevap ORTASINDAN kesiliyordu. Artık
       // timeout yalnız BAŞLATMAYA (ilk bayta kadar) uygulanır — akışın süresi sınırsız.
       const stream = await withTimeout(TIMEOUT_MS[role], (signal) =>
-        client.chat.completions.create({ ...params, model, stream: true }, { signal }),
+        client.chat.completions.create(saglayiciEkle(provider, role, { ...params, model, stream: true }), { signal }),
       )
       void resetBreaker(slug)
       return { stream, model: slug }
@@ -380,6 +583,40 @@ export async function routedStream(
     }
   }
   throw lastErr
+}
+
+/**
+ * LLM ÇIKTISINDAN JSON — model çıktısı ASLA güvenilir değildir.
+ *
+ * ⚠️ Kod şöyleydi: `JSON.parse(res.choices[0]?.message.content ?? '{}')`
+ * Ama `??` yalnız null/undefined'ı yakalar — BOŞ STRING'İ YAKALAMAZ. Model boş içerik
+ * döndürürse `JSON.parse('')` fırlatır. Yarım JSON (max_tokens'a takılmış yanıt) da fırlatır.
+ * Ölçüldü: ATLAS'ın teşhis görevi tam olarak böyle öldü — "JSON Parse error: Unexpected EOF"
+ * ve görev FAILED oldu; öğrencinin yanılgısı hiç teşhis edilmedi.
+ *
+ * Üç savunma: boş kontrolü · markdown çiti soyma (```json … ```) · ilk {…} bloğunu çıkarma.
+ * Başarısızlıkta FIRLATMAZ, null döner — çağıran "teşhis üretilemedi" deyip zarifçe biter.
+ */
+export function jsonCoz<T>(icerik: string | null | undefined): T | null {
+  const ham = (icerik ?? '').trim()
+  if (!ham) return null
+
+  const cit = ham.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const aday = (cit?.[1] ?? ham).trim()
+
+  try {
+    return JSON.parse(aday) as T
+  } catch {
+    // Model JSON'un başına/sonuna laf eklemiş olabilir → ilk dengeli {…} bloğunu dene.
+    const bas = aday.indexOf('{')
+    const son = aday.lastIndexOf('}')
+    if (bas < 0 || son <= bas) return null
+    try {
+      return JSON.parse(aday.slice(bas, son + 1)) as T
+    } catch {
+      return null
+    }
+  }
 }
 
 /** Kısayol: tek metin yanıtı (questions-ai.llmChat halefi). */

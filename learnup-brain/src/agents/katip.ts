@@ -1,6 +1,7 @@
 import { redis } from '../clients/redis.js'
 import { supabase } from '../clients/supabase.js'
 import { logger } from '../utils/logger.js'
+import { KATIP_OZET_SYSTEM, KATIP_KATLAMA_SYSTEM } from '../persona/katip.charter.js'
 import { routedText } from '../lib/model-router.js'
 import { embed } from '../lib/rag.js'
 import { invalidateDesk } from '../lib/desk.js'
@@ -95,13 +96,7 @@ export async function runCompact(task: AgentTask): Promise<unknown> {
       temperature: 0.3,
       max_tokens: 350,
       messages: [
-        {
-          role: 'system',
-          content:
-            'Sen bir öğrenme oturumu yazıcısısın. Verilen sohbet + istatistiklerden EN FAZLA 5 maddelik, ' +
-            'Türkçe, üçüncü şahıs bir oturum özeti çıkar. Kalıcı kişisel gerçekleri (hedef, kısıt, duygu) ' +
-            'MUTLAKA yakala. Madde işareti "-" kullan, başka hiçbir şey yazma.',
-        },
+        { role: 'system', content: KATIP_OZET_SYSTEM }, // → persona/katip.charter.ts
         {
           role: 'user',
           content: `İSTATİSTİK: ${JSON.stringify(stats)}\n\nSOHBET:\n${transcript}`,
@@ -167,14 +162,7 @@ export async function runNightlyFold(): Promise<void> {
         max_tokens: 500,
         response_format: { type: 'json_object' },
         messages: [
-          {
-            role: 'system',
-            content:
-              'Öğrenci hafıza küratörüsün. Mevcut kalıcı gerçekler + haftalık oturum özetlerinden GÜNCEL kalıcı ' +
-              'gerçekleri düz bir JSON objesi olarak döndür (anahtar: kısa_türkçe_slug, değer: kısa cümle). ' +
-              'Kalıcı olanı tut/terfi et (hedef, sınav tarihi, program kısıtı, kişisel bağlam), bayatı at, ' +
-              'çelişkiyi yeni lehine çöz. EN FAZLA 10 anahtar.',
-          },
+          { role: 'system', content: KATIP_KATLAMA_SYSTEM }, // → persona/katip.charter.ts
           {
             role: 'user',
             content: `MEVCUT: ${JSON.stringify(mem?.semantic ?? {})}\n\nHAFTALIK ÖZETLER:\n${(sums ?? [])

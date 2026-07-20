@@ -23,6 +23,27 @@ const envSchema = z.object({
   // ── Redis (hot-path; ajan orkestrasyonu — bu fazda opsiyonel) ──
   REDIS_URL: z.string().url().optional(),
 
+  /**
+   * GECE DEMİRHANESİ — VARSAYILAN KAPALI. Bilinçli olarak "opt-in".
+   *
+   * ⚠️ NEDEN KAPALI: demirhane P2 önceliğiyle çalışıyor ama P2 yalnız ÜCRETSİZ sağlayıcıların
+   * (OpenRouter/Groq) günlük kotasını interaktif kullanıcıya saklar. isFree() yalnız ':free'
+   * son ekine bakar → generate/verify zincirlerinin başındaki PARALI DeepSeek slug'ları
+   * (v4-pro üretim, v4-flash doğrulama) bütçe kapısına HİÇ girmez: gece işi doğrudan paralı
+   * modele gider ve önünde tavan yoktur. Worker 7/24 ayaktayken (Docker) bu, her gece haberin
+   * olmadan gerçek para harcaması demektir.
+   *
+   * DeepSeek'e geçişle bu riskin BÜYÜKLÜĞÜ düştü ama YAPISI değişmedi: tavansız paralı hat
+   * hâlâ tavansız. Ucuz olması "sınırsız" demek değil — kapı bilinçli olarak kapalı kalıyor.
+   * Kabul edilen soru başına ~$0.002 (üretim + denetim; sağlayıcı sabitlemesi + ucuz hakem
+   * sonrası fiyat oranından türetildi). Kötü bir gece yüzlerce çağrı demek; ucuzluk tavan
+   * yerine geçmez, tavan koymadan açmak hâlâ habersiz harcamadır.
+   *
+   * Kod silinmedi; yalnız kapı kapalı. Açmak için: NIGHTLY_FORGE=on
+   * Açmadan önce paralı hatta sert bir gece tavanı eklenmeli (bkz. topup-planner.ts).
+   */
+  NIGHTLY_FORGE: z.enum(['on', 'off']).default('off'),
+
   // Attribution / istemci URL'i (OpenRouter HTTP-Referer)
   APP_URL: z.string().url().default('https://learnup.app'),
 })

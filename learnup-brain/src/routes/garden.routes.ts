@@ -1,9 +1,33 @@
 import { Router } from 'express'
 import { supabase } from '../clients/supabase.js'
-import { getCatalogItem, kindForItem } from '../lib/market-catalog.js'
+import { getCatalogItem, kindForItem, katalogListesi } from '../lib/market-catalog.js'
 
 /** Bahçe — satın al / dik / taşı / sök. (Edge: purchase-garden-item, plant-seed, move-plant, remove-plant) */
 export const gardenRouter = Router()
+
+/** GET /api/v1/garden — v2'nin bahçe okuma kapısı: coin + envanter + bitkiler + OTORİTER katalog.
+ *  (Eski frontend tabloları RLS ile doğrudan okuyordu; v2 tek uçtan besleniyor.) */
+gardenRouter.get('/', async (req, res, next) => {
+  try {
+    const userId = req.userId!
+    const [prof, inv, plants] = await Promise.all([
+      supabase.from('profiles').select('gamification, unlocked_badges').eq('id', userId).maybeSingle(),
+      supabase.from('inventory').select('item_id, kind, count').eq('user_id', userId).gt('count', 0),
+      supabase.from('garden').select('id, item_id, x, y, scale').eq('user_id', userId),
+    ])
+    const g = (prof.data?.gamification ?? {}) as { coins?: number }
+    res.json({
+      coins: Number(g.coins ?? 0),
+      inventory: inv.data ?? [],
+      plants: plants.data ?? [],
+      catalog: katalogListesi(),
+      // Rozet kilidi göstergesi için: sahip olunan rozet id'leri (yalnız anahtar listesi)
+      badges: Object.keys((prof.data?.unlocked_badges as Record<string, unknown>) ?? {}),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
 
 // POST /api/garden/purchase — coin düş + envantere +1 (otoriter fiyat/kilit kontrolü).
 gardenRouter.post('/purchase', async (req, res, next) => {

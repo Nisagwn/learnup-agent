@@ -1,17 +1,13 @@
 /**
- * Model + boyut sabitleri — tek kaynak-hakikat.
- * Model veya embedding boyutu değişecekse YALNIZ burası (ve DB kolonu) değişir → sessiz drift önlenir.
+ * Embedding + sıcaklık sabitleri — tek kaynak-hakikat.
+ * Embedding boyutu değişecekse YALNIZ burası (ve DB kolonu) değişir → sessiz drift önlenir.
+ *
+ * ⚠️ SOHBET/ÜRETİM MODELLERİ BURADA DEĞİL. Buradaki `MODELS` sabiti kaldırıldı: kendini
+ * "tek kaynak-hakikat" ilan ediyordu ama hiçbir yerden import edilmiyordu ve içeriği çürümüştü
+ * (GENERATE: 'deepseek/deepseek-chat' derken üretim çoktan başka modele geçmişti). Rol→model
+ * eşlemesinin GERÇEK kaynağı model-router.ts'teki CHAINS'tir (env'deki LLM_CHAIN_* ile ezilir);
+ * modeli oradan seç, buraya ikinci bir liste koyma.
  */
-
-/** OpenRouter model slug'ları. */
-export const MODELS = {
-  /** Soru üretimi. F3: slug'ı canlı OpenRouter kataloğuyla doğrula. */
-  GENERATE: 'deepseek/deepseek-chat',
-  /** Bağımsız doğrulama (reasoner — muhakeme kritik). */
-  VERIFY: 'deepseek/deepseek-r1',
-  /** Hızlı/ucuz: contextual önek, sınıflama, bellek brief. */
-  FAST: 'deepseek/deepseek-chat',
-} as const
 
 /** Embeddings — text-embedding-3-small, OpenRouter üzerinden (OpenAI faturası kullanılmaz). */
 export const EMBED_MODEL = 'openai/text-embedding-3-small' as const
@@ -25,5 +21,3 @@ export const TEMP = {
   DERIVE: 0.5, // türetme
   CREATIVE: 0.8, // özgün üretim
 } as const
-
-export type ModelKey = keyof typeof MODELS

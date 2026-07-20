@@ -92,7 +92,7 @@ async function handleTopup(task: AgentTask): Promise<unknown> {
       difficulty: q.zorluk || spec.difficulty,
       verified: true,
       quality: q.quality,
-      source_type: 'ai_generated', // kaynak ayrımı yasası (#6): demirhane YALNIZ AI yazar
+      // source_type YOK: kaynak ayrımı artık FİZİKSEL (0013) — bu tablo yalnız AI içerir.
       content_hash: md5(q.soru),   // 0009 idempotensi + aşağıdaki upsert'in çakışma hedefi
     }))
 
@@ -103,11 +103,11 @@ async function handleTopup(task: AgentTask): Promise<unknown> {
     // yani bu çakışma istisna değil KURAL. Üstelik hata yutulup "generated: 5" raporlanıyordu.
     // upsert + ignoreDuplicates: çift satır atlanır, sağlamlar YAZILIR.
     const { data: yazilan, error } = await supabase
-      .from('yks_questions')
+      .from('yks_ai_questions') // AI havuzu ayrı tablo (0013)
       .upsert(rows, { onConflict: 'content_hash', ignoreDuplicates: true })
       .select('id')
     if (error) {
-      logger.error({ err: error, kazanimId: node.id }, 'yks_questions upsert hata')
+      logger.error({ err: error, kazanimId: node.id }, 'yks_ai_questions upsert hata')
       return { generated: 0, written: 0, kazanimId: node.id, error: error.message }
     }
     const written = yazilan?.length ?? 0

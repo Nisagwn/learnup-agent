@@ -33,6 +33,124 @@ async function loadQuestionsById(questionIds: string[]): Promise<Map<string, any
   return new Map((data || []).map((r: any) => [String(r.id), r]))
 }
 
+/** Soru satırını İSTEMCİYE GÜVENLİ hâle soy: correct_answer/explanation ASLA gitmez
+ *  (cevap kâhini — puanlama yalnız sunucuda; submit uçları zaten tek-gönderimli). */
+function sorulariSoy(rows: any[]): any[] {
+  return rows.map((q: any) => ({
+    id: q.id,
+    question_text: q.question_text ?? q.text ?? '',
+    options: Array.isArray(q.options) ? q.options : Object.values(q.options ?? {}),
+    subject: q.category ?? q.subject ?? null,
+    topic: q.topic ?? null,
+    difficulty: q.difficulty ?? null,
+  }))
+}
+
+/** GET /api/v1/assignments — öğrencinin ödev panosu: sınıf ödevleri (öğretmen üzerinden,
+ *  submit ile AYNI sahiplik kuralı) + hedefli setler (student_id=ben) + gönderim durumu. */
+assignmentsRouter.get('/', async (req, res, next) => {
+  try {
+    const userId = req.userId!
+    const { data: profil } = await supabase
+      .from('profiles').select('teacher_id').eq('id', userId).single()
+    const teacherId = (profil as any)?.teacher_id ?? null
+
+    const [sinif, hedefli, gonderim] = await Promise.all([
+      teacherId
+        ? supabase.from('assignments').select('*').eq('teacher_id', teacherId)
+            .order('created_at', { ascending: false }).limit(50)
+        : Promise.resolve({ data: [] as any[], error: null }),
+      supabase.from('targeted_assignments').select('*').eq('student_id', userId)
+        .order('created_at', { ascending: false }).limit(50),
+      supabase.from('assignment_submissions').select('*').eq('student_id', userId).limit(200),
+    ])
+
+    const subBy = new Map((gonderim.data ?? []).map((s: any) => [String(s.assignment_id), s]))
+    res.json({
+      teacherId,
+      assignments: ((sinif.data as any[]) ?? []).map((a: any) => {
+        const s = subBy.get(String(a.id))
+        return {
+          id: a.id,
+          title: a.title ?? a.name ?? 'Ödev',
+          createdAt: a.created_at ?? null,
+          dueDate: a.due_date ?? null,
+          soruSayisi: Array.isArray(a.question_ids) ? a.question_ids.length : 0,
+          submission: s
+            ? { score: s.score ?? null, maxScore: s.max_score ?? null, submittedAt: s.created_at ?? null }
+            : null,
+        }
+      }),
+      targeted: ((hedefli.data as any[]) ?? []).map((t: any) => ({
+        id: t.id,
+        title: t.title ?? 'Hedefli Set',
+        createdAt: t.created_at ?? null,
+        status: t.status ?? 'pending',
+        soruSayisi: Array.isArray(t.question_ids) ? t.question_ids.length : 0,
+        score: t.score ?? null,
+        maxScore: t.max_score ?? null,
+        completedAt: t.completed_at ?? null,
+      })),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/** GET /api/v1/assignments/:id/questions — sınıf ödevinin soruları (cevapsız).
+ *  Sahiplik: submit ile birebir aynı kural (öğretmenim ≠ ödevin öğretmeni → 403). */
+assignmentsRouter.get('/:id/questions', async (req, res, next) => {
+  try {
+    const userId = req.userId!
+    const { data: assignment } = await supabase
+      .from('assignments').select('id, teacher_id, question_ids, title').eq('id', req.params.id).maybeSingle()
+    if (!assignment) {
+      res.status(404).json({ error: 'Ödev bulunamadı.' })
+      return
+    }
+    const { data: profil } = await supabase.from('profiles').select('teacher_id').eq('id', userId).single()
+    if (!(profil as any)?.teacher_id || (profil as any).teacher_id !== (assignment as any).teacher_id) {
+      res.status(403).json({ error: 'Bu ödev size atanmamış.' })
+      return
+    }
+    const ids = Array.isArray((assignment as any).question_ids)
+      ? (assignment as any).question_ids.map((x: any) => String(x)) : []
+    const { data: sorular } = ids.length
+      ? await supabase.from('questions').select('*').in('id', ids)
+      : { data: [] as any[] }
+    // Ödevdeki sıra korunur
+    const byId = new Map(((sorular as any[]) ?? []).map((q: any) => [String(q.id), q]))
+    const sirali = ids.map((id: string) => byId.get(id)).filter(Boolean)
+    res.json({ id: (assignment as any).id, title: (assignment as any).title ?? 'Ödev', questions: sorulariSoy(sirali) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/** GET /api/v1/assignments/targeted/:id/questions — hedefli setin soruları (cevapsız). */
+assignmentsRouter.get('/targeted/:id/questions', async (req, res, next) => {
+  try {
+    const userId = req.userId!
+    const { data: ta } = await supabase
+      .from('targeted_assignments').select('id, student_id, question_ids, title')
+      .eq('id', req.params.id).eq('student_id', userId).maybeSingle()
+    if (!ta) {
+      res.status(404).json({ error: 'Hedefli set bulunamadı.' })
+      return
+    }
+    const ids = Array.isArray((ta as any).question_ids)
+      ? (ta as any).question_ids.map((x: any) => String(x)) : []
+    const { data: sorular } = ids.length
+      ? await supabase.from('questions').select('*').in('id', ids)
+      : { data: [] as any[] }
+    const byId = new Map(((sorular as any[]) ?? []).map((q: any) => [String(q.id), q]))
+    const sirali = ids.map((id: string) => byId.get(id)).filter(Boolean)
+    res.json({ id: (ta as any).id, title: (ta as any).title ?? 'Hedefli Set', questions: sorulariSoy(sirali) })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // POST /api/assignments/submit — küratörlü ödev gönderimi.
 assignmentsRouter.post('/submit', async (req, res, next) => {
   try {

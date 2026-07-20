@@ -37,9 +37,9 @@ if (KIND === 'forge_topup' || KIND === 'topup') {
 
 const havuz = async (): Promise<number> => {
   if (!kazanimId) return 0
-  const { count } = await supabase.from('yks_questions')
+  const { count } = await supabase.from('yks_ai_questions') // AI havuzu ayrı tablo (0013)
     .select('*', { count: 'exact', head: true })
-    .eq('kazanim_id', kazanimId).eq('source_type', 'ai_generated').eq('verified', true)
+    .eq('kazanim_id', kazanimId).eq('verified', true)
   return count ?? 0
 }
 

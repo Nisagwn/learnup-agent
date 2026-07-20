@@ -27,6 +27,22 @@ const DECOR: Record<string, number> = {
 }
 const SPECIAL: Record<string, number> = { special_ent_male: 500, special_ent_female: 500 }
 
+/** TÜM katalog — GET /garden'ın istemciye verdiği OTORİTER fiyat listesi.
+ *  (İstemcide fiyat sabitlenmez; görsel/ad eşlemesi istemcide, para burada.) */
+export function katalogListesi(): Array<{
+  itemId: string; price: number; kind: string; unlockBadge: string | null; rarity: string | null
+}> {
+  const liste: Array<{ itemId: string; price: number; kind: string; unlockBadge: string | null; rarity: string | null }> = []
+  for (const [plantType, def] of Object.entries(TREES)) {
+    const base = SEED_PRICE[def.rarity] ?? 20
+    liste.push({ itemId: `${plantType}_seed`, price: base, kind: 'seed', unlockBadge: def.unlockBadge, rarity: def.rarity })
+    liste.push({ itemId: `${plantType}_mature`, price: base * 5, kind: 'tree', unlockBadge: def.unlockBadge, rarity: def.rarity })
+  }
+  for (const [itemId, price] of Object.entries(DECOR)) liste.push({ itemId, price, kind: 'decor', unlockBadge: null, rarity: null })
+  for (const [itemId, price] of Object.entries(SPECIAL)) liste.push({ itemId, price, kind: 'special', unlockBadge: null, rarity: null })
+  return liste
+}
+
 /** itemId → katalog kaydı (fiyat, envanter türü, rozet kilidi). Yoksa null. */
 export function getCatalogItem(itemId: string): CatItem | null {
   for (const [plantType, def] of Object.entries(TREES)) {

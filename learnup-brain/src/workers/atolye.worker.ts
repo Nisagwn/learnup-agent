@@ -123,8 +123,18 @@ async function processDelivered(delivered: DeliveredTask[]): Promise<void> {
       }
       await publishEvent(task.id, { status: 'RUNNING' })
       const result = await handleTask(task)
-      await publishEvent(task.id, { status: 'COMPLETED', data: result })
-      logger.info({ taskId: task.id, kind: task.kind }, 'görev tamamlandı')
+
+      // ⚠️ DÜRÜST MUHASEBE: handleTask fırlatmadan `{error: …}` döndürebiliyor (ör. ATLAS
+      // teşhis üretemeyince). Eskiden bu da COMPLETED yazılıyordu — yani İŞİ YAPMAMIŞ bir görev
+      // "tamamlandı" diyordu. Panoda her şey yeşil görünürken ajan hiçbir şey üretmemiş oluyordu.
+      const hata = (result as { error?: unknown } | null)?.error
+      if (hata) {
+        await publishEvent(task.id, { status: 'FAILED', data: String(hata) })
+        logger.warn({ taskId: task.id, kind: task.kind, hata }, 'görev iş üretemedi → FAILED')
+      } else {
+        await publishEvent(task.id, { status: 'COMPLETED', data: result })
+        logger.info({ taskId: task.id, kind: task.kind }, 'görev tamamlandı')
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'işleme hatası'
       logger.error({ err, taskId: task.id }, 'görev işlenemedi')
@@ -182,7 +192,7 @@ async function main(): Promise<void> {
  * ⚠️ Eskiden: `running = false; setTimeout(() => process.exit(0), 100)` — SIGTERM'den
  * 100 MİLİSANİYE sonra süreç öldürülüyordu. Ama o an worker büyük ihtimalle handleTask'ın
  * İÇİNDEDİR ve bir forge_topup görevi meşru olarak DAKİKALARCA sürer (ölçüldü: 100 sn).
- * Sonuç: her deploy'da yarım kalan Sonnet üretimi çöpe gidiyor, stream kaydı XACK'lenmiyor,
+ * Sonuç: her deploy'da yarım kalan üretim çöpe gidiyor, stream kaydı XACK'lenmiyor,
  * görev RUNNING'de asılı kalıp bekçinin toparlamasını bekliyordu → iş İKİ KEZ ödeniyordu.
  * → Artık uçuştaki görevin bitmesi beklenir (tavanla); yeni görev alınmaz.
  */

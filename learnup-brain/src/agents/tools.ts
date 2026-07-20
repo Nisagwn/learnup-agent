@@ -109,7 +109,7 @@ export async function runKaptanTool(
       // ⚠️ ARGÜMANLARI ÜRETEN TARAF MODELDİR — şemadaki `maximum: 10` bir RİCADIR, kısıt değil.
       // Kod da uygulamıyordu: count doğrudan buildMicroTest'e gidiyordu. Sohbet tool-loop'u 6
       // tura kadar dönüyor ve her tur bir üretim zinciri (üret → aday başına doğrula → onar)
-      // tetikleyebiliyor → TEK sohbet mesajından yüzlerce Sonnet çağrısı çıkabilirdi.
+      // tetikleyebiliyor → TEK sohbet mesajından yüzlerce LLM çağrısı çıkabilirdi.
       // Zorluk da serbest metindi ve hem prompt'a hem DB filtresine gidiyor.
       const kazanimId = Number(args.kazanimId)
       if (!Number.isInteger(kazanimId)) return { error: 'kazanimId gerekli (tam sayı)' }

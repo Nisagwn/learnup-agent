@@ -1,5 +1,6 @@
 import { routedText } from '../lib/model-router.js'
 import { buildPlan, type Plan } from '../lib/planner.js'
+import { PUSULA_BRIEF_SYSTEM } from '../persona/pusula.charter.js'
 import { upsertBrief } from './katip.js'
 import { logger } from '../utils/logger.js'
 import type { AgentTask } from './bus.js'
@@ -44,13 +45,7 @@ async function annotatePlan(plan: Plan): Promise<string> {
     temperature: 0.4,
     max_tokens: 300,
     messages: [
-      {
-        role: 'system',
-        content:
-          'Çalışma planını Kaptan (koç) için KOMPAKT bir brief\'e çevir. Türkçe, en fazla 4 kısa satır: ' +
-          '(1) bugünün odağı ve sırası, (2) neden bu sıra (tek cümle), (3) varsa taktik notu. ' +
-          'Öğrenciye değil KOÇA yazıyorsun — komut kipi, süsleme yok.',
-      },
+      { role: 'system', content: PUSULA_BRIEF_SYSTEM }, // → persona/pusula.charter.ts
       { role: 'user', content: JSON.stringify(compact) },
     ],
   }, { priority: 'P1' })

@@ -1,12 +1,26 @@
 import { createHash } from 'node:crypto'
+import { env } from '../config/env.js'
 import { supabase } from '../clients/supabase.js'
 import { generateVerifiedSet } from '../lib/generation.js'
 import { logger } from '../utils/logger.js'
 
 /**
  * GECE DEMİRHANESİ (§5.4) — 02:00–06:00 TSİ penceresinde ince havuz hücrelerini doldurur.
- * P2 önceliğiyle çalışır: günlük ücretsiz bütçenin interaktif payını ASLA yemez.
  * Hücre = (kazanım, zorluk). Hedef: hücre başına ≥ MIN_POOL doğrulanmış AI sorusu.
+ *
+ * ⚠️ ŞU AN VARSAYILAN OLARAK KAPALI (env.NIGHTLY_FORGE=off). Kod duruyor; kapı kapalı.
+ *
+ * Kapatma sebebi, eski yorumun kendisinde saklıydı: "P2 önceliğiyle çalışır, günlük ÜCRETSİZ
+ * bütçenin interaktif payını asla yemez." Doğru — ama eksik. P2 yalnız ücretsiz sağlayıcıları
+ * sınırlar; model-router'ın isFree() kontrolü ':free' son ekine bakar → generate/verify
+ * zincirlerinin başındaki PARALI DeepSeek slug'ları (v4-flash üretim, v4-pro doğrulama)
+ * bütçe kapısına hiç girmez. Yani gece işi doğrudan PARALI modele gidiyor ve önünde HİÇBİR
+ * tavan yok. Worker 7/24 ayaktayken (Docker) bu, her gece habersiz gerçek para demekti.
+ *
+ * AÇMADAN ÖNCE GEREKEN: paralı hatta gece başına sert bir çağrı/harcama tavanı.
+ * Bugünkü iş sınırı yalnız hücre sayısıyla dolaylı: MAX_CELLS × (3 tur × [1 üretim + aday başına
+ * 1 denetim + onarım]) → kötü bir gecede yüzlerce çağrı. Kabul edilen soru başına ~$0.002
+ * (baskın kalem ÜRETİM; denetim ucuz hakemle ~%10'a indi), ama tavansız × yüzlerce hâlâ tavansız.
  */
 
 const MIN_POOL = 8      // hücre başına hedef doğrulanmış soru
@@ -14,6 +28,12 @@ const MAX_CELLS = 6     // gece başına işlenecek hücre (bütçe disiplini)
 const PER_CELL = 4      // hücre başına üretim hedefi
 
 export async function runNightlyForge(): Promise<void> {
+  // Kapı: çağıran kim olursa olsun (worker zamanlayıcısı, elle tetikleme) burada durur.
+  if (env.NIGHTLY_FORGE !== 'on') {
+    logger.info('demirhane: KAPALI (NIGHTLY_FORGE=off) — gece üretimi yapılmadı, LLM harcanmadı')
+    return
+  }
+
   // 1) Aktif kazanımlar: son 14 günde çalışılmış (user_mastery) — havuz talebi buradan doğar.
   const since = new Date(Date.now() - 14 * 86_400_000).toISOString()
   const { data: active, error } = await supabase
@@ -36,11 +56,10 @@ export async function runNightlyForge(): Promise<void> {
   for (const nodeId of nodeIds) {
     for (const difficulty of ['kolay', 'orta', 'zor']) {
       const { count } = await supabase
-        .from('yks_questions')
+        .from('yks_ai_questions') // AI havuzu ayrı tablo (0013)
         .select('id', { count: 'exact', head: true })
         .eq('kazanim_id', nodeId)
         .eq('verified', true)
-        .eq('source_type', 'ai_generated')
         .eq('difficulty', difficulty)
       if ((count ?? 0) < MIN_POOL) thin.push({ nodeId, difficulty, have: count ?? 0 })
       if (thin.length >= MAX_CELLS * 3) break
@@ -89,7 +108,7 @@ export async function runNightlyForge(): Promise<void> {
           difficulty: q.zorluk || cell.difficulty,
           verified: true,
           quality: q.quality,
-          source_type: 'ai_generated',
+          // source_type YOK: yks_ai_questions tablosu zaten AI kaynağını belirtir (0013).
           content_hash: createHash('md5').update(q.soru).digest('hex'),
         }))
         // ⚠️ Eskiden düz insert + dedup hatasını AÇIKÇA YUTMA vardı:
@@ -99,7 +118,7 @@ export async function runNightlyForge(): Promise<void> {
         //    ve hata yutulduğu için hemen altındaki log "demirhane hücresi tamam, made: 4"
         //    yazıyordu. Gece boyunca SIFIR satır yazıp "başarılı" raporlayabilirdi.
         const { data, error: insErr } = await supabase
-          .from('yks_questions')
+          .from('yks_ai_questions') // AI havuzu ayrı tablo (0013)
           .upsert(rows, { onConflict: 'content_hash', ignoreDuplicates: true })
           .select('id')
         if (insErr) {

@@ -50,19 +50,18 @@ function taggedToServed(q: TaggedQuestion): ServedQuestion {
  * Her Segment tek kazanıma karşılık gelir → kazanim_id ile filtre (ltree alt-ağaç gerekmez).
  */
 export async function assembleSegment(seg: Segment, userId: string): Promise<ServedQuestion[]> {
-  // Kaynak ayrımı yasası (ürün kuralı #6): adaptif montaj YALNIZ AI-üretimi okur;
-  // çıkmış sorular (osym_cikmis) ayrı serviste yaşar (/api/v1/questions/osym).
+  // Kaynak ayrımı yasası (ürün kuralı #6): adaptif montaj AI havuzunu okur.
+  // Ayrım artık FİZİKSEL (0013): AI sorular yks_ai_questions'ta, çıkmış sorular
+  // yks_questions'ta — burada çıkmış soru olması imkânsız, source_type filtresi gerekmez.
   // ⚠️ ZORLUK FİLTRESİ EKSİKTİ. seg.difficulty buraya kadar taşınıp yalnızca ÜRETİCİYE
   // veriliyordu; havuz sorgusuna hiç uygulanmıyordu. Yani "zor test istiyorum" diyen öğrenciye,
-  // havuz doluysa o kazanımın KOLAY soruları dönüyordu. 0004 bunun için yq_serve_ai
-  // (kazanim_id, difficulty) indeksini bile oluşturmuş — kod indeksin varlık sebebini kullanmıyordu.
-  // Ayrıca .order() yoktu: her öğrenci hep aynı ilk N satırı, hep aynı sırada alıyordu.
+  // havuz doluysa o kazanımın KOLAY soruları dönüyordu. yaq_serve (kazanim_id, difficulty)
+  // kısmi indeksi tam bunun için var. Ayrıca .order() yoktu: her öğrenci hep aynı ilk N satırı alıyordu.
   const { data, error } = await supabase
-    .from('yks_questions')
+    .from('yks_ai_questions')
     .select('id, question_text, options, correct_option, solution')
     .eq('kazanim_id', seg.kazanimId)
     .eq('verified', true)
-    .eq('source_type', 'ai_generated')
     .eq('difficulty', seg.difficulty)
     .order('quality', { ascending: false })   // en iyi doğrulanmış sorular önce
     .limit(seg.count)
@@ -92,7 +91,7 @@ export async function assembleSegment(seg: Segment, userId: string): Promise<Ser
   // yaptığı işin aynısı, sadece talep anında.
   // Not: fazla üretilenler de yazılır (generateVerifiedSet artık kesmiyor) — parası ödenmiş
   // doğrulanmış soruyu çöpe atmanın anlamı yok; havuz zenginleşir.
-  const hashById = new Map<string, string>() // content_hash → yks_questions.id
+  const hashById = new Map<string, string>() // content_hash → yks_ai_questions.id
   if (generated.length) {
     const rows = generated.map((q) => ({
       subject: seg.subject,
@@ -104,12 +103,12 @@ export async function assembleSegment(seg: Segment, userId: string): Promise<Ser
       difficulty: q.zorluk || seg.difficulty,
       verified: true,
       quality: q.quality,
-      source_type: 'ai_generated',
+      // source_type YOK: yks_ai_questions tablosu zaten AI kaynağını belirtir (0013).
       content_hash: createHash('md5').update(q.soru).digest('hex'),
     }))
     // upsert + ignoreDuplicates: düz insert TEK İFADEDİR, tek çift satır TÜM batch'i düşürür.
     const { error: insErr } = await supabase
-      .from('yks_questions')
+      .from('yks_ai_questions')
       .upsert(rows, { onConflict: 'content_hash', ignoreDuplicates: true })
     if (insErr) {
       logger.warn({ err: insErr, kazanimId: seg.kazanimId }, 'havuz yazımı başarısız — soru yine servis edilir')
@@ -118,7 +117,7 @@ export async function assembleSegment(seg: Segment, userId: string): Promise<Ser
       // questionId ile DB'den doğruluyor (answers.ts). id'siz soru → doğrulanamaz → XP=0.
       // ignoreDuplicates satırları geri döndürmediği için id'leri hash ile ayrıca çekiyoruz.
       const { data: ids } = await supabase
-        .from('yks_questions')
+        .from('yks_ai_questions')
         .select('id, content_hash')
         .in('content_hash', rows.map((r) => r.content_hash))
       for (const r of (ids ?? []) as Array<{ id: string; content_hash: string }>) {
@@ -197,14 +196,14 @@ export async function buildMacroTest(p: {
   return { questions: groups.flat(), timeLimitSec }
 }
 
-/** Makro için: bir dersin havuzundaki verified sorulardan çek (kazanım-agnostik). */
+/** Makro için: bir dersin AI havuzundaki verified sorulardan çek (kazanım-agnostik). */
 async function assembleBySubjectFromPool(subject: string, count: number): Promise<ServedQuestion[]> {
+  // Fiziksel ayrım (0013): yks_ai_questions yalnız AI içerir → çıkmış soru sızamaz.
   const { data, error } = await supabase
-    .from('yks_questions')
+    .from('yks_ai_questions')
     .select('id, question_text, options, correct_option, solution')
     .eq('subject', subject)
     .eq('verified', true)
-    .eq('source_type', 'ai_generated')   // kaynak ayrımı yasası (#6)
     .limit(count)
   if (error) throw error
   return ((data ?? []) as Parameters<typeof poolRowToServed>[0][]).map(poolRowToServed)

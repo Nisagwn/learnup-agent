@@ -24,6 +24,13 @@ import { accountRouter } from './routes/account.routes.js'
 // ── v1 (master plan Faz 1) ──
 import { answersRouter } from './routes/answers.routes.js'
 import { osymRouter } from './routes/osym.routes.js'
+import { aiQuestionsRouter } from './routes/aiquestions.routes.js'
+import { masteryRouter } from './routes/mastery.routes.js'
+// ── Öğretmen / Yönetici panelleri ──
+import { requireRole } from './middleware/requireRole.js'
+import { teacherRouter } from './routes/teacher.routes.js'
+import { sinifRouter } from './routes/sinif.routes.js'
+import { adminRouter } from './routes/admin.routes.js'
 
 /**
  * Express uygulamasını kurar (mount + middleware zinciri).
@@ -66,7 +73,7 @@ export function createApp(): Express {
   for (const base of ['/api', '/api/v1']) {
     // SSE: compression YOK, standardLimiter YOK → requireAuth → chatLimiter (yalnız başlatma)
     app.use(`${base}/chat`, requireAuth, chatLimiter, chatRouter)
-    // LLM ÇAĞIRAN rotalar: dar limit (10/dk/kullanıcı). Tek istek onlarca Sonnet çağrısı
+    // LLM ÇAĞIRAN rotalar: dar limit (10/dk/kullanıcı). Tek istek onlarca LLM çağrısı
     // tetikleyebiliyor → burada sınır hız değil, FATURA meselesi.
     app.use(`${base}/tests`, requireAuth, llmLimiter, testsRouter)
     app.use(`${base}/agents`, requireAuth, llmLimiter, agentsRouter)
@@ -77,14 +84,26 @@ export function createApp(): Express {
     app.use(`${base}/answers`, requireAuth, standardLimiter, answersRouter)
     // Çıkmış sorular — /questions'tan ÖNCE mount edilmeli (Express sıralı eşleşir)
     app.use(`${base}/questions/osym`, requireAuth, standardLimiter, osymRouter)
+    // AI üretimi havuz görüntüleyici (salt-okunur) — yine /questions'tan ÖNCE
+    app.use(`${base}/questions/ai`, requireAuth, standardLimiter, aiQuestionsRouter)
     // Migrasyon rotaları (Edge Functions → Express) — LLM çağıranlar llmLimiter'da
     app.use(`${base}/questions`, requireAuth, llmLimiter, questionsRouter)
     app.use(`${base}/ai`, requireAuth, llmLimiter, aiRouter)
     app.use(`${base}/practice`, requireAuth, standardLimiter, practiceRouter)
+    // Bilişsel harita (salt-okunur) — çürüme-farkındalıklı ustalık; LLM yok
+    app.use(`${base}/mastery`, requireAuth, standardLimiter, masteryRouter)
     app.use(`${base}/assignments`, requireAuth, standardLimiter, assignmentsRouter)
     app.use(`${base}/gamification`, requireAuth, standardLimiter, gamificationRouter)
     app.use(`${base}/garden`, requireAuth, standardLimiter, gardenRouter)
     app.use(`${base}/account`, requireAuth, standardLimiter, accountRouter)
+    // Öğretmen paneli — sınıf kapsamı req.userId'den türer, LLM çağrısı YOK.
+    // standardLimiter requireRole'dan ÖNCE: rol yoklayan döngü de sınırlansın.
+    app.use(`${base}/teacher`, requireAuth, standardLimiter, requireRole('teacher'), teacherRouter)
+    // Sınıf kaydı (öğrenci tarafı) — rol kapısı YOK: uç kendi içinde role='student' arar.
+    // Hedef satır her zaman req.userId'dir, gövdeden gelmez.
+    app.use(`${base}/sinif`, requireAuth, standardLimiter, sinifRouter)
+    // Yönetici paneli — öğretmen uçlarından KESİN AYRI (admin oraya giremez, tersi de).
+    app.use(`${base}/admin`, requireAuth, standardLimiter, requireRole('admin'), adminRouter)
   }
 
   app.use(notFound)

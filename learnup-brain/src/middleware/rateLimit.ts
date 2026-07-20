@@ -29,7 +29,7 @@ export const standardLimiter = rateLimit({
 
 /**
  * LLM ÇAĞIRAN rotalar için DAR limit — burada mesele hız değil, PARA.
- * Tek /tests/generate isteği havuz boşsa onlarca Sonnet çağrısı zinciri tetikleyebilir
+ * Tek /tests/generate isteği havuz boşsa onlarca LLM çağrısı zinciri tetikleyebilir
  * (üret → aday başına bağımsız doğrula → onar → yeniden doğrula, 3 tura kadar).
  * 60/dk bu rotalar için makul değil; kullanıcı başına dakikada 10 üretim fazlasıyla yeter.
  */

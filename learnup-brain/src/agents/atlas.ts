@@ -1,21 +1,24 @@
 import { redis } from '../clients/redis.js'
 import { supabase } from '../clients/supabase.js'
 import { logger } from '../utils/logger.js'
-import { routedChat } from '../lib/model-router.js'
+import { routedChat, jsonCoz } from '../lib/model-router.js'
 import { retrieveGrounding } from '../lib/rag.js'
 import { effectiveMastery } from '../lib/mastery.js'
 import { upsertBrief } from './katip.js'
 import { enqueueTask, type AgentTask } from './bus.js'
+import { ATLAS_SYSTEM, TeshisSemasi, type Taksonomi } from '../persona/atlas.charter.js'
 
 /**
  * ATLAS — bilişsel haritacı (§2.2). Deterministik çekirdek lib/mastery.ts'te;
  * burası LLM tarafı: ÇELDİRİCİ ADLİ ANALİZİ (5 adım) + KAPANIŞ DOĞRULAMASI.
  * Tetik eşiği 2 tuzak isabeti (kalite modu — erken teşhis).
+ *
+ * Kurallar + taksonomi + çıktı şeması → persona/atlas.charter.ts (tek kaynak).
  */
 
 export type Misconception = {
   id: string
-  taxonomy: 'islem_hatasi' | 'kavram_karismasi' | 'prosedur_atlama' | 'temsil_hatasi' | 'onkosul_bosluk'
+  taxonomy: Taksonomi // ← charter'daki TAKSONOMI objesinden türer; prompt da aynı objeden
   selected_option: string
   evidence: string
   confidence: number
@@ -102,9 +105,12 @@ export async function runDiagnose(task: AgentTask): Promise<unknown> {
     .eq('student_id', userId).eq('kazanim_id', kazanimId).eq('is_correct', false)
     .order('created_at', { ascending: false }).limit(5)
 
+  // cevaplanabilir_sorular VIEW'i (0013): yanlış cevaplanan soru AI de olabilir çıkmış da —
+  // teşhis ikisini de okuyabilmeli. Tek tablo sorgulasak öğrencinin çıkmış-soru hatası
+  // ATLAS'ın gözünden kaçardı.
   const qIds = [...new Set((wrongs ?? []).map((w) => w.question_id).filter(Boolean))] as string[]
   const { data: qs } = qIds.length
-    ? await supabase.from('yks_questions')
+    ? await supabase.from('cevaplanabilir_sorular')
         .select('id, question_text, options, correct_option, solution').in('id', qIds)
     : { data: [] as any[] }
 
@@ -136,39 +142,57 @@ export async function runDiagnose(task: AgentTask): Promise<unknown> {
 
   const res = await routedChat('verify', {
     temperature: 0.2,
+    // ⚠️ max_tokens DÜŞÜNMEYİ DE KAPSAR. `verify` zincirinin başı düşünen bir model
+    // (deepseek-v4-pro) ve o token'lar çıktı bütçesinden yenir.
+    // ÖLÇÜLDÜ: 2000 ile uzun (grounding'li) teşhis prompt'unda model bütçeyi düşünmeye harcayıp
+    // geriye 82 KARAKTER bıraktı → finish_reason="length" → JSON yarım → teşhis hiç yazılmadı.
+    // Kısa prompt'la çalışıyordu; o yüzden hata ancak GERÇEK veriyle ortaya çıktı.
+    max_tokens: 6000,
     response_format: { type: 'json_object' },
     messages: [
-      {
-        role: 'system',
-        content:
-          'Sen bir bilişsel teşhis uzmanısın. Soruları SIFIRDAN çöz; öğrencinin yanlış şıkkını hangi zihinsel ' +
-          'adımın üreteceğini geriye doğru izle. Tek yanılgı hipotezi kur ve ŞU JSON şemasıyla döndür: ' +
-          '{"misconception_id":"kisa_slug","taxonomy":"islem_hatasi|kavram_karismasi|prosedur_atlama|temsil_hatasi|onkosul_bosluk",' +
-          '"evidence":"...","confidence":0..1,"prereq_hypothesis":"ltree path | null",' +
-          '"remediation":{"review_kazanim":"...|null","then_microset":{"count":4,"difficulty":"kolay"}},' +
-          '"student_facing_hint":"öğrenciye söylenecek tek cümle"}',
-      },
+      { role: 'system', content: ATLAS_SYSTEM }, // → persona/atlas.charter.ts
       { role: 'user', content: evidence },
     ],
   }, { priority: 'P1' })
 
-  const verdict = JSON.parse(res.choices[0]?.message?.content ?? '{}') as Partial<Misconception> & {
-    misconception_id?: string
+  // ⚠️ Eskiden `JSON.parse(content ?? '{}')` idi. `??` BOŞ STRING'İ yakalamaz ve yarım JSON'u
+  // da kurtarmaz → ölçüldü: "JSON Parse error: Unexpected EOF", görev FAILED, öğrencinin
+  // yanılgısı hiç teşhis edilmedi. jsonCoz fırlatmaz; teşhis üretilemezse zarifçe biter.
+  const ham = res.choices[0]?.message?.content ?? ''
+  const aday = jsonCoz<unknown>(ham)
+
+  // ⚠️ SINIR DOĞRULAMASI. Eskiden `verdict.taxonomy as Misconception['taxonomy']` vardı — KÖR CAST.
+  // `??` yalnız undefined'ı yakalar; model taksonomide OLMAYAN bir değer dönerse ("dikkatsizlik")
+  // cast onu sessizce geçirir ve user_mastery.misconceptions'a YAZILIRDI. Taksonomiye bakan her
+  // downstream mantık (brief, remediation, ileride switch) o satırda sessizce şaşırırdı.
+  // Artık şema kapıdan geçmeyeni reddeder → görev DÜRÜSTÇE FAILED olur (worker onu FAILED yazar).
+  const cozum = TeshisSemasi.safeParse(aday)
+  if (!cozum.success) {
+    logger.warn(
+      {
+        kazanimId,
+        finish: res.choices[0]?.finish_reason,
+        model: res.model,
+        uzunluk: ham.length,
+        ilk200: ham.slice(0, 200),
+        ihlal: cozum.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 5),
+      },
+      'ATLAS: teşhis şemaya uymadı — reddedildi',
+    )
+    return { error: 'teşhis şemaya uymadı' }
   }
-  if (!verdict.misconception_id) return { error: 'teşhis üretilemedi' }
+  const verdict = cozum.data
 
   // 4) YAZ + YANKILA
   const mis: Misconception = {
     id: verdict.misconception_id,
-    taxonomy: (verdict.taxonomy as Misconception['taxonomy']) ?? 'kavram_karismasi',
+    taxonomy: verdict.taxonomy, // ← şema doğruladı; cast yok
     selected_option: selectedOption,
-    evidence: String(verdict.evidence ?? ''),
-    confidence: Number(verdict.confidence ?? 0.5),
-    prereq_hypothesis: (verdict.prereq_hypothesis as string) ?? null,
-    remediation: (verdict.remediation as Misconception['remediation']) ?? {
-      review_kazanim: null, then_microset: { count: 4, difficulty: 'kolay' },
-    },
-    student_facing_hint: String(verdict.student_facing_hint ?? ''),
+    evidence: verdict.evidence,
+    confidence: verdict.confidence,
+    prereq_hypothesis: verdict.prereq_hypothesis,
+    remediation: verdict.remediation,
+    student_facing_hint: verdict.student_facing_hint,
     status: 'open',
     opened_at: new Date().toISOString(),
   }
