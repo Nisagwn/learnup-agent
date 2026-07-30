@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react'
-import { apiGet } from './api'
+import { tGet, kapsamOku } from './sinif-kapsam'
 import { useAsync } from './useAsync'
 import type { OgretmenOzeti, OgrenciSatiri, SinifRosterYaniti } from './types.teacher'
 
@@ -29,8 +29,12 @@ interface SinifDeger {
 const SinifCtx = createContext<SinifDeger | null>(null)
 
 export function SinifSaglayici({ children }: { children: ReactNode }) {
-  const ozet = useAsync<OgretmenOzeti>(() => apiGet('/teacher/ozet'), [])
-  const roster = useAsync<SinifRosterYaniti>(() => apiGet('/teacher/sinif'), [])
+  // ⚠️ KAPSAM BAĞIMLILIK DİZİSİNDE (0025): yönetici Sınıflar ekranından başka bir
+  // öğretmene geçtiğinde bileşen ağacı aynı kalır — kapsam değişimini bağımlılık
+  // olarak yazmazsak sağlayıcı ÖNCEKİ öğretmenin verisini göstermeye devam eder.
+  const kapsam = kapsamOku()
+  const ozet = useAsync<OgretmenOzeti>(() => tGet('/teacher/ozet'), [kapsam])
+  const roster = useAsync<SinifRosterYaniti>(() => tGet('/teacher/sinif'), [kapsam])
 
   const ogrenciler = useMemo(() => roster.data?.students ?? [], [roster.data])
 
@@ -56,16 +60,19 @@ export function SinifSaglayici({ children }: { children: ReactNode }) {
     roster.reload()
   }, [ozet.reload, roster.reload])
 
-  const deger: SinifDeger = {
-    ozet: ozet.data,
-    roster: ogrenciler,
-    loading: ozet.loading || roster.loading,
-    // İkisinden biri düşse de ekran bir şey gösterebilsin diye ilk hatayı taşırız.
-    error: ozet.error ?? roster.error,
-    reload,
-    ogrenciBul,
-    siradaki,
-  }
+  const deger: SinifDeger = useMemo(
+    () => ({
+      ozet: ozet.data,
+      roster: ogrenciler,
+      loading: ozet.loading || roster.loading,
+      // İkisinden biri düşse de ekran bir şey gösterebilsin diye ilk hatayı taşırız.
+      error: ozet.error ?? roster.error,
+      reload,
+      ogrenciBul,
+      siradaki,
+    }),
+    [ozet.data, ozet.loading, ozet.error, roster.loading, roster.error, ogrenciler, reload, ogrenciBul, siradaki],
+  )
 
   return <SinifCtx.Provider value={deger}>{children}</SinifCtx.Provider>
 }

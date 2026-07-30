@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from './supabase.js'
 
@@ -20,9 +20,10 @@ interface AuthValue {
   /**
    * Kayıt. `ek` alanları auth.users.raw_user_meta_data'ya yazılır ve
    * `handle_new_user()` trigger'ı oradan `profiles` satırını kurar:
-   *   role → student|teacher (0016 beyaz listesi; 'admin' bu kapıdan GEÇEMEZ)
+   *   role → student|teacher (0024 beyaz listesi; 'admin' bu kapıdan GEÇEMEZ)
    *   grade, student_class → profil alanları
-   *   role='teacher' ise 6 haneli class_code OTOMATİK üretilir
+   *   role='teacher' ise 6 haneli ÇAKIŞMASIZ class_code üretilir + is_approved=true
+   *     (açık öğretmen kaydı, 2026-07-24: yönetici onayı YOK — gerekçe migration 0024)
    * `class_code` (öğrencinin katılmak istediği sınıf) yalnız TAŞINIR; katılım
    * ilk girişte /sinif/katil ucundan yapılır — yetki kontrolü orada.
    */
@@ -81,23 +82,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { iptal = true }
   }, [session?.user?.id])
 
-  const value: AuthValue = {
-    session,
-    user: session?.user ?? null,
-    profile,
-    loading,
-    profilYukleniyor,
-    signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
-    signUp: (email, password, name, ek) =>
-      supabase.auth.signUp({ email, password, options: { data: { name, ...(ek ?? {}) } } }),
-    signOut: () => supabase.auth.signOut(),
-    refreshProfile: async () => {
-      const uid = session?.user?.id
-      if (!uid) return
-      const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
-      setProfile(data ?? null)
-    },
-  }
+  const refreshProfile = useCallback(async () => {
+    const uid = session?.user?.id
+    if (!uid) return
+    const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+    setProfile(data ?? null)
+  }, [session?.user?.id])
+
+  const value: AuthValue = useMemo(
+    () => ({
+      session,
+      user: session?.user ?? null,
+      profile,
+      loading,
+      profilYukleniyor,
+      signIn: (email: string, password: string) =>
+        supabase.auth.signInWithPassword({ email, password }),
+      signUp: (email: string, password: string, name: string, ek?: Record<string, string>) =>
+        supabase.auth.signUp({ email, password, options: { data: { name, ...(ek ?? {}) } } }),
+      signOut: () => supabase.auth.signOut(),
+      refreshProfile,
+    }),
+    [session, profile, loading, profilYukleniyor, refreshProfile],
+  )
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>
 }
 

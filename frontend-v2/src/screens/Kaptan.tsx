@@ -1,31 +1,43 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { m } from 'framer-motion'
+import { useLocation } from 'react-router-dom'
+import { m, useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
-import { Captain, Icon, type IconName } from '../ui'
+import { Icon, type IconName } from '../ui'
 import { cn } from '../lib/cn'
 import { NAV_H } from '../lib/layout'
 import { useAsync } from '../lib/useAsync'
 import { apiGet, streamChat } from '../lib/api.js'
 import type { SohbetGecmisi } from '../lib/types'
 import { MathMarkdown } from '../components/MathMarkdown'
-import { StatusLine } from '../components/ui'
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   KOÇ — Kaptan personalı sohbet.
+   KOÇ — sohbet ekranı (onaylı önizleme: docs/design/onizleme/koc.html — GOREV-014).
+   Inline FİDAN deseni (GOREV-007 emsali) — ui.tsx'e yazılmaz.
+   KORUNAN DAVRANIŞLAR (sunum değişti, davranış değişmedi):
    · SÜREKLİLİK: açılışta son oturum yüklenir (GET /chat/history); "yeni sohbet"
      temiz sessionId açar.
    · Akış SIRASINDA ham metin, bitince MathMarkdown (KaTeX titremesi önlenir —
      yarım "$\fra" her token'da yeniden ayrıştırılırsa formül titrer).
-   · Araç çipleri: Koç'un çalışan/tamamlanan araç adımları.
-   · Bağlam-duyarlı öneri çipleri: zayıf konu adı gerçek sinyalden enjekte edilir.
+   · Araç etiketi ("Verilerine bakıyor"): yalnız GERÇEK araç olayında görünür.
+   · Bağlam-duyarlı öneri çipleri: zayıf konu adı gerçek sinyalden enjekte edilir
+     (sabitlenmedi — önizlemedeki üç sabit çipten iyidir, karar kartta).
+   · Soru bağlamı çipi [HAZIR köprü — GOREV-008 tarafı]: nav('/kaptan', { state:
+     { soruBaglami: { ozet, istem } } }) ile gelinirse toprak-tonlu çip görünür ve
+     ilk istemin başına bağlam eklenir; bağlam yoksa çip HİÇ render edilmez.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 interface Tool { label: string; done: boolean }
-interface Msg { id: number; role: 'user' | 'kaptan'; text: string; streaming?: boolean; tools?: Tool[] }
+interface Msg {
+  id: number; role: 'user' | 'kaptan'; text: string
+  streaming?: boolean; tools?: Tool[]; baglamOzet?: string
+}
 
-const HOSGELDIN: Msg = {
-  id: 0, role: 'kaptan',
-  text: 'Merhaba, ben Kaptan. Bugün nereden başlayalım? Planını çıkarabilir, zayıf konularından soru hazırlayabilir ya da sadece moral verebilirim.',
+/** Sonuç ekranındaki "Bu soruyu açıkla" köprüsünün nav-state sözleşmesi. */
+interface SoruBaglami { ozet: string; istem: string }
+
+const HOSGELDIN = {
+  baslik: 'Merhaba, ben Koç!',
+  metin: 'Çalışma verilerini görebilirim — ne çalışacağını, nerede zorlandığını birlikte bulalım. Planını çıkarabilir, zayıf konularından soru hazırlayabilir ya da sadece moral verebilirim.',
 }
 
 const HIZLI_EYLEMLER: Array<{ icon: IconName; ad: string; mesaj: string }> = [
@@ -36,15 +48,22 @@ const HIZLI_EYLEMLER: Array<{ icon: IconName; ad: string; mesaj: string }> = [
 ]
 
 export function Kaptan() {
-  const [msgs, setMsgs] = useState<Msg[]>([HOSGELDIN])
+  const azalt = useReducedMotion()
+  const location = useLocation()
+  const [msgs, setMsgs] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [gonderiliyor, setGonderiliyor] = useState(false)
   const [gecmisYuklendi, setGecmisYuklendi] = useState(false)
+  const [gecmisVar, setGecmisVar] = useState(false)
+  const [baglam, setBaglam] = useState<SoruBaglami | null>(() => {
+    const b = (location.state as { soruBaglami?: Partial<SoruBaglami> } | null)?.soruBaglami
+    return b?.ozet && b?.istem ? { ozet: String(b.ozet), istem: String(b.istem) } : null
+  })
   const endRef = useRef<HTMLDivElement>(null)
   const sessionId = useRef<string>((globalThis.crypto?.randomUUID?.() ?? String(Date.now())))
   const abortRef = useRef<AbortController | null>(null)
 
-  // Bağlam-duyarlı çip: zayıf konu adı gerçek sinyalden
+  // Bağlam-duyarlı çip: zayıf konu adı gerçek sinyalden (DİNAMİK — sabitlenmez)
   const oneri = useAsync<any>(() => apiGet('/practice/suggest'), [])
   const zayifKonu = oneri.data?.reason === 'weak' ? oneri.data?.kazanim?.title : null
 
@@ -62,21 +81,21 @@ export function Kaptan() {
       .then((g: SohbetGecmisi) => {
         if (!alive || !g?.sessionId || !g.messages?.length) return
         sessionId.current = g.sessionId
-        setMsgs([
-          HOSGELDIN,
-          ...g.messages.map((mesaj, i) => ({
+        setGecmisVar(true)
+        setMsgs(
+          g.messages.map((mesaj, i) => ({
             id: i + 1,
             role: mesaj.role === 'user' ? 'user' as const : 'kaptan' as const,
             text: mesaj.content,
           })),
-        ])
+        )
       })
       .catch(() => { /* geçmiş yoksa temiz başla */ })
       .finally(() => { if (alive) setGecmisYuklendi(true) })
     return () => { alive = false }
   }, [])
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: azalt ? 'auto' : 'smooth' }) }, [msgs, azalt])
   useEffect(() => () => abortRef.current?.abort(), [])
 
   const send = async (text: string) => {
@@ -85,10 +104,15 @@ export function Kaptan() {
     setInput('')
     setGonderiliyor(true)
 
+    // Soru bağlamı (varsa) yalnız İSTEMİN başına eklenir; balonda çip olarak görünür.
+    const aktifBaglam = baglam
+    if (aktifBaglam) setBaglam(null)
+    const istem = aktifBaglam ? `${aktifBaglam.istem}\n\n${mesaj}` : mesaj
+
     const kaptanId = Date.now() + 1
     setMsgs((prev) => [
       ...prev,
-      { id: Date.now(), role: 'user', text: mesaj },
+      { id: Date.now(), role: 'user', text: mesaj, baglamOzet: aktifBaglam?.ozet },
       { id: kaptanId, role: 'kaptan', text: '', streaming: true, tools: [] },
     ])
 
@@ -98,18 +122,27 @@ export function Kaptan() {
     abortRef.current = new AbortController()
     try {
       await streamChat(
-        { sessionId: sessionId.current, message: mesaj },
+        { sessionId: sessionId.current, message: istem },
         (type: string, data: any) => {
           if (type === 'token') guncelle((msg) => ({ ...msg, text: msg.text + (typeof data === 'string' ? data : '') }))
           else if (type === 'tool') guncelle((msg) => ({ ...msg, tools: [...(msg.tools ?? []).map((x) => ({ ...x, done: true })), { label: araçEtiketi(data), done: false }] }))
           else if (type === 'done') guncelle((msg) => ({ ...msg, streaming: false, tools: (msg.tools ?? []).map((x) => ({ ...x, done: true })) }))
-          else if (type === 'error') guncelle((msg) => ({ ...msg, streaming: false, text: msg.text || `Bir sorun oluştu: ${data}` }))
+          else if (type === 'error') {
+            // Önce `message` (Türkçe), sonra `error` (kod) — lib/api.js sözleşmesiyle aynı sıra.
+            const detay = String((data && typeof data === 'object' ? (data.message || data.error) : data) || '')
+            guncelle((msg) => ({
+              ...msg, streaming: false,
+              text: msg.text
+                ? `${msg.text}\n\n_Bağlantı koptu — devamı gelmedi. Son mesajını yeniden gönderebilirsin._`
+                : `Bağlantı koptu — son mesajını yeniden gönderebilirsin.${detay ? ` (${detay})` : ''}`,
+            }))
+          }
         },
         abortRef.current.signal,
       )
-      guncelle((msg) => ({ ...msg, streaming: false, text: msg.text || 'Yanıt alınamadı.', tools: (msg.tools ?? []).map((x) => ({ ...x, done: true })) }))
+      guncelle((msg) => ({ ...msg, streaming: false, text: msg.text || 'Yanıt alınamadı — yeniden dener misin?', tools: (msg.tools ?? []).map((x) => ({ ...x, done: true })) }))
     } catch (err: any) {
-      if (err?.name !== 'AbortError') guncelle((msg) => ({ ...msg, streaming: false, text: msg.text || `Koç'a ulaşılamadı: ${err?.message ?? ''}` }))
+      if (err?.name !== 'AbortError') guncelle((msg) => ({ ...msg, streaming: false, text: msg.text || `Koç'a şu an ulaşılamadı${err?.message ? ` (${err.message})` : ''} — birazdan yeniden deneyebilirsin.` }))
     } finally {
       setGonderiliyor(false)
     }
@@ -118,103 +151,165 @@ export function Kaptan() {
   const yeniSohbet = () => {
     abortRef.current?.abort()
     sessionId.current = globalThis.crypto?.randomUUID?.() ?? String(Date.now())
-    setMsgs([HOSGELDIN])
+    setMsgs([])
+    setGecmisVar(false)
     toast('Yeni sohbet açıldı', { description: 'Önceki konuşma güvende — Koç hatırlamaya devam eder.' })
   }
 
-  const salt = msgs.length === 1 && gecmisYuklendi
+  const salt = msgs.length === 0 && gecmisYuklendi
 
   return (
     <div className="flex flex-col" style={{ height: `calc(100vh - ${NAV_H}px)` }}>
-      {/* Başlık */}
-      <div className="glass-solid border-x-0 border-t-0">
+      <style>{`
+        .kc-avatar { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center;
+          font-size: 20px; flex: none; position: relative;
+          background: linear-gradient(135deg, var(--adacayi), var(--yaprak)); }
+        .kc-avatar::after { content: ''; position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px;
+          border-radius: 50%; background: var(--yaprak); border: 2.5px solid var(--grad-a); }
+        .kc-avatar-buyuk { width: 64px; height: 64px; border-radius: 20px; font-size: 30px; }
+        .kc-mini { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center;
+          font-size: 14px; flex: none; margin-top: 2px;
+          background: linear-gradient(135deg, var(--adacayi), var(--yaprak)); }
+        .kc-balon { padding: 11px 15px; border-radius: 16px; font-size: 13.5px; line-height: 1.6; color: var(--metin1); }
+        .kc-koc { background: var(--mat); border: 1px solid var(--cam-kenar); border-top-left-radius: 6px; }
+        .kc-ben { background: #DDEBE0; border-top-right-radius: 6px; }
+        .dark .kc-ben { background: #23402C; }
+        .kc-arac { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600;
+          color: var(--vurgu); background: var(--v1); padding: 4px 11px; border-radius: 12px; width: max-content; }
+        .kc-arac i { width: 6px; height: 6px; border-radius: 50%; background: var(--yaprak); font-style: normal; opacity: .7; flex: none; }
+        .kc-baglam { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600;
+          color: #8A6134; background: rgba(212, 163, 115, .20); padding: 5px 12px; border-radius: 12px; width: max-content; }
+        .dark .kc-baglam { color: #DDB27F; }
+        .kc-nokta { display: inline-flex; gap: 5px; padding: 3px 0; vertical-align: middle; }
+        .kc-nokta i { width: 7px; height: 7px; border-radius: 50%; background: var(--adacayi); opacity: .6; }
+        .kc-imlec { display: inline-block; width: 2px; height: 16px; margin-left: 2px; border-radius: 2px;
+          background: currentColor; vertical-align: text-bottom; }
+        .kc-cip { font-size: 12px; font-weight: 600; color: var(--vurgu); background: transparent;
+          border: 1.5px dashed var(--adacayi); border-radius: 12px; padding: 7px 14px; cursor: pointer;
+          transition: background .2s; white-space: nowrap; flex: none; }
+        .kc-cip:hover:not(:disabled) { background: var(--v1); }
+        .kc-cip:disabled { opacity: .5; cursor: default; }
+        .kc-eylem { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 14px;
+          border: 1.5px dashed var(--adacayi); border-radius: 12px; background: transparent; color: var(--vurgu);
+          font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left; transition: background .2s; }
+        .kc-eylem:hover { background: var(--v1); }
+        .kc-eylem-ikon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px;
+          background: var(--v1); flex: none; }
+        .kc-kutu { flex: 1; min-width: 0; font-size: 13.5px; color: var(--metin1); background: var(--ic);
+          border: 1.5px solid var(--cam-kenar); border-radius: 14px; padding: 12px 16px; outline: none;
+          transition: border-color .2s, box-shadow .2s; }
+        .kc-kutu:focus { border-color: var(--yaprak); box-shadow: 0 0 0 3px rgba(79, 165, 111, .15); outline: none; }
+        .kc-kutu::placeholder { color: var(--metin3); }
+        .kc-kutu:disabled { opacity: .6; }
+        .kc-gonder { font-weight: 600; font-size: 13.5px; background: var(--cta); color: #F2F7F3; border: none;
+          border-radius: 12px; padding: 12px 22px; min-height: 44px; cursor: pointer; flex: none;
+          display: inline-flex; align-items: center; gap: 7px; box-shadow: 0 6px 16px rgba(30, 70, 32, .25); transition: filter .2s; }
+        .kc-gonder:hover:not(:disabled) { filter: brightness(1.12); }
+        .kc-gonder:disabled { background: var(--ic); color: var(--metin3); box-shadow: none; cursor: default; }
+        .kc-not { margin-left: auto; font-size: 11.5px; color: var(--metin3); background: var(--v0);
+          padding: 5px 11px; border-radius: 12px; white-space: nowrap; }
+        @media (prefers-reduced-motion: no-preference) {
+          .kc-nokta i { animation: kc-zipla 1.2s ease-in-out infinite; }
+          .kc-nokta i:nth-child(2) { animation-delay: .15s; }
+          .kc-nokta i:nth-child(3) { animation-delay: .3s; }
+          @keyframes kc-zipla { 0%, 60%, 100% { transform: none; opacity: .45; } 30% { transform: translateY(-4px); opacity: 1; } }
+          .kc-arac i { animation: kc-parla 1.2s ease-in-out infinite; }
+          @keyframes kc-parla { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
+          .kc-imlec { animation: kc-yanip 1s step-end infinite; }
+          @keyframes kc-yanip { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        }
+      `}</style>
+
+      {/* ── Başlık — FİDAN koç avatarı + tanım + geçmiş notu ── */}
+      <div className="glass rounded-none border-x-0 border-t-0">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
-          <Captain size={38} ring />
+          <span className="kc-avatar" aria-hidden>🌿</span>
           <div className="min-w-0 flex-1">
-            <div className="font-display text-[15px] font-bold text-slate-800 dark:text-slate-100">Koç</div>
-            <StatusLine className="mt-0.5">seninle · araçları hazır</StatusLine>
+            <div className="text-[15.5px] font-bold" style={{ fontFamily: 'Outfit, sans-serif', color: 'var(--metin1)' }}>Koç</div>
+            <div className="truncate text-[12px]" style={{ color: 'var(--metin3)' }}>Çalışma verilerini görebilen kişisel rehberin</div>
           </div>
+          {gecmisVar && msgs.length > 0 && <span className="kc-not">↑ yukarı kaydır: eski mesajlar</span>}
           <button
             onClick={yeniSohbet}
             title="Yeni sohbet"
-            className="glass-solid grid size-9 cursor-pointer place-items-center rounded-xl text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+            aria-label="Yeni sohbet"
+            className="grid size-11 cursor-pointer place-items-center rounded-xl transition-colors"
+            style={{ background: 'var(--v0)', border: '1px solid var(--cam-kenar)', color: 'var(--metin2)' }}
           >
             <Icon name="edit" size={16} color="currentColor" />
           </button>
         </div>
       </div>
 
-      {/* Mesajlar */}
+      {/* ── Mesajlar ── */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-5">
+        <div className="mx-auto flex max-w-3xl flex-col gap-3.5 px-4 py-5">
           {msgs.map((msg) => <Balon key={msg.id} msg={msg} />)}
 
-          {/* İlk açılış: hızlı eylem ızgarası */}
+          {/* Geçmiş boş: karşılama görünümü (sahte konuşma render edilmez — null≠0) */}
           {salt && (
             <m.div
-              initial={{ opacity: 0, y: 10 }}
+              initial={azalt ? false : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
-              className="grid grid-cols-2 gap-2.5 pl-10"
+              transition={{ delay: azalt ? 0 : 0.1 }}
+              className="flex flex-col items-center px-4 pt-8 text-center"
             >
-              {HIZLI_EYLEMLER.map((e) => (
-                <button
-                  key={e.ad}
-                  onClick={() => send(e.mesaj)}
-                  className="glass-solid flex cursor-pointer items-center gap-2.5 rounded-xl px-3.5 py-3 text-left transition-all hover:-translate-y-px hover:border-sky-500/30 hover:shadow-card dark:hover:border-sky-400/25"
-                >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-300">
-                    <Icon name={e.icon} size={15} color="currentColor" />
-                  </span>
-                  <span className="font-display text-[12.5px] font-semibold text-slate-600 dark:text-slate-300">{e.ad}</span>
-                </button>
-              ))}
+              <span className="kc-avatar kc-avatar-buyuk" aria-hidden>🌿</span>
+              <h2 className="mt-3 text-[17px] font-bold" style={{ fontFamily: 'Outfit, sans-serif', color: 'var(--metin1)' }}>
+                {HOSGELDIN.baslik}
+              </h2>
+              <p className="mt-1.5 max-w-md text-[12.5px] leading-relaxed" style={{ color: 'var(--metin2)' }}>
+                {HOSGELDIN.metin}
+              </p>
+              <div className="mt-5 grid w-full max-w-md grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {HIZLI_EYLEMLER.map((e) => (
+                  <button key={e.ad} onClick={() => send(e.mesaj)} className="kc-eylem">
+                    <span className="kc-eylem-ikon"><Icon name={e.icon} size={15} color="currentColor" /></span>
+                    {e.ad}
+                  </button>
+                ))}
+              </div>
             </m.div>
           )}
           <div ref={endRef} />
         </div>
       </div>
 
-      {/* Besteci */}
-      <div className="glass border-x-0 border-b-0 rounded-none">
-        <div className="mx-auto max-w-3xl px-4 pb-4 pt-2.5">
-          <div className="flex gap-1.5 overflow-x-auto pb-2.5 [scrollbar-width:none]">
-            {cipler.map((c) => (
+      {/* ── Giriş alanı — öneri çipleri (dinamik) + soru bağlamı çipi + yaz satırı ── */}
+      <div className="glass rounded-none border-x-0 border-b-0">
+        <div className="mx-auto max-w-3xl px-4 pb-4 pt-3">
+          {baglam && (
+            <div className="mb-2.5 flex items-center gap-2">
+              <span className="kc-baglam">📎 Soru bağlamı: {baglam.ozet}</span>
               <button
-                key={c}
-                onClick={() => send(c)}
-                disabled={gonderiliyor}
-                className={cn(
-                  'shrink-0 cursor-pointer whitespace-nowrap rounded-full border border-slate-300/50 px-3.5 py-1.5 text-[12px] text-slate-500 transition-colors',
-                  'hover:border-sky-500/40 hover:text-slate-700 dark:border-ocean-700 dark:text-slate-400 dark:hover:text-slate-200',
-                  gonderiliyor && 'opacity-50',
-                )}
+                onClick={() => setBaglam(null)}
+                aria-label="Soru bağlamını kaldır"
+                className="cursor-pointer rounded-lg px-1.5 text-[14px] leading-none"
+                style={{ color: 'var(--metin3)' }}
               >
+                ×
+              </button>
+            </div>
+          )}
+          <div className="mb-2.5 flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+            {cipler.map((c) => (
+              <button key={c} onClick={() => send(c)} disabled={gonderiliyor} className="kc-cip">
                 {c}
               </button>
             ))}
           </div>
           <div className="flex items-center gap-2.5">
-            <div className="flex-1 rounded-2xl border border-slate-300/60 bg-white/70 px-4 py-2.5 transition-colors focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/15 dark:border-ocean-700 dark:bg-ocean-950/50 dark:focus-within:border-sky-400">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send(input) } }}
-                placeholder="Koç'a yaz…"
-                className="w-full bg-transparent text-[14px] text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100 dark:placeholder:text-slate-600"
-              />
-            </div>
-            <button
-              onClick={() => send(input)}
-              disabled={!input.trim() || gonderiliyor}
-              className={cn(
-                'grid size-11 shrink-0 place-items-center rounded-full transition-all',
-                input.trim() && !gonderiliyor
-                  ? 'cursor-pointer bg-sky-600 text-white shadow-glow-sky hover:bg-sky-500 dark:bg-sky-500 dark:text-ocean-950'
-                  : 'bg-slate-200 text-slate-400 dark:bg-ocean-800 dark:text-slate-600',
-              )}
-            >
-              <Icon name="send" size={18} color="currentColor" />
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send(input) } }}
+              disabled={gonderiliyor}
+              placeholder="Koç'a yaz… (matematik yazımı desteklenir)"
+              className="kc-kutu"
+            />
+            {/* Sayfanın TEK birincil eylemi */}
+            <button onClick={() => send(input)} disabled={!input.trim() || gonderiliyor} className="kc-gonder">
+              Gönder <Icon name="send" size={15} color="currentColor" />
             </button>
           </div>
         </div>
@@ -226,7 +321,7 @@ export function Kaptan() {
 function araçEtiketi(name: any): string {
   const s = String(name || '')
   const map: Record<string, string> = {
-    get_student_snapshot: 'Seyir defterine bakıyor',
+    get_student_snapshot: 'Verilerine bakıyor',
     generate_practice: 'Sorular hazırlanıyor',
     search_curriculum: 'Müfredatı tarıyor',
     save_to_canvas: 'Nota işliyor',
@@ -235,12 +330,7 @@ function araçEtiketi(name: any): string {
 }
 
 function Balon({ msg }: { msg: Msg }) {
-  const [blink, setBlink] = useState(true)
-  useEffect(() => {
-    if (!msg.streaming) return
-    const i = setInterval(() => setBlink((b) => !b), 500)
-    return () => clearInterval(i)
-  }, [msg.streaming])
+  const azalt = useReducedMotion()
 
   const kopyala = async () => {
     try {
@@ -251,53 +341,47 @@ function Balon({ msg }: { msg: Msg }) {
 
   if (msg.role === 'user') {
     return (
-      <m.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
-        <div className="max-w-[80%] whitespace-pre-wrap rounded-[18px_18px_5px_18px] bg-sky-600 px-4 py-2.5 text-[14px] leading-relaxed text-white dark:bg-sky-500 dark:text-ocean-950">
-          {msg.text}
-        </div>
+      <m.div initial={azalt ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-1.5">
+        {msg.baglamOzet && <span className="kc-baglam">📎 Soru bağlamı: {msg.baglamOzet}</span>}
+        <div className="kc-balon kc-ben max-w-[78%] whitespace-pre-wrap">{msg.text}</div>
       </m.div>
     )
   }
 
   return (
-    <m.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="group flex items-start gap-2.5">
-      <Captain size={30} />
-      <div className="min-w-0 flex-1">
-        <div className="glass-solid rounded-[5px_18px_18px_18px] px-4 py-3 text-[14px] leading-relaxed text-slate-700 dark:text-slate-200">
-          {!!msg.tools?.length && (
-            <div className={cn('flex flex-col gap-1.5', msg.text && 'mb-2.5')}>
-              {msg.tools.map((tool, i) => (
-                <span
-                  key={i}
-                  className={cn(
-                    'inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
-                    tool.done
-                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
-                      : 'border-teal-500/30 bg-teal-500/10 text-teal-600 dark:text-teal-300',
-                  )}
-                >
-                  {tool.done
-                    ? <Icon name="check" size={12} color="currentColor" strokeWidth={2.4} />
-                    : <span className="size-2 animate-[pulse_1s_infinite] rounded-full bg-teal-500" />}
-                  {tool.label}
-                </span>
-              ))}
-            </div>
-          )}
+    <m.div initial={azalt ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="group flex items-start gap-2.5">
+      <span className="kc-mini" aria-hidden>🌿</span>
+      <div className="min-w-0 max-w-[78%]">
+        {/* Araç etiketi — YALNIZ gerçek araç olayında; çalışırken nabızlı nokta, bitince kelime+ikon */}
+        {!!msg.tools?.length && (
+          <div className="mb-1.5 flex flex-col gap-1.5">
+            {msg.tools.map((tool, i) => (
+              <span key={i} className="kc-arac">
+                {tool.done
+                  ? <Icon name="check" size={11} color="currentColor" strokeWidth={2.4} />
+                  : <i aria-hidden />}
+                {tool.label}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="kc-balon kc-koc">
           {/* Akış sırasında HAM METİN — yarım formül her token'da yeniden ayrıştırılırsa
               KaTeX görünür titreme yapar. Akış bitince tam metin bir kez render edilir. */}
           {msg.text && (msg.streaming
             ? <span className="whitespace-pre-wrap">{msg.text}</span>
             : <MathMarkdown>{msg.text}</MathMarkdown>
           )}
-          {msg.streaming && (
-            <span className={cn('ml-0.5 inline-block h-4 w-0.5 rounded-full bg-current align-text-bottom', blink ? 'opacity-100' : 'opacity-0')} />
+          {msg.streaming && !msg.text && (
+            <span className="kc-nokta" role="status" aria-label="Koç yazıyor"><i /><i /><i /></span>
           )}
+          {msg.streaming && msg.text && <span className="kc-imlec" aria-hidden />}
         </div>
-        {!msg.streaming && msg.text && msg.id !== 0 && (
+        {!msg.streaming && msg.text && (
           <button
             onClick={kopyala}
-            className="mt-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10px] text-slate-400 opacity-0 transition-opacity hover:text-slate-600 group-hover:opacity-100 dark:hover:text-slate-300"
+            className="mt-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100"
+            style={{ color: 'var(--metin3)' }}
           >
             <Icon name="copy" size={11} color="currentColor" />kopyala
           </button>

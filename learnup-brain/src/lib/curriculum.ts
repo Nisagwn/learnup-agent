@@ -1,4 +1,8 @@
 import { supabase } from '../clients/supabase.js'
+import { redisTry } from '../clients/redis.js'
+
+const KONU_ESIK = 0.45
+const CACHE_TTL_S = 300 // 5 dk — konu↔kazanım eşlemesi nispeten kararlı
 
 export type KazanimNode = {
   id: number
@@ -38,13 +42,25 @@ export async function resolveKazanim(id: number): Promise<KazanimNode | null> {
  * değişmişti. Burada durum farklı: aynı ders içinde, canlı bir konu adını kendi müfredatının
  * kazanımına bağlıyoruz — ve eşik altı kalırsa hiçbir şey uydurmuyoruz.
  */
-const KONU_ESIK = 0.45
+function cacheKey(subject: string, topic: string): string {
+  return `lb:konu:${subject}:${topic}`
+}
 
 export async function resolveKazanimByTopic(
   subject: string,
   topic: string,
 ): Promise<{ node: KazanimNode; similarity: number } | null> {
   if (!subject || !topic) return null
+
+  const key = cacheKey(subject, topic)
+  const cached = await redisTry<string | null>(async (r) => r.get(key), null)
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached) as { node: KazanimNode; similarity: number }
+      if (parsed.similarity >= KONU_ESIK) return parsed
+    } catch { /* cache bozuksa devam et */ }
+  }
+
   const { embed } = await import('./rag.js') // döngüsel import'u kır (rag → curriculum yok ama tedbir)
   const [qv] = await embed([`${subject} ${topic}`])
 
@@ -64,7 +80,11 @@ export async function resolveKazanimByTopic(
     .eq('subject', subject)
     .eq('code', top.kazanim_code)
     .maybeSingle()
-  return node ? { node: node as KazanimNode, similarity: top.similarity } : null
+  if (!node) return null
+
+  const result = { node: node as KazanimNode, similarity: top.similarity }
+  void redisTry(async (r) => r.set(key, JSON.stringify(result), 'EX', CACHE_TTL_S), undefined)
+  return result
 }
 
 export type WeakPath = {

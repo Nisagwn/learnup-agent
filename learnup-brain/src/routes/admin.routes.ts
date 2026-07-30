@@ -1,12 +1,17 @@
 import { Router } from 'express'
 import { supabase } from '../clients/supabase.js'
+import { redisTry } from '../clients/redis.js'
 import { fetchAll } from '../lib/pg.js'
-import { kimligiUnut } from '../lib/yetki.js'
+import { kimligiUnut, yetkiOnbelleginiDus } from '../lib/yetki.js'
 import { denetimYaz } from '../lib/denetim.js'
+import { enqueueTask } from '../agents/bus.js'
 import { yonetimRouter } from './admin-yonetim.routes.js'
+import { havuzRouter } from './admin-havuz.routes.js'
+import { onbellegiDus, onbellekli } from '../lib/panel-onbellek.js'
 import { HttpHatasi, bulunamadi, gecersizIstek } from '../lib/hata.js'
 import { evalKosumSayisi, evalSonAnlik, evalTrendi } from '../lib/eval-anlik.js'
-import { OZGUNLUK_TABAN, OZGUNLUK_TABLOSU, SHINGLE_BOYU } from '../utils/benzerlik.js'
+import { esikleriTazele, esikYaz } from '../lib/ozgunluk-esik.js'
+import { esikKaynagiDB, ozgunlukEsigi, OZGUNLUK_TABAN, OZGUNLUK_TABLOSU, SHINGLE_BOYU } from '../utils/benzerlik.js'
 import type {
   AdminEvalYaniti,
   AdminGorevlerYaniti,
@@ -14,7 +19,10 @@ import type {
   AdminKullaniciSatiri,
   AdminKullanicilarYaniti,
   AdminOzgunlukYaniti,
+  EsikDegisYanit,
+  EvalTetikYanit,
   OgretmenOnayYanit,
+  OnbellekDusYanit,
 } from '../types/panel.js'
 
 /**
@@ -38,19 +46,12 @@ export const adminRouter = Router()
  */
 adminRouter.use(yonetimRouter)
 
-const CACHE_MS = 10 * 60_000
-type Kutu = { zaman: number; veri: unknown }
-const cache = new Map<string, Kutu>()
-
-function onbellekli<T>(anahtar: string, uret: () => Promise<T>): () => Promise<T> {
-  return async () => {
-    const k = cache.get(anahtar)
-    if (k && Date.now() - k.zaman < CACHE_MS) return k.veri as T
-    const veri = await uret()
-    cache.set(anahtar, { zaman: Date.now(), veri })
-    return veri
-  }
-}
+/**
+ * Havuz moderasyonu (0025) — soru listesi/detayı, doğrulama geri alma, karantina,
+ * etiket düzeltme, üretim tetikleme. `/havuz/sorular` yollarının bu dosyadaki
+ * `/havuz` özetiyle çakışmaması için o uç TAM eşleşmeli (aşağıda `'/havuz'`).
+ */
+adminRouter.use('/havuz', havuzRouter)
 
 const sayiParam = (v: unknown, varsayilan: number, tavan: number): number => {
   const n = Number(v)
@@ -62,8 +63,8 @@ const sayiParam = (v: unknown, varsayilan: number, tavan: number): number => {
 // ─────────────────────────────────────────────────────────────────────────────
 const havuzOzeti = onbellekli<AdminHavuzYaniti>('havuz', async () => {
   const [ai, osym, kazanimlar] = await Promise.all([
-    fetchAll<{ subject: string; verified: boolean; difficulty: string | null; quality: number | null; kazanim_id: number | null; created_at: string }>(
-      () => supabase.from('yks_ai_questions').select('subject, verified, difficulty, quality, kazanim_id, created_at'),
+    fetchAll<{ subject: string; verified: boolean; karantina: boolean; difficulty: string | null; quality: number | null; kazanim_id: number | null; created_at: string }>(
+      () => supabase.from('yks_ai_questions').select('subject, verified, karantina, difficulty, quality, kazanim_id, created_at'),
     ),
     fetchAll<{ subject: string; verified: boolean; exam_year: number | null; kazanim_id: number | null }>(
       () => supabase.from('yks_questions').select('subject, verified, exam_year, kazanim_id').eq('source_type', 'osym_cikmis'),
@@ -74,7 +75,11 @@ const havuzOzeti = onbellekli<AdminHavuzYaniti>('havuz', async () => {
   ])
 
   // ── AI havuzu ──
-  const aiDogrulanmis = ai.filter((r) => r.verified)
+  // ⚠️ "Doğrulanmış" ile "SERVİS EDİLEBİLİR" ayrı sayılır (0025): karantinaya alınan soru
+  // doğrulamayı geçmiştir ama havuzda yoktur. İkisini tek sayıya indirmek ya hattın kalite
+  // oranını insan müdahalesiyle kirletir ya da düşürülen soruyu hâlâ varmış gibi gösterir.
+  const aiDogrulanmis = ai.filter((r) => r.verified && !r.karantina)
+  const karantinada = ai.filter((r) => r.karantina).length
   const zorluk = { kolay: 0, orta: 0, zor: 0, etiketsiz: 0 }
   const kaliteSayim = new Map<number, number>()
   const aiDers = new Map<string, { count: number; verified: number }>()
@@ -133,6 +138,7 @@ const havuzOzeti = onbellekli<AdminHavuzYaniti>('havuz', async () => {
         .map(([subject, v]) => ({ subject, ...v }))
         .sort((a, b) => b.count - a.count),
       kazanimsiz: aiDogrulanmis.filter((r) => r.kazanim_id == null).length,
+      karantinada,
       sonUretim: ai.length ? ai.map((r) => r.created_at).sort().at(-1) ?? null : null,
     },
     osym: {
@@ -174,9 +180,12 @@ adminRouter.get('/havuz', async (_req, res, next) => {
 adminRouter.get('/eval', async (req, res, next) => {
   try {
     const limit = sayiParam(req.query.limit, 30, 200)
-    const sonuncu = evalSonAnlik()
-    const trend = evalTrendi(limit)
-    const kosumSayisi = evalKosumSayisi()
+    // 0025: anlıklar artık DB'de (eval_anliklari); dosya dizini yalnız yedek.
+    const [sonuncu, trend, kosumSayisi] = await Promise.all([
+      evalSonAnlik(),
+      evalTrendi(limit),
+      evalKosumSayisi(),
+    ])
 
     const yasSaat = sonuncu
       ? Number(((Date.now() - +new Date(sonuncu.tarih)) / 3_600_000).toFixed(1))
@@ -201,24 +210,28 @@ adminRouter.get('/eval', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const ozgunlukOzeti = onbellekli<AdminOzgunlukYaniti>('ozgunluk', async () => {
   const ai = await fetchAll<{ subject: string }>(() =>
-    supabase.from('yks_ai_questions').select('subject').eq('verified', true),
+    supabase.from('yks_ai_questions').select('subject').eq('verified', true).eq('karantina', false),
   )
   const adet = new Map<string, number>()
   for (const r of ai) adet.set(r.subject, (adet.get(r.subject) ?? 0) + 1)
 
+  // Eşikler DB'den (0025); tablo boşsa kod tablosuna düşülür — hangisi geçerliyse O gösterilir.
+  await esikleriTazele()
   // Eşik tablosundaki dersler + havuzda görülen dersler birleşimi.
   const dersler = new Set([...Object.keys(OZGUNLUK_TABLOSU), ...adet.keys()])
-  const anlik = evalSonAnlik()
+  const anlik = await evalSonAnlik()
 
   return {
     esikler: [...dersler]
       .map((subject) => ({
         subject,
-        esik: OZGUNLUK_TABLOSU[subject] ?? OZGUNLUK_TABAN,
-        taban: !(subject in OZGUNLUK_TABLOSU),
+        esik: ozgunlukEsigi(subject),
+        // `taban` = bu ders için özel eşik YOK, taban uygulanıyor.
+        taban: ozgunlukEsigi(subject) === OZGUNLUK_TABAN && !(subject in OZGUNLUK_TABLOSU),
         havuzAdedi: adet.get(subject) ?? 0,
       }))
       .sort((a, b) => b.esik - a.esik),
+    kaynakDB: esikKaynagiDB(),
     tabanEsik: OZGUNLUK_TABAN,
     shingle: SHINGLE_BOYU,
     snapshot: anlik
@@ -237,6 +250,119 @@ const ozgunlukOzeti = onbellekli<AdminOzgunlukYaniti>('ozgunluk', async () => {
 adminRouter.get('/ozgunluk', async (_req, res, next) => {
   try {
     res.json(await ozgunlukOzeti())
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /admin/ozgunluk/esik — body: { subject, esik }
+//
+// ⚠️ EŞİĞİ DÜŞÜRMEK KALİTE BARİYERİNİ GEVŞETİR. Bu uç bunu engellemez (yönetici
+// ölçüme dayanarak düşürmek isteyebilir) ama SAKLAMAZ da: önceki/sonraki değer
+// denetim defterine yazılır ve arayüz düşürmede açık onay ister.
+//
+// Sınırlar 0025'teki CHECK ile aynı: 0 < esik < 1. Eşiği 0'a yaklaştırmak bariyeri
+// tamamen açar, 1'e yaklaştırmak her adayı kopya sayar — ikisi de kapıyı işlevsizleştirir.
+// ─────────────────────────────────────────────────────────────────────────────
+adminRouter.put('/ozgunluk/esik', async (req, res, next) => {
+  try {
+    const adminId = req.userId!
+    const b = (req.body ?? {}) as { subject?: unknown; esik?: unknown }
+    const subject = typeof b.subject === 'string' ? b.subject.trim() : ''
+    const esik = Number(b.esik)
+
+    if (!subject) throw gecersizIstek('ders_gerekli', '`subject` alanı gerekli.')
+    if (!Number.isFinite(esik) || esik <= 0 || esik >= 1) {
+      throw gecersizIstek('gecersiz_esik', 'Eşik 0 ile 1 arasında (dahil değil) bir sayı olmalı.')
+    }
+    // 3 basamak: DB kolonu numeric(4,3). Fazlası sessizce yuvarlanır ve panelde
+    // "kaydettiğim değer bu değil" şaşkınlığı üretirdi.
+    const yuvarlak = Number(esik.toFixed(3))
+
+    const onceki = await esikYaz(subject, yuvarlak, adminId)
+    onbellegiDus('ozgunluk')
+
+    const denetimYazildi = await denetimYaz({
+      adminId, eylem: 'esik_degis', hedefId: null, hedefTur: 'sistem',
+      detay: { subject, onceki, yeni: yuvarlak, dusuruldu: onceki !== null && yuvarlak < onceki },
+    })
+
+    const yanit: EsikDegisYanit = { subject, onceki, yeni: yuvarlak, denetimYazildi }
+    res.json(yanit)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /admin/onbellek/dus — panel + yetki önbelleklerini düşür
+//
+// "Panelde eski sayı görünüyor" şikâyetinin tek tıklık cevabı. Yanıt hangi katmandan
+// kaç anahtarın düştüğünü SAYIYLA döner: sonucu görünmeyen bir ops düğmesi, basıldıktan
+// sonra bir şey olup olmadığı bilinemeyen bir düğmedir.
+// ─────────────────────────────────────────────────────────────────────────────
+adminRouter.post('/onbellek/dus', async (req, res, next) => {
+  try {
+    const adminId = req.userId!
+    const panel = onbellegiDus()
+    const { kimlik, sinif } = yetkiOnbelleginiDus()
+    const redis = await redisTry(async (r) => {
+      const anahtarlar = await r.keys('yetki:kimlik:*')
+      if (!anahtarlar.length) return 0
+      await r.del(...anahtarlar)
+      return anahtarlar.length
+    }, 0)
+
+    // Eşikler de tazelensin: yönetici "önbelleği düşür" derken bunu da kastediyor.
+    await esikleriTazele(true)
+
+    const denetimYazildi = await denetimYaz({
+      adminId, eylem: 'onbellek_dus', hedefId: null, hedefTur: 'sistem',
+      detay: { panel, kimlik, sinif, redis },
+    })
+
+    const yanit: OnbellekDusYanit = { panel, kimlik, sinif, redis, denetimYazildi }
+    res.json(yanit)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /admin/eval/kosum — yapısal eval ölçümünü kuyruğa at
+//
+// ⚠️ SENKRON KOŞMAZ. Ölçüm binlerce soruyu tarar ve dakikalar sürer; HTTP isteğinde
+// koşturmak vekil/zaman aşımı duvarına toslar ve yarım kalmış bir ölçüm bırakır.
+// Worker'a `eval` görevi olarak gider, sonuç `eval_anliklari` tablosuna yazılır.
+//
+// ⚠️ TEK KOŞUM KİLİDİ: aynı anda iki ölçüm başlatmak hem boşa LLM'siz-ama-ağır iştir
+// hem de aynı `tarih` anahtarına yazma yarışı üretir.
+// ─────────────────────────────────────────────────────────────────────────────
+adminRouter.post('/eval/kosum', async (req, res, next) => {
+  try {
+    const adminId = req.userId!
+
+    // Koşan görev var mı? (Redis kilidi yok/düşükse DB'ye bakarız — kaynak hakikat orası.)
+    const { data: kosan } = await supabase
+      .from('agent_tasks')
+      .select('id')
+      .eq('kind', 'eval')
+      .in('status', ['PENDING', 'RUNNING'])
+      .limit(1)
+      .maybeSingle()
+    if (kosan) {
+      throw new HttpHatasi(409, 'eval_kosuyor', 'Zaten kosan bir eval ölçümü var; bitmesini bekle.')
+    }
+
+    const task = await enqueueTask({ userId: adminId, kind: 'eval', payload: { kaynak: 'panel' } })
+
+    const denetimYazildi = await denetimYaz({
+      adminId, eylem: 'eval_tetik', hedefId: task.id, hedefTur: 'gorev', detay: {},
+    })
+
+    const yanit: EvalTetikYanit = { taskId: task.id, denetimYazildi }
+    res.status(202).json(yanit)
   } catch (err) {
     next(err)
   }
@@ -328,14 +454,23 @@ adminRouter.get('/kullanicilar', async (req, res, next) => {
     const rol = req.query.role ? String(req.query.role) : null
     const onay = req.query.approved
     const ara = req.query.q ? String(req.query.q).trim() : null
+    const basvuru = req.query.basvuru ? String(req.query.basvuru) : null
+    const askida = req.query.askida
     const limit = sayiParam(req.query.limit, 50, 200)
     const offset = Math.max(0, Number(req.query.offset) || 0)
 
     let q = supabase
       .from('profiles')
-      .select('id, name, email, role, is_approved, class_code, school, created_at', { count: 'exact' })
+      .select(
+        'id, name, email, role, is_approved, class_code, school, created_at, teacher_application_status, askiya_alindi',
+        { count: 'exact' },
+      )
     if (rol) q = q.eq('role', rol)
     if (onay === 'true' || onay === 'false') q = q.eq('is_approved', onay === 'true')
+    if (askida === 'true' || askida === 'false') q = q.eq('askiya_alindi', askida === 'true')
+    if (basvuru === 'bekliyor' || basvuru === 'onaylandi' || basvuru === 'reddedildi') {
+      q = q.eq('teacher_application_status', basvuru)
+    }
     if (ara) q = q.or(`name.ilike.%${ara}%,email.ilike.%${ara}%`)
 
     const { data, count, error } = await q
@@ -357,11 +492,23 @@ adminRouter.get('/kullanicilar', async (req, res, next) => {
       }
     }
 
-    const { count: bekleyen } = await supabase
-      .from('profiles')
-      .select('id', { count: 'exact', head: true })
-      .eq('role', 'teacher')
-      .eq('is_approved', false)
+    // Üç kuyruk AYRI sayılır: onaysız öğretmen + bekleyen başvuru (0021) + askı (0025).
+    // Toplayıp tek "dikkat" sayısı vermek, yöneticiye hangi işi yapacağını söylemezdi.
+    const [{ count: bekleyen }, { count: bekleyenBas }, { count: askidaSayim }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'teacher')
+        .eq('is_approved', false),
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('teacher_application_status', 'bekliyor'),
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('askiya_alindi', true),
+    ])
 
     const users: AdminKullaniciSatiri[] = satirlar.map((r) => ({
       id: String(r.id),
@@ -373,6 +520,8 @@ adminRouter.get('/kullanicilar', async (req, res, next) => {
       school: (r.school as string | null) ?? null,
       ogrenciSayisi: r.role === 'teacher' ? (ogrenciSayim.get(String(r.id)) ?? 0) : null,
       createdAt: String(r.created_at),
+      basvuruDurumu: (r.teacher_application_status as AdminKullaniciSatiri['basvuruDurumu']) ?? null,
+      askidaMi: r.askiya_alindi === true,
     }))
 
     const yanit: AdminKullanicilarYaniti = {
@@ -381,6 +530,8 @@ adminRouter.get('/kullanicilar', async (req, res, next) => {
       limit,
       offset,
       bekleyenOnay: bekleyen ?? 0,
+      bekleyenBasvuru: bekleyenBas ?? 0,
+      askidaSayisi: askidaSayim ?? 0,
     }
     res.json(yanit)
   } catch (err) {

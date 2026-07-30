@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FİDAN Önizleme — Soru Havuzu (Yönetici)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+:root{
+  --zemin1:#F4F7F4; --zemin2:#E8EFE9; --cam:rgba(255,255,255,.78); --cam-cizgi:rgba(46,79,58,.08);
+  --cam-koyu:rgba(255,255,255,.92); --m1:#183121; --m2:#4A5D4E; --m3:#7C8F80;
+  --cta:#1E4620; --cta-metin:#F2F7F3; --vurgu:#2A5A3B; --adacayi:#84A98C; --yaprak:#4FA56F; --toprak:#D4A373;
+  --v0:#EFF3EF; --v1:#DCE9DE; --v2:#BBD3C0; --v3:#9BBEA3; --v4:#6FA57F;
+  --dogru:#3E8E5A; --yanlis:#C25959; --uyari:#C98A3D; --bilgi:#0E8FA3;
+  --golge:0 8px 28px rgba(24,49,33,.07); --gunes-lekesi:radial-gradient(circle, rgba(244,215,150,.28) 0%, transparent 70%);
+}
+html.gece{
+  --zemin1:#0C120E; --zemin2:#101A13; --cam:rgba(16,26,19,.72); --cam-cizgi:rgba(148,180,155,.12);
+  --cam-koyu:rgba(20,32,24,.9); --m1:#E5EFE7; --m2:#A7BCAC; --m3:#75887B;
+  --cta:#2E6B47; --cta-metin:#EAF4EC; --vurgu:#7FBF95; --adacayi:#5E7D66; --yaprak:#4FA56F; --toprak:#B98F66;
+  --v0:#16211A; --v1:#1C2B21; --v2:#26402F; --v3:#33573F; --v4:#458257;
+  --dogru:#5FBF83; --yanlis:#D98A8A; --uyari:#D9A968; --bilgi:#5BC8D9;
+  --golge:0 8px 28px rgba(0,0,0,.35); --gunes-lekesi:radial-gradient(circle, rgba(163,190,140,.07) 0%, transparent 70%);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--m1);background:linear-gradient(160deg,var(--zemin1) 0%,var(--zemin2) 100%);min-height:100vh;transition:background .4s,color .4s;overflow-x:hidden}
+h1,h2,h3,h4{font-family:'Outfit',sans-serif}
+.mono{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--m3);font-weight:500}
+.band{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:9px 22px;background:var(--cam-koyu);backdrop-filter:blur(16px);border-bottom:1px solid var(--cam-cizgi)}
+.band .mono{color:var(--vurgu)}
+.tema-dugme{font-family:'Inter';font-size:12.5px;font-weight:600;color:var(--m2);background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:12px;padding:7px 14px;cursor:pointer;transition:.2s}
+.tema-dugme:hover{color:var(--m1);border-color:var(--adacayi)}
+.ustbar{display:flex;align-items:center;gap:26px;max-width:1320px;margin:0 auto;padding:16px 28px 0;opacity:.92}
+.logo{font-family:'Outfit';font-weight:800;font-size:17px}.logo span{color:var(--yaprak)}
+.sekmeler{display:flex;gap:4px;font-size:13px;font-weight:500;color:var(--m3);flex-wrap:wrap}
+.sekmeler a{padding:7px 13px;border-radius:12px;text-decoration:none;color:inherit}
+.sekmeler a.aktif{color:var(--vurgu);background:var(--v1);font-weight:600;position:relative}
+.sekmeler a.aktif::after{content:'';position:absolute;left:50%;bottom:2px;transform:translateX(-50%);width:14px;height:2.5px;border-radius:2px;background:var(--yaprak)}
+.rol-cip{margin-left:auto;font-size:11px;font-weight:700;color:var(--toprak);background:color-mix(in srgb,var(--toprak) 15%,transparent);padding:5px 12px;border-radius:12px}
+.sahne{max-width:1320px;margin:0 auto;padding:22px 28px 80px;position:relative}
+.leke{position:fixed;border-radius:50%;pointer-events:none;z-index:0}.leke.a{width:520px;height:520px;top:-120px;right:-80px;background:var(--gunes-lekesi)}
+.kart{position:relative;z-index:2;background:var(--cam);backdrop-filter:blur(16px);border:1px solid var(--cam-cizgi);border-radius:20px;box-shadow:var(--golge);animation:giris .5s cubic-bezier(.2,.7,.3,1) both;transition:background .4s}
+@keyframes giris{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.g1{animation-delay:0s}.g2{animation-delay:.06s}.g3{animation-delay:.12s}.g4{animation-delay:.18s}
+.baslik{padding:16px 22px}.baslik h1{font-size:20px}.baslik .alt{font-size:12.5px;color:var(--m3);margin-top:4px;line-height:1.5}
+.durum{float:right;font-family:'JetBrains Mono';font-size:10.5px;color:var(--m3)}
+.statlar{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}
+@media(max-width:980px){.statlar{grid-template-columns:repeat(2,1fr)}}
+.stat{padding:15px 18px}
+.stat .deger{font-family:'Outfit';font-size:23px;font-weight:800;line-height:1}
+.stat .deger.toprak{color:var(--toprak)}
+.stat .etiket{margin-top:5px;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--m3)}
+.stat .alt{margin-top:4px;font-size:10.5px;color:var(--m3)}
+.ikili{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}
+@media(max-width:900px){.ikili{grid-template-columns:1fr}}
+.panel-ic{padding:18px 22px}
+.panel-bas{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+.panel-bas h3{font-size:14px}
+.panel-bas .say{margin-left:auto;font-family:'JetBrains Mono';font-size:10px;color:var(--m3)}
+.panel-bas .rozet{margin-left:auto;font-size:10px;font-weight:700;padding:3px 9px;border-radius:8px;background:color-mix(in srgb,var(--uyari) 15%,transparent);color:var(--uyari)}
+/* histogram */
+.histo{display:flex;align-items:flex-end;gap:8px;height:130px;padding-top:10px}
+.histo .bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;height:100%}
+.histo .cubuk{width:100%;border-radius:6px 6px 0 0;background:linear-gradient(180deg,var(--yaprak),var(--adacayi));margin-top:auto}
+.histo .etk{font-family:'JetBrains Mono';font-size:9.5px;color:var(--m3)}
+.histo .adet{font-family:'JetBrains Mono';font-size:9.5px;color:var(--m2);font-weight:600}
+/* zorluk */
+.zor-satir{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:12px}
+.zor-satir .et{width:56px;color:var(--m2);font-weight:600}
+.zor-satir .ray{flex:1;height:14px;border-radius:7px;background:var(--v0);overflow:hidden}
+.zor-satir .ray i{display:block;height:100%;border-radius:7px}
+.zor-kolay i{background:var(--v3)}.zor-orta i{background:var(--yaprak)}.zor-zor i{background:var(--toprak)}
+.zor-satir .n{width:54px;text-align:right;font-family:'JetBrains Mono';font-size:10.5px;color:var(--m3)}
+/* kapsama tablosu */
+.ktablo{width:100%;border-collapse:collapse;font-size:12px}
+.ktablo th{text-align:left;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--m3);font-weight:500;padding:7px 10px;border-bottom:1px solid var(--cam-cizgi)}
+.ktablo td{padding:9px 10px;border-bottom:1px solid var(--cam-cizgi);color:var(--m2)}
+.ktablo tr:last-child td{border-bottom:none}
+.ktablo .ders{font-weight:600;color:var(--m1)}
+.ktablo .oran-ray{width:90px;height:8px;border-radius:4px;background:var(--v0);overflow:hidden;display:inline-block;vertical-align:middle}
+.ktablo .oran-ray i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--adacayi),var(--yaprak))}
+.ktablo .dusuk{color:var(--uyari);font-weight:600}
+/* liste */
+.liste-satir{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12px;border-bottom:1px solid var(--cam-cizgi)}
+.liste-satir:last-child{border-bottom:none}
+.liste-satir .k{font-family:'JetBrains Mono';font-size:11px;color:var(--m3)}
+.liste-satir .v{font-family:'JetBrains Mono';font-size:11px;color:var(--m2)}
+.uyari-metin{font-size:11px;line-height:1.55;color:var(--uyari);margin-top:10px}
+.notlar{margin-top:36px;padding:26px 30px;background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:20px;position:relative;z-index:2}
+.notlar h3{font-size:14px;margin-bottom:14px;color:var(--m2)}
+.notlar ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.notlar li{font-size:12.5px;color:var(--m2);line-height:1.6;padding-left:18px;position:relative}
+.notlar li::before{content:'🌿';position:absolute;left:0;font-size:10px;top:2px}
+.notlar b{color:var(--m1);font-weight:600}
+.notlar code{font-family:'JetBrains Mono';font-size:11px;background:var(--v1);padding:1.5px 6px;border-radius:6px;color:var(--vurgu)}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="band"><span class="mono">FİDAN ÖNİZLEME · SORU HAVUZU (YÖNETİCİ) · V1</span><button class="tema-dugme" id="temaDugme">☾ Gece Ormanı'na geç</button></div>
+<div class="leke a"></div>
+<nav class="ustbar">
+  <span class="logo">Learn<span>Up</span></span>
+  <div class="sekmeler"><a href="#">Yönetim</a><a href="#">Kullanıcılar</a><a class="aktif" href="#">Soru Havuzu</a><a href="#">Özgünlük</a></div>
+  <span class="rol-cip">YÖNETİCİ</span>
+</nav>
+<main class="sahne">
+  <section class="kart g1 baslik">
+    <span class="durum">son üretim 22.07.2026</span>
+    <h1>Soru Havuzu</h1>
+    <p class="alt">Hacim, doğrulanmış oranı, kalite dağılımı ve müfredat kapsaması.</p>
+  </section>
+
+  <div class="statlar">
+    <section class="kart g2 stat"><div class="deger toprak">900</div><div class="etiket">ÖSYM Çıkmış</div><div class="alt">18 yıl · 9 ders · yalnız iç kaynak (RAG)</div></section>
+    <section class="kart g2 stat"><div class="deger">1 245</div><div class="etiket">AI Üretimi</div><div class="alt">doğrulanmış %71</div></section>
+    <section class="kart g3 stat"><div class="deger">3,8</div><div class="etiket">Ortalama Kalite</div><div class="alt">hakem ÖSYM-üslup skoru (1–5)</div></section>
+    <section class="kart g3 stat"><div class="deger">268</div><div class="etiket">Kapsanan Kazanım</div><div class="alt">639 kazanımda HİÇ soru yok</div></section>
+  </div>
+
+  <div class="ikili">
+    <section class="kart g3 panel-ic">
+      <div class="panel-bas"><h3>Kalite Dağılımı</h3><span class="say">AI · hakem skoru</span></div>
+      <div class="histo">
+        <div class="bar"><span class="adet">31</span><div class="cubuk" style="height:14%"></div><span class="etk">1</span></div>
+        <div class="bar"><span class="adet">118</span><div class="cubuk" style="height:32%"></div><span class="etk">2</span></div>
+        <div class="bar"><span class="adet">402</span><div class="cubuk" style="height:78%"></div><span class="etk">3</span></div>
+        <div class="bar"><span class="adet">514</span><div class="cubuk" style="height:100%"></div><span class="etk">4</span></div>
+        <div class="bar"><span class="adet">180</span><div class="cubuk" style="height:42%"></div><span class="etk">5</span></div>
+      </div>
+    </section>
+
+    <section class="kart g3 panel-ic">
+      <div class="panel-bas"><h3>Zorluk Dağılımı</h3><span class="say">AI havuzu</span></div>
+      <div class="zor-satir zor-kolay"><span class="et">Kolay</span><div class="ray"><i style="width:34%"></i></div><span class="n">423</span></div>
+      <div class="zor-satir zor-orta"><span class="et">Orta</span><div class="ray"><i style="width:100%"></i></div><span class="n">601</span></div>
+      <div class="zor-satir zor-zor"><span class="et">Zor</span><div class="ray"><i style="width:37%"></i></div><span class="n">221</span></div>
+    </section>
+  </div>
+
+  <section class="kart g4 panel-ic" style="margin-top:14px">
+    <div class="panel-bas"><h3>Ders Bazlı Kapsama</h3><span class="say">doğrulanmış / müfredat kazanımı</span></div>
+    <table class="ktablo">
+      <thead><tr><th>Ders</th><th>Kapsama</th><th>Oran</th><th>Soru</th></tr></thead>
+      <tbody>
+        <tr><td class="ders">Matematik</td><td>82 / 140</td><td><span class="oran-ray"><i style="width:59%"></i></span></td><td class="v">331</td></tr>
+        <tr><td class="ders">Fizik</td><td>44 / 98</td><td><span class="oran-ray"><i style="width:45%"></i></span></td><td class="v">198</td></tr>
+        <tr><td class="ders">Kimya</td><td>39 / 88</td><td><span class="oran-ray"><i style="width:44%"></i></span></td><td class="v">176</td></tr>
+        <tr><td class="ders">Türkçe</td><td>51 / 120</td><td><span class="oran-ray"><i style="width:42%"></i></span></td><td class="v">293</td></tr>
+        <tr><td class="ders">Türk Dili ve Edebiyatı</td><td class="dusuk">4 / 121</td><td><span class="oran-ray"><i style="width:3%"></i></span></td><td class="v">176</td></tr>
+        <tr><td class="ders">Tarih</td><td class="dusuk">18 / 110</td><td><span class="oran-ray"><i style="width:16%"></i></span></td><td class="v">203</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <div class="ikili">
+    <section class="kart g4 panel-ic">
+      <div class="panel-bas"><h3>ÖSYM Yıl Dağılımı</h3><span class="say">yalnız RAG kaynağı</span></div>
+      <div class="liste-satir"><span class="k">2024</span><span class="v">52</span></div>
+      <div class="liste-satir"><span class="k">2023</span><span class="v">48</span></div>
+      <div class="liste-satir"><span class="k">2022</span><span class="v">50</span></div>
+      <div class="liste-satir"><span class="k">2021</span><span class="v">54</span></div>
+      <div class="liste-satir"><span class="k">2020</span><span class="v">49</span></div>
+    </section>
+
+    <section class="kart g4 panel-ic">
+      <div class="panel-bas"><h3>AI Havuzu — Ders Kırılımı</h3><span class="rozet">12 kazanımsız</span></div>
+      <div class="liste-satir"><span class="k">Matematik</span><span class="v">235/331</span></div>
+      <div class="liste-satir"><span class="k">Fizik</span><span class="v">141/198</span></div>
+      <div class="liste-satir"><span class="k">Kimya</span><span class="v">120/176</span></div>
+      <div class="liste-satir"><span class="k">Türkçe</span><span class="v">208/293</span></div>
+      <p class="uyari-metin">Kazanıma bağlanmamış sorular konu listesine giremez — pratik akışında servis edilemeyen ölü stoktur.</p>
+    </section>
+  </div>
+
+  <div class="notlar">
+    <h3>Tasarım notları — Soru Havuzu (uygulama kartına girecek)</h3>
+    <ul>
+      <li><b>Tek uç, GERÇEK veri</b> (mock yok): <code>/admin/havuz</code> — ÖSYM/AI hacim, doğrulanmış oran, kalite histogramı, zorluk, ders kapsama, yıl dağılımı, kazanımsız sayısı. Ölçüm olmayan yer <code>OlcumYok</code> (ort. kalite eval koşmadıysa "—").</li>
+      <li><b>TELİF (kehribar RAFTA):</b> ÖSYM sayısı görünür çünkü bu <b>yönetici iç operasyonudur</b> — hiçbir öğrenci/öğretmen yüzüne yayın yok. Ama eski brass/kehribar kimlik rengi KULLANILMAZ; nötr toprak tonu + "yalnız iç kaynak (RAG)" etiketi. §18 kararı.</li>
+      <li><b>Kapsama dürüst:</b> "639 kazanımda HİÇ soru yok", TDE %3 gibi düşük oranlar sıcak tonla açıkça gösterilir — sayı güzelleştirilmez (null≠0, mimarinin %29,5 kapsama gerçeği).</li>
+      <li><b>Kazanımsız uyarısı:</b> kazanıma bağlanmamış AI soruları "ölü stok" olarak işaretlenir — servis edilemeyeceği açıkça söylenir.</li>
+      <li><b>Hero yok:</b> hepsi eşit ağırlıkta gösterge (sayfa başına ≤1 ışık kuralı tavandır, kota değil — koddaki gerekçe).</li>
+      <li><b>Hareket-azalt:</b> kart girişleri + çubuk dolumları <code>prefers-reduced-motion</code>'da durur.</li>
+    </ul>
+  </div>
+</main>
+<script>
+const dugme=document.getElementById('temaDugme');
+dugme.addEventListener('click',()=>{const g=document.documentElement.classList.toggle('gece');dugme.textContent=g?'☀ Gün Işığı\'na dön':'☾ Gece Ormanı\'na geç';});
+</script>
+</body>
+</html>

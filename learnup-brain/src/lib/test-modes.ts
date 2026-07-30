@@ -62,6 +62,7 @@ export async function assembleSegment(seg: Segment, userId: string): Promise<Ser
     .select('id, question_text, options, correct_option, solution')
     .eq('kazanim_id', seg.kazanimId)
     .eq('verified', true)
+    .eq('karantina', false) // 0025: yöneticinin düşürdüğü soru ÖĞRENCİYE SERVİS EDİLMEZ
     .eq('difficulty', seg.difficulty)
     .order('quality', { ascending: false })   // en iyi doğrulanmış sorular önce
     .limit(seg.count)
@@ -164,21 +165,24 @@ export async function buildMesoTest(p: { userId: string; totalCount: number }): 
   if (weak.length === 0) return []
   const per = Math.max(1, Math.floor(p.totalCount / weak.length))
 
+  // resolveKazanim gereksiz: getWeakPaths zaten path, code, title, subject döndürür.
+  // grade bilgisi weakPaths'te yok; varsayılan 0 kabul edilir (havuz sorgusuna grade ile filtre verilmiyor).
   const groups = await Promise.all(
-    weak.map(async (w) => {
-      const k = await resolveKazanim(w.kazanimId)
-      const seg: Segment = {
-        subject: w.subject,
-        grade: k?.grade ?? 0,
-        kazanimId: w.kazanimId,
-        kazanimCode: w.code ?? '',
-        path: w.path,
-        topic: k?.title ?? w.title,
-        difficulty: 'orta',
-        count: per,
-      }
-      return assembleSegment(seg, p.userId)
-    }),
+    weak.map((w) =>
+      assembleSegment(
+        {
+          subject: w.subject,
+          grade: 0,
+          kazanimId: w.kazanimId,
+          kazanimCode: w.code ?? '',
+          path: w.path,
+          topic: w.title,
+          difficulty: 'orta',
+          count: per,
+        },
+        p.userId,
+      ),
+    ),
   )
   return interleave(groups).slice(0, p.totalCount)
 }
@@ -204,6 +208,7 @@ async function assembleBySubjectFromPool(subject: string, count: number): Promis
     .select('id, question_text, options, correct_option, solution')
     .eq('subject', subject)
     .eq('verified', true)
+    .eq('karantina', false) // 0025
     .limit(count)
   if (error) throw error
   return ((data ?? []) as Parameters<typeof poolRowToServed>[0][]).map(poolRowToServed)

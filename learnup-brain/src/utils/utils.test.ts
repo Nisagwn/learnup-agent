@@ -1,6 +1,6 @@
 /** ŞIK DÜZENİ + EŞZAMANLILIK — `bun test src/utils` */
 import { expect, test, describe } from 'bun:test'
-import { siklariDuzenle, sayiya, celdiriciKusatmasi, sikUzunlukSizintisi, type SikliSoru } from './shufflers.js'
+import { siklariDuzenle, sayiya, celdiriciKusatmasi, sikUzunlukSizintisi, sayisalNormalize, type SikliSoru } from './shufflers.js'
 import { gorselBagimli } from './soru-saglik.js'
 import { kokBenzerligi, celdiriciKumesiAyni } from './benzerlik.js'
 import { latexDuzelt, latexBozuk, soruLatexBozuk, matematigiDuzelt, hamMatematikKacagi } from './latex.js'
@@ -248,6 +248,70 @@ describe('KOD KAPILARI LaTeX şıklarla ÇALIŞMAYA DEVAM EDER', () => {
     expect(sikUzunlukSizintisi(soru(
       { A: '$5$', B: '$1250$', C: '$30$', D: '$400$', E: '$60$' }, 'B',
     ))).toBeNull()
+  })
+})
+
+describe('sayisalNormalize + en-dash kapı-atlatması (GOREV-031 / GOREV-021 teşhisi)', () => {
+  // ⚠️ REGRESYON: en-dash `–` (U+2013) gibi ASCII-dışı tire, sayiya'yı null'a düşürüp üç sayısal
+  // kapıyı da SESSİZCE kapatıyordu (kanıt 5d6c6db3/2a568933). Bu blok normalizenin karakter
+  // kümesini VE kapının artık ihlali ÖLÇTÜĞÜNÜ kilitler — küme daralırsa test kırılır.
+  test('tire ailesi ASCII "-"e iner (en-dash, em-dash, minus, fullwidth, küçük)', () => {
+    expect(sayisalNormalize('–2')).toBe('-2') // en-dash
+    expect(sayisalNormalize('−1')).toBe('-1') // minus sign
+    expect(sayisalNormalize('‐5')).toBe('-5') // hyphen
+    expect(sayisalNormalize('－9')).toBe('-9') // fullwidth hyphen-minus
+  })
+
+  test('yumuşak tire (U+00AD) SİLİNİR, kesir-bölü (U+2044/U+2215) "/"e iner', () => {
+    expect(sayisalNormalize('1­2')).toBe('12')
+    expect(sayisalNormalize('1⁄2')).toBe('1/2')
+    expect(sayisalNormalize('3∕4')).toBe('3/4')
+  })
+
+  test('fullwidth ve Arabic-Indic rakamlar ASCII rakama çevrilir', () => {
+    expect(sayisalNormalize('１２')).toBe('12') // １２
+    expect(sayisalNormalize('٣٤')).toBe('34') // ٣٤
+  })
+
+  test('ZATEN ASCII olan metne DOKUNMAZ (bozan normalize değildir)', () => {
+    expect(sayisalNormalize('-2/3 ve 1,5')).toBe('-2/3 ve 1,5')
+    expect(sayisalNormalize('Osmanlı 1299 yılında')).toBe('Osmanlı 1299 yılında')
+  })
+
+  test('İDEMPOTENT: normalize(normalize(x)) === normalize(x) — ikinci düzeltme koşusu NO-OP', () => {
+    // Bu, gorev-031 scriptinin "ikinci koşu no-op" garantisinin matematiksel temeli.
+    for (const x of ['–2', '1⁄2', '1­2', '$–1/2$', '１２٣', 'karışık –a— b／c']) {
+      expect(sayisalNormalize(sayisalNormalize(x))).toBe(sayisalNormalize(x))
+    }
+  })
+
+  test('sayiya en-dash/minus/kesir-işaretini SAYIYA çevirir (eskiden null idi)', () => {
+    expect(sayiya('–2')).toBe(-2)      // –2
+    expect(sayiya('$–2$')).toBe(-2)    // LaTeX sarmalı + en-dash
+    expect(sayiya('–1/2')).toBe(-0.5)  // –1/2
+    expect(sayiya('−3')).toBe(-3)      // −3 (minus sign)
+  })
+
+  test('2a568933 örneği: şıklar –2,–1,–1/2,1,2 doğru B(–1) → GİZLİ tek-yanda artık ÖLÇÜLÜR', () => {
+    // en-dash yüzünden sayiya null dönüyordu → kuşatma kapısı null (çalışmıyor) sanıyordu.
+    // Normalize sonrası: doğru –1'in ALTINDA yalnız –2, ÜSTÜNDE –1/2,1,2 → tek-yanda İHLAL.
+    const q: SikliSoru = {
+      siklar: { A: '–2', B: '–1', C: '–1/2', D: '1', E: '2' },
+      dogru: 'B',
+    }
+    expect(celdiriciKusatmasi(q)).toBe('tek-yanda')
+  })
+
+  test('en-dash SAYISAL şıklar artan sıraya dizilir (rastgeleye düşmez)', () => {
+    const d = siklariDuzenle({
+      siklar: { A: '–2', B: '2', C: '–1', D: '1', E: '0' },
+      dogru: 'A',
+    })
+    // siklariDuzenle yalnız SIRALAR; metni normalize etmez (o yazım yolunun işi). Değerlerin
+    // sayiya ile artan çıkması, en-dash'lerin OKUNDUĞUNU kanıtlar — yoksa Fisher–Yates rastgele olurdu.
+    expect([d.siklar.A, d.siklar.B, d.siklar.C, d.siklar.D, d.siklar.E].map(sayiya))
+      .toEqual([-2, -1, 0, 1, 2])
+    expect(sayiya(d.siklar[d.dogru as 'A'])).toBe(-2) // doğru içerik (–2) korunur
   })
 })
 

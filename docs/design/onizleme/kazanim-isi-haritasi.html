@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FİDAN Önizleme — Kazanım Isı Haritası (Öğretmen)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+
+/* ═══ FİDAN v1.2 "Soft Doğa" — Gün Işığı (VARSAYILAN) ═══ */
+:root{
+  --zemin1:#F4F7F4; --zemin2:#E8EFE9;
+  --cam:rgba(255,255,255,.78); --cam-cizgi:rgba(46,79,58,.08);
+  --cam-koyu:rgba(255,255,255,.92);
+  --m1:#183121; --m2:#4A5D4E; --m3:#7C8F80;
+  --cta:#1E4620; --cta-metin:#F2F7F3; --vurgu:#2A5A3B;
+  --adacayi:#84A98C; --yaprak:#4FA56F; --toprak:#D4A373;
+  --v0:#EFF3EF; --v1:#DCE9DE; --v2:#BBD3C0; --v3:#9BBEA3; --v4:#6FA57F;
+  --golge:0 8px 28px rgba(24,49,33,.07);
+  --gunes-lekesi:radial-gradient(circle, rgba(244,215,150,.28) 0%, transparent 70%);
+}
+html.gece{
+  --zemin1:#0C120E; --zemin2:#101A13;
+  --cam:rgba(16,26,19,.72); --cam-cizgi:rgba(148,180,155,.12);
+  --cam-koyu:rgba(20,32,24,.9);
+  --m1:#E5EFE7; --m2:#A7BCAC; --m3:#75887B;
+  --cta:#2E6B47; --cta-metin:#EAF4EC; --vurgu:#7FBF95;
+  --adacayi:#5E7D66; --yaprak:#4FA56F; --toprak:#B98F66;
+  --v0:#16211A; --v1:#1C2B21; --v2:#26402F; --v3:#33573F; --v4:#458257;
+  --golge:0 8px 28px rgba(0,0,0,.35);
+  --gunes-lekesi:radial-gradient(circle, rgba(163,190,140,.07) 0%, transparent 70%);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--m1);
+  background:linear-gradient(160deg,var(--zemin1) 0%,var(--zemin2) 100%);
+  min-height:100vh;transition:background .4s,color .4s;overflow-x:hidden}
+h1,h2,h3{font-family:'Outfit',sans-serif}
+.mono{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--m3);font-weight:500}
+
+.band{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;
+  padding:9px 22px;background:var(--cam-koyu);backdrop-filter:blur(16px);border-bottom:1px solid var(--cam-cizgi)}
+.band .mono{color:var(--vurgu)}
+.tema-dugme{font-family:'Inter';font-size:12.5px;font-weight:600;color:var(--m2);background:var(--v0);
+  border:1px solid var(--cam-cizgi);border-radius:12px;padding:7px 14px;cursor:pointer;transition:.2s}
+.tema-dugme:hover{color:var(--m1);border-color:var(--adacayi)}
+
+.ustbar{display:flex;align-items:center;gap:26px;max-width:1320px;margin:0 auto;padding:16px 28px 0;opacity:.92}
+.logo{font-family:'Outfit';font-weight:800;font-size:17px}
+.logo span{color:var(--yaprak)}
+.sekmeler{display:flex;gap:4px;font-size:13px;font-weight:500;color:var(--m3);flex-wrap:wrap}
+.sekmeler a{padding:7px 13px;border-radius:12px;text-decoration:none;color:inherit}
+.sekmeler a.aktif{color:var(--vurgu);background:var(--v1);font-weight:600;position:relative}
+.sekmeler a.aktif::after{content:'';position:absolute;left:50%;bottom:2px;transform:translateX(-50%);width:14px;height:2.5px;border-radius:2px;background:var(--yaprak)}
+.rol-cip{margin-left:auto;font-size:11px;font-weight:700;color:var(--vurgu);background:var(--v1);padding:5px 12px;border-radius:12px}
+
+.sahne{max-width:1320px;margin:0 auto;padding:22px 28px 80px;position:relative}
+.leke{position:fixed;border-radius:50%;pointer-events:none;z-index:0}
+.leke.a{width:520px;height:520px;top:-120px;right:-80px;background:var(--gunes-lekesi)}
+
+.kart{position:relative;z-index:2;background:var(--cam);backdrop-filter:blur(16px);
+  border:1px solid var(--cam-cizgi);border-radius:20px;box-shadow:var(--golge);
+  animation:giris .5s cubic-bezier(.2,.7,.3,1) both;transition:background .4s}
+@keyframes giris{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.g1{animation-delay:0s}.g2{animation-delay:.08s}.g3{animation-delay:.16s}
+
+.btn{font-family:'Inter';font-weight:600;font-size:12.5px;border-radius:12px;cursor:pointer;transition:.2s;border:none}
+.btn-birincil{background:var(--cta);color:var(--cta-metin);padding:11px 20px;box-shadow:0 6px 16px rgba(30,70,32,.25)}
+.btn-birincil:hover{filter:brightness(1.12)}
+.btn-soluk{background:var(--v0);color:var(--m2);padding:8px 14px;border:1px solid var(--cam-cizgi)}
+.btn-soluk:hover{color:var(--m1);border-color:var(--adacayi)}
+
+/* ── filtre + lejant şeridi ── */
+.arac-satiri{display:flex;align-items:center;gap:9px;margin-bottom:14px;flex-wrap:wrap}
+.arac-satiri h1{font-size:22px;margin-right:10px}
+.filtre-cip{font-family:'Inter';font-size:12px;font-weight:600;color:var(--m2);background:transparent;
+  border:1.5px solid var(--cam-cizgi);border-radius:12px;padding:6px 14px;cursor:pointer;transition:.2s}
+.filtre-cip.aktif{color:var(--vurgu);background:var(--v1);border-color:var(--adacayi)}
+.lejant{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:11px;color:var(--m3);flex-wrap:wrap}
+.lejant i{width:16px;height:16px;border-radius:5px;display:inline-block}
+.lejant .bos{border:1.5px dashed var(--adacayi);background:transparent}
+
+/* ═══ ANA YERLEŞİM: matris + panel ═══ */
+.izgara{display:grid;grid-template-columns:1.75fr 1fr;gap:14px}
+@media(max-width:1020px){.izgara{grid-template-columns:1fr}}
+
+.matris-kabuk{padding:20px 24px}
+.konu-blok{margin-bottom:18px}
+.konu-baslik{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.konu-baslik h3{font-size:13.5px;color:var(--m1)}
+.konu-baslik .ort{font-family:'JetBrains Mono';font-size:10.5px;color:var(--m3)}
+.konu-baslik .cizgi{flex:1;height:1px;background:var(--cam-cizgi)}
+.hucreler{display:flex;gap:7px;flex-wrap:wrap}
+.hucre{width:118px;border-radius:12px;padding:9px 10px;cursor:pointer;transition:.18s;position:relative}
+.hucre:hover{transform:translateY(-2px) scale(1.02);box-shadow:0 6px 16px rgba(24,49,33,.14)}
+.hucre .ad{font-size:10.5px;font-weight:600;line-height:1.3;color:var(--m1)}
+.hucre .deger{font-family:'JetBrains Mono';font-size:10px;color:var(--m2);margin-top:5px}
+.h1x{background:var(--v1)}.h2x{background:var(--v2)}.h3x{background:var(--v3)}.h4x{background:var(--v4)}
+.h4x .ad,.h4x .deger{color:#14301E}
+html.gece .h4x .ad,html.gece .h4x .deger{color:#EAF4EC}
+.hucre.olcumyok{border:1.5px dashed var(--adacayi);background:transparent}
+.hucre.olcumyok .deger{color:var(--m3);font-style:normal}
+.hucre.secili{outline:2.5px solid var(--yaprak);outline-offset:2px}
+
+/* ═══ SEÇİLİ KAZANIM PANELİ ═══ */
+.panel{padding:22px 24px;position:sticky;top:64px;align-self:start}
+.panel .mono{display:block;margin-bottom:8px}
+.panel h2{font-size:17px;line-height:1.35}
+.panel .ders-cip{display:inline-block;font-size:10.5px;font-weight:700;color:var(--vurgu);background:var(--v1);
+  padding:3px 10px;border-radius:10px;margin-top:7px}
+.dagilim{margin:18px 0 6px}
+.dag-satir{display:flex;align-items:center;gap:10px;margin-bottom:9px;font-size:11.5px}
+.dag-satir .etiket{width:86px;color:var(--m2);font-weight:600}
+.dag-satir .cubuk{flex:1;height:14px;border-radius:7px;background:var(--v0);overflow:hidden}
+.dag-satir .cubuk i{display:block;height:100%;border-radius:7px;background:linear-gradient(90deg,var(--adacayi),var(--yaprak))}
+.dag-satir .adet{width:64px;text-align:right;font-family:'JetBrains Mono';font-size:10.5px;color:var(--m3)}
+.zayif-liste{margin-top:14px;border-top:1px solid var(--cam-cizgi);padding-top:12px}
+.zayif-liste h4{font-size:12px;color:var(--m2);margin-bottom:9px}
+.zayif-ogr{display:flex;align-items:center;gap:9px;padding:6px 0;font-size:12.5px}
+.zayif-ogr .avatar{width:26px;height:26px;border-radius:9px;background:var(--v2);display:flex;align-items:center;
+  justify-content:center;font-family:'Outfit';font-weight:700;font-size:10px;color:var(--vurgu)}
+.zayif-ogr .oran{margin-left:auto;font-family:'JetBrains Mono';font-size:10.5px;color:var(--m3)}
+.panel .btn-birincil{width:100%;margin-top:16px}
+.panel .alt-baglanti{display:block;text-align:center;font-size:11.5px;color:var(--vurgu);font-weight:600;
+  text-decoration:none;margin-top:10px}
+
+.notlar{margin-top:36px;padding:26px 30px;background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:20px;position:relative;z-index:2}
+.notlar h3{font-size:14px;margin-bottom:14px;color:var(--m2)}
+.notlar ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.notlar li{font-size:12.5px;color:var(--m2);line-height:1.6;padding-left:18px;position:relative}
+.notlar li::before{content:'🌿';position:absolute;left:0;font-size:10px;top:2px}
+.notlar b{color:var(--m1);font-weight:600}
+.notlar code{font-family:'JetBrains Mono';font-size:11px;background:var(--v1);padding:1.5px 6px;border-radius:6px;color:var(--vurgu)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<div class="band">
+  <span class="mono">FİDAN ÖNİZLEME · KAZANIM ISI HARİTASI (ÖĞRETMEN) · V1</span>
+  <button class="tema-dugme" id="temaDugme">☾ Gece Ormanı'na geç</button>
+</div>
+
+<div class="leke a"></div>
+
+<nav class="ustbar">
+  <span class="logo">Learn<span>Up</span></span>
+  <div class="sekmeler">
+    <a href="#">Sınıf Panosu</a><a href="#" class="aktif">Kazanım Isı Haritası</a>
+    <a href="#">Ödev Atölyesi</a><a href="#">Karşılaştırma</a><a href="#">Profilim</a>
+  </div>
+  <span class="rol-cip">ÖĞRETMEN</span>
+</nav>
+
+<main class="sahne">
+
+  <div class="arac-satiri g1">
+    <h1>Kazanım Isı Haritası</h1>
+    <button class="filtre-cip aktif">Matematik</button>
+    <button class="filtre-cip">Türkçe</button>
+    <button class="filtre-cip">Fizik</button>
+    <button class="filtre-cip">Kimya</button>
+    <button class="filtre-cip">Biyoloji</button>
+    <div class="lejant">
+      <span>düşük</span><i style="background:var(--v1)"></i><i style="background:var(--v2)"></i>
+      <i style="background:var(--v3)"></i><i style="background:var(--v4)"></i><span>yüksek</span>
+      <i class="bos"></i><span>ölçüm yok</span>
+    </div>
+  </div>
+
+  <div class="izgara">
+
+    <!-- ═══ MATRİS (konu → kazanım hücreleri) ═══ -->
+    <section class="kart matris-kabuk g2">
+
+      <div class="konu-blok">
+        <div class="konu-baslik"><h3>Limit ve Süreklilik</h3><span class="ort">konu ort. %48</span><span class="cizgi"></span></div>
+        <div class="hucreler">
+          <div class="hucre h1x secili"><div class="ad">Limitte Belirsizlik Durumları</div><div class="deger">%31 · 24 öğr.</div></div>
+          <div class="hucre h2x"><div class="ad">Limit Alma Kuralları</div><div class="deger">%52 · 26 öğr.</div></div>
+          <div class="hucre h3x"><div class="ad">Süreklilik</div><div class="deger">%64 · 22 öğr.</div></div>
+          <div class="hucre olcumyok"><div class="ad">Sürekliliğin Uygulamaları</div><div class="deger">ölçüm yok</div></div>
+        </div>
+      </div>
+
+      <div class="konu-blok">
+        <div class="konu-baslik"><h3>Türev</h3><span class="ort">konu ort. %57</span><span class="cizgi"></span></div>
+        <div class="hucreler">
+          <div class="hucre h2x"><div class="ad">Türevde Zincir Kuralı</div><div class="deger">%44 · 25 öğr.</div></div>
+          <div class="hucre h3x"><div class="ad">Türev Alma Kuralları</div><div class="deger">%68 · 27 öğr.</div></div>
+          <div class="hucre h4x"><div class="ad">Türevin Geometrik Yorumu</div><div class="deger">%79 · 21 öğr.</div></div>
+          <div class="hucre h2x"><div class="ad">Ekstremum Problemleri</div><div class="deger">%47 · 18 öğr.</div></div>
+          <div class="hucre olcumyok"><div class="ad">L'Hospital Kuralı</div><div class="deger">ölçüm yok</div></div>
+        </div>
+      </div>
+
+      <div class="konu-blok">
+        <div class="konu-baslik"><h3>Fonksiyonlar</h3><span class="ort">konu ort. %71</span><span class="cizgi"></span></div>
+        <div class="hucreler">
+          <div class="hucre h4x"><div class="ad">Fonksiyon Kavramı</div><div class="deger">%82 · 28 öğr.</div></div>
+          <div class="hucre h3x"><div class="ad">Bileşke Fonksiyon</div><div class="deger">%66 · 24 öğr.</div></div>
+          <div class="hucre h3x"><div class="ad">Ters Fonksiyon</div><div class="deger">%64 · 23 öğr.</div></div>
+        </div>
+      </div>
+
+      <p style="font-size:11.5px;color:var(--m3)">… seçili dersin tüm konuları listelenir (önizlemede 3 konu gösteriliyor)</p>
+    </section>
+
+    <!-- ═══ SEÇİLİ KAZANIM PANELİ ═══ -->
+    <aside class="kart panel g3">
+      <span class="mono">SEÇİLİ KAZANIM</span>
+      <h2>Limitte Belirsizlik Durumları</h2>
+      <span class="ders-cip">Matematik · sınıf ort. %31 · 24 öğrenci ölçüldü</span>
+
+      <div class="dagilim">
+        <div class="dag-satir"><span class="etiket">çok zayıf</span><div class="cubuk"><i style="width:75%"></i></div><span class="adet">9 öğrenci</span></div>
+        <div class="dag-satir"><span class="etiket">gelişiyor</span><div class="cubuk"><i style="width:58%"></i></div><span class="adet">7 öğrenci</span></div>
+        <div class="dag-satir"><span class="etiket">orta</span><div class="cubuk"><i style="width:42%"></i></div><span class="adet">5 öğrenci</span></div>
+        <div class="dag-satir"><span class="etiket">güçlü</span><div class="cubuk"><i style="width:25%"></i></div><span class="adet">3 öğrenci</span></div>
+      </div>
+
+      <div class="zayif-liste">
+        <h4>En çok zorlanan 4 öğrenci</h4>
+        <div class="zayif-ogr"><span class="avatar">EK</span> Elif K. <span class="oran">%12</span></div>
+        <div class="zayif-ogr"><span class="avatar">MB</span> Mert B. <span class="oran">%18</span></div>
+        <div class="zayif-ogr"><span class="avatar">SA</span> Selin A. <span class="oran">%21</span></div>
+        <div class="zayif-ogr"><span class="avatar">CD</span> Can D. <span class="oran">%26</span></div>
+      </div>
+
+      <button class="btn btn-birincil">Bu kazanımdan ödev derle</button>
+      <a class="alt-baglanti" href="#">Karşılaştırma'da bu kazanımı aç →</a>
+    </aside>
+  </div>
+
+  <!-- ═══ TASARIM NOTLARI ═══ -->
+  <section class="notlar">
+    <h3>Tasarım notları — veri kaynakları ve kurallar (mock yasak)</h3>
+    <ul>
+      <li><b>Tüm sayılar TEMSİLÎ.</b> Gerçek ekranda matris, sınıf ustalık verisinden gelir
+          (N+1-siz RPC — <code>v_mastery_rollup</code> KULLANILMAZ, M§10); "iki katmanlı ortalama":
+          konu başlığında konu ortalaması, hücrede kazanım ortalaması + kaç öğrencinin ölçüldüğü.</li>
+      <li><b>Tek-ton ısı dili:</b> 4 adaçayı tonu (v1→v4) — Analizler'deki öğrenci matrisiyle AYNI skala;
+          değer hem renk hem sayıyla (asla yalnız renk). <b>Ölçülmeyen hücre kesikli "ölçüm yok"</b> —
+          sıfır çizilmez (null≠0; az öğrenci ölçüldüyse hücrede adet dürüstçe yazar).</li>
+      <li><b>Ders filtresi URL'de</b> (<code>?ders=matematik</code>, replace:true — paylaşılabilir);
+          hücre seçimi de URL'de (geri tuşu çalışır).</li>
+      <li><b>Hücre → dağılım paneli:</b> o kazanımda öğrenci dağılımı (bantlar KELİMELİ: çok zayıf /
+          gelişiyor / orta / güçlü) + en çok zorlanan öğrenciler (satırdan Röntgen'e gidilebilir).</li>
+      <li><b>Tek birincil eylem:</b> paneldeki "Bu kazanımdan ödev derle" — Ödev Atölyesi'ne kazanım
+          SEÇİLİ hâlde gider (mevcut köprü deseni).</li>
+      <li><b>Mobil/dar ekran:</b> panel matris altına iner (sticky kalkar); hücreler yatay kaydırma
+          yerine sarmal (flex-wrap) — tam genişlik ekran masaüstü odaklıdır.</li>
+      <li><b>Ambiyans sakin</b> (yoğun veri yüzeyi — süzülen yaprak yok); hücre hover büyümesi +
+          kart girişleri ≤0.3s; <code>prefers-reduced-motion</code>'da statik.</li>
+      <li><b>Sınıf boşsa / hiç ölçüm yoksa:</b> matris yerine dürüst boş durum ("Öğrencilerin soru
+          çözdükçe sınıf haritası burada belirir") — sahte hücre çizilmez.</li>
+    </ul>
+  </section>
+
+</main>
+
+<script>
+const dugme = document.getElementById('temaDugme');
+dugme.addEventListener('click', () => {
+  const gece = document.documentElement.classList.toggle('gece');
+  dugme.textContent = gece ? '☀ Gün Işığı'na dön' : '☾ Gece Ormanı'na geç';
+});
+</script>
+</body>
+</html>

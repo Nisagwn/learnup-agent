@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="tr" data-tema="gun">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FİDAN Önizleme — Profilim (v1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --grad-a:#F4F7F4; --grad-b:#E8EFE9;
+  --cam:rgba(255,255,255,.78); --cam-kenar:rgba(46,79,58,.08);
+  --mat:#FBFDFB; --ic:#EDF2ED; --cizgi:rgba(34,76,56,.06);
+  --metin1:#183121; --metin2:#4A5D4E; --metin3:#7C8F80;
+  --cta:#1E4620; --vurgu:#2A5A3B; --adacayi:#84A98C; --yaprak:#4FA56F; --toprak:#D4A373;
+  --dogru:#2E8B57; --uyari:#C77E2E; --kehribar:#B8863B;
+  --golge:0 8px 32px rgba(24,49,33,.04); --golge-h:0 14px 40px rgba(24,49,33,.09);
+  --parilti:0 0 20px rgba(79,165,111,.25);
+}
+[data-tema="gece"]{
+  --grad-a:#0C120E; --grad-b:#101A13;
+  --cam:rgba(16,26,19,.72); --cam-kenar:rgba(167,199,172,.08);
+  --mat:#121C15; --ic:#18251B; --cizgi:rgba(200,230,205,.05);
+  --metin1:#E6EFE7; --metin2:#A9BCA9; --metin3:#74887A;
+  --cta:#2E6B47; --vurgu:#7FC79C; --adacayi:#8FB49A; --yaprak:#5CB781; --toprak:#D4A373;
+  --dogru:#58C08A; --uyari:#D8A45B; --kehribar:#D9B267;
+  --golge:0 10px 36px rgba(0,0,0,.5); --golge-h:0 16px 44px rgba(0,0,0,.6);
+  --parilti:0 0 20px rgba(92,183,129,.28);
+}
+*{box-sizing:border-box;margin:0}
+html{color-scheme:light} [data-tema="gece"]{color-scheme:dark}
+body{font-family:Inter,system-ui,sans-serif;color:var(--metin1);font-size:15.5px;line-height:1.6;
+  min-height:100vh;background:linear-gradient(160deg,var(--grad-a),var(--grad-b)) fixed;overflow-x:hidden}
+.gunes{position:fixed;pointer-events:none;z-index:0;border-radius:50%;filter:blur(60px)}
+.gunes.a{width:520px;height:380px;top:-120px;left:8%;background:rgba(212,163,115,.15)}
+.gunes.b{width:620px;height:420px;top:-160px;right:4%;background:rgba(132,169,140,.17)}
+.yaprak-kat{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;display:none}
+.yprk{position:absolute;top:-8vh;opacity:.4;will-change:transform}
+@media (min-width:900px){.yaprak-kat{display:block}}
+@media (prefers-reduced-motion:no-preference){
+  .yprk{animation:suzul linear infinite}
+  @keyframes suzul{0%{transform:translateY(-8vh) rotate(0)}50%{transform:translateY(52vh) translateX(-24px) rotate(150deg)}100%{transform:translateY(112vh) rotate(320deg)}}
+  .canlan{opacity:0;transform:translateY(14px);animation:belir .45s ease-out forwards}
+  @keyframes belir{to{opacity:1;transform:none}}
+  .g0{animation-delay:0s}.g1{animation-delay:.06s}.g2{animation-delay:.12s}.g3{animation-delay:.18s}.g4{animation-delay:.24s}.g5{animation-delay:.3s}
+  .fidan-aktif{animation:salla 4s ease-in-out infinite;transform-origin:50% 100%}
+  @keyframes salla{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+  .odul-parla{animation:odul 2.4s ease-in-out infinite}
+  @keyframes odul{0%,100%{box-shadow:none}50%{box-shadow:var(--parilti)}}
+}
+nav{position:sticky;top:0;z-index:10;height:62px;display:flex;align-items:center;
+  background:var(--cam);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--cizgi)}
+.nav-ic{max-width:1152px;margin:0 auto;padding:0 clamp(16px,3.5vw,44px);width:100%;display:flex;align-items:center;gap:20px}
+.logo{display:flex;align-items:center;gap:8px;font-family:Outfit;font-weight:800;font-size:19px}
+.sekmeler{display:flex;gap:2px;flex:1;overflow-x:auto}
+.sekme{padding:8px 13px;border-radius:12px;color:var(--metin2);text-decoration:none;font-weight:500;font-size:14.5px;white-space:nowrap;position:relative}
+.sekme:hover{background:var(--ic)}
+.sekme.aktif{color:var(--vurgu);font-weight:600}
+.sekme.aktif::after{content:"";position:absolute;left:13px;right:13px;bottom:-1px;height:3px;background:var(--yaprak);border-radius:3px 3px 0 0}
+.ikon-btn{width:38px;height:38px;border-radius:12px;border:1px solid var(--cam-kenar);background:transparent;color:var(--metin2);cursor:pointer;display:grid;place-items:center}
+.ikon-btn:hover{background:var(--ic)}
+.sayfa{max-width:1152px;margin:0 auto;padding:36px clamp(16px,3.5vw,44px) 80px;position:relative;z-index:1}
+.kart{background:var(--cam);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--cam-kenar);border-radius:20px;padding:22px;box-shadow:var(--golge);
+  position:relative;overflow:hidden;transition:transform .2s,box-shadow .2s}
+.kart:hover{transform:translateY(-3px);box-shadow:var(--golge-h)}
+.kart h2{font-family:Outfit;font-weight:700;font-size:17.5px}
+.baslik-satir{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.b-ikon{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto}
+.b-ikon svg{width:16px;height:16px}
+.aciklama{color:var(--metin2);font-size:14px}
+.izgara{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr);gap:20px;align-items:start;margin-top:22px}
+@media (max-width:900px){.izgara{grid-template-columns:1fr}}
+.sutun{display:flex;flex-direction:column;gap:20px}
+.btn{border:none;cursor:pointer;border-radius:12px;padding:10px 18px;font-family:Inter;font-weight:600;font-size:14px;display:inline-flex;align-items:center;gap:7px;transition:box-shadow .2s,background .15s,transform .15s}
+.btn.birincil{background:var(--cta);color:#fff}
+.btn.birincil:hover{box-shadow:var(--parilti);transform:translateY(-1px)}
+.btn.dis{background:transparent;color:var(--vurgu);border:1px solid color-mix(in srgb,var(--vurgu) 35%,transparent)}
+.btn.dis:hover{background:var(--ic)}
+.btn.kucuk{padding:7px 13px;font-size:13px}
+/* HERO */
+.hero{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+.hero .dal{position:absolute;top:-24px;right:-18px;width:200px;opacity:.09;pointer-events:none}
+.avatar-kap{position:relative;flex:0 0 auto}
+.avatar-b{width:96px;height:96px;border-radius:50%;background:linear-gradient(135deg,var(--adacayi),var(--yaprak));
+  display:grid;place-items:center;font-family:Outfit;font-weight:800;font-size:34px;color:#fff;
+  box-shadow:0 0 0 4px var(--cam),0 0 0 5px var(--cam-kenar)}
+.avatar-degistir{position:absolute;right:-4px;bottom:-4px;width:32px;height:32px;border-radius:50%;
+  border:2px solid var(--cam);background:var(--ic);color:var(--metin2);cursor:pointer;display:grid;place-items:center;font-size:13px}
+.hero-bilgi{flex:1;min-width:220px}
+.hero-bilgi h1{font-family:Outfit;font-weight:800;font-size:clamp(24px,2.6vw,30px);letter-spacing:-.02em}
+.hero-cipler{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.cip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:12px;font-size:12.5px;font-weight:600;
+  background:color-mix(in srgb,var(--adacayi) 18%,transparent);color:var(--vurgu)}
+.cip.gumus{background:color-mix(in srgb,#9BA8B0 22%,transparent);color:#5E6E78}
+[data-tema="gece"] .cip.gumus{color:#B9C6CE}
+.seviye-halka{position:relative;width:110px;height:110px;flex:0 0 auto}
+.seviye-halka .merkez{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.seviye-halka b{font-family:Outfit;font-weight:800;font-size:19px;display:block;line-height:1.1}
+.seviye-halka span{font-size:10.5px;color:var(--metin3)}
+#svHalka{transition:stroke-dashoffset .9s cubic-bezier(.4,0,.2,1)}
+/* STREAK FİDANI */
+.kademeler{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-top:16px;padding:0 6px}
+.kademe{flex:1;text-align:center;position:relative}
+.kademe svg{opacity:.35}
+.kademe.acik svg{opacity:1}
+.kademe.simdiki::after{content:"";position:absolute;left:50%;top:-8px;transform:translateX(-50%);
+  width:7px;height:7px;border-radius:50%;background:var(--yaprak)}
+.kademe span{display:block;font-size:10.5px;color:var(--metin3);margin-top:5px}
+.kademe.acik span{color:var(--metin2);font-weight:600}
+.streak-alt{display:flex;justify-content:space-between;align-items:center;margin-top:16px;gap:10px;flex-wrap:wrap}
+.rozet{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600}
+.rozet.dogru{background:color-mix(in srgb,var(--dogru) 14%,transparent);color:var(--dogru)}
+.rozet.buz{background:color-mix(in srgb,#6FA8B5 16%,transparent);color:#4A8A9A}
+[data-tema="gece"] .rozet.buz{color:#7FB6C4}
+/* ROZET GALERİSİ */
+.rozetler{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px;margin-top:12px}
+.rz{padding:14px 10px;border-radius:14px;background:var(--ic);text-align:center;transition:transform .15s}
+.rz:hover{transform:translateY(-3px)}
+.rz .rz-ikon{width:44px;height:44px;border-radius:50%;margin:0 auto 8px;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--yaprak) 16%,transparent)}
+.rz b{display:block;font-size:12.5px;line-height:1.3}
+.rz span{display:block;font-size:10.5px;color:var(--metin3);margin-top:3px}
+.rz.kilitli{opacity:.55}
+.rz.kilitli .rz-ikon{background:var(--cizgi);filter:grayscale(1)}
+/* GÖREVLER */
+.gorev{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:var(--ic)}
+.gorev + .gorev{margin-top:10px}
+.gorev .g-ikon{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto;
+  background:color-mix(in srgb,var(--toprak) 20%,transparent)}
+.gorev .g-bilgi{flex:1;min-width:0}
+.gorev b{display:block;font-size:13.5px}
+.gorev .g-cubuk{height:6px;border-radius:12px;background:var(--cizgi);margin-top:6px;overflow:hidden}
+.gorev .g-cubuk i{display:block;height:100%;border-radius:12px;background:linear-gradient(90deg,var(--adacayi),var(--yaprak))}
+.gorev span.det{font-size:11.5px;color:var(--metin3)}
+/* AYARLAR */
+.ayar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--cizgi);font-size:14px}
+.ayar:first-of-type{border-top:none}
+.tema-secici{display:flex;background:var(--ic);border-radius:10px;padding:3px}
+.tema-secici button{border:none;background:transparent;padding:6px 12px;border-radius:8px;font-family:Inter;font-weight:600;font-size:12.5px;color:var(--metin2);cursor:pointer}
+.tema-secici button.aktif{background:var(--cam);color:var(--metin1);box-shadow:0 1px 6px rgba(24,49,33,.1)}
+.anahtar{width:44px;height:25px;border-radius:999px;background:var(--yaprak);position:relative;cursor:pointer;border:none;transition:background .2s}
+.anahtar.kapali{background:var(--cizgi)}
+.anahtar::after{content:"";position:absolute;top:2.5px;left:22px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s}
+.anahtar.kapali::after{left:2.5px}
+.sayac{display:flex;align-items:center;gap:10px}
+.sayac button{width:28px;height:28px;border-radius:9px;border:1px solid var(--cam-kenar);background:transparent;color:var(--metin2);cursor:pointer;font-size:15px}
+.sayac b{font-family:Outfit;min-width:34px;text-align:center}
+.notlar{margin-top:34px;border:1px dashed var(--cam-kenar);border-radius:16px;padding:16px 20px;color:var(--metin2);font-size:13.5px;background:color-mix(in srgb,var(--cam) 60%,transparent)}
+.notlar summary{cursor:pointer;font-weight:600;color:var(--metin1)}
+.notlar li{margin:6px 0 0 18px}
+.band{position:fixed;bottom:14px;left:14px;z-index:20;background:var(--metin1);color:var(--grad-a);font-family:'JetBrains Mono';font-size:10.5px;letter-spacing:.08em;padding:6px 12px;border-radius:12px;opacity:.85}
+</style>
+</head>
+<body>
+<span class="band">FİDAN ÖNİZLEME · PROFİLİM · v1</span>
+<div class="gunes a"></div><div class="gunes b"></div>
+<div class="yaprak-kat" aria-hidden="true">
+  <svg class="yprk" style="left:22%;width:20px;animation-duration:26s" viewBox="0 0 24 24"><path d="M12 2C7 7 5 12 12 22 19 12 17 7 12 2Z" fill="#84A98C"/></svg>
+  <svg class="yprk" style="left:70%;width:15px;animation-duration:32s;animation-delay:6s" viewBox="0 0 24 24"><path d="M12 2C7 7 5 12 12 22 19 12 17 7 12 2Z" fill="#D4A373"/></svg>
+</div>
+
+<nav><div class="nav-ic">
+  <span class="logo"><svg width="23" height="23" viewBox="0 0 24 24" fill="none"><path d="M12 21V9" stroke="var(--vurgu)" stroke-width="2.2" stroke-linecap="round"/><path d="M12 12C12 8 9 5 4 5c0 5 3 8 8 8" fill="var(--adacayi)"/><path d="M12 9c0-3.5 2.5-6 7-6 0 4.5-2.5 7-7 7" fill="var(--yaprak)"/></svg>LearnUp</span>
+  <div class="sekmeler">
+    <a class="sekme" href="#">Bugün</a><a class="sekme" href="#">Analizler</a>
+    <a class="sekme" href="#">Çalışma Planı</a><a class="sekme" href="#">Koç</a>
+    <a class="sekme" href="#">Çıkmış Sorular</a><a class="sekme" href="#">Bahçem</a>
+    <a class="sekme aktif" href="#">Profilim</a>
+  </div>
+  <button class="ikon-btn" id="temaBtn" title="Koyu tema">☾</button>
+</div></nav>
+
+<main class="sayfa">
+  <!-- HERO -->
+  <section class="kart hero canlan g0" aria-label="Profil özeti">
+    <svg class="dal" viewBox="0 0 100 100"><path d="M10 90C30 60 40 40 90 10M35 62c8 2 16 0 22-6M52 44c8 2 15 0 21-6" stroke="var(--vurgu)" stroke-width="3" fill="none" stroke-linecap="round"/></svg>
+    <div class="avatar-kap">
+      <div class="avatar-b" role="img" aria-label="Avatar">N</div>
+      <button class="avatar-degistir" title="Avatarını değiştir (12 seçenek)">✎</button>
+    </div>
+    <div class="hero-bilgi">
+      <h1>Nisa</h1>
+      <div class="hero-cipler">
+        <span class="cip gumus">🥈 Gümüş Ligi · 4. sıra</span>
+        <span class="cip">🌱 12 gün seri</span>
+        <span class="cip">Toplam 1.248 soru</span>
+      </div>
+      <p class="aciklama" style="margin-top:8px">YKS öğrencisi · Katıldı: Mart 2026</p>
+    </div>
+    <div class="seviye-halka">
+      <svg width="110" height="110" viewBox="0 0 110 110">
+        <defs><linearGradient id="sv" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="var(--adacayi)"/><stop offset="1" stop-color="var(--yaprak)"/>
+        </linearGradient></defs>
+        <circle cx="55" cy="55" r="47" fill="none" stroke="var(--ic)" stroke-width="8"/>
+        <circle id="svHalka" cx="55" cy="55" r="47" fill="none" stroke="url(#sv)" stroke-width="8"
+                stroke-linecap="round" stroke-dasharray="295.3" stroke-dashoffset="295.3" transform="rotate(-90 55 55)"/>
+      </svg>
+      <div class="merkez"><div><b>Seviye 4</b><span>Seviye 5'e 340 soru</span></div></div>
+    </div>
+  </section>
+
+  <div class="izgara">
+    <div class="sutun">
+      <!-- STREAK FİDANI -->
+      <section class="kart canlan g1" aria-label="Seri">
+        <div class="baslik-satir">
+          <span class="b-ikon" style="background:color-mix(in srgb,var(--yaprak) 15%,transparent)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--yaprak)" stroke-width="2"><path d="M12 22v-9M12 13C12 9 9 6 4 6c0 4.5 3.5 7 8 7M12 11c0-3 2-5 6.5-5C18.5 10.5 16 12.5 12 12.5" stroke-linecap="round"/></svg></span>
+          <h2>Serin: 12 gün</h2>
+          <span class="rozet buz" style="margin-left:auto">❄ 1 dondurma hakkın var</span>
+        </div>
+        <p class="aciklama">Her gün en az bir blok çöz, fidanın büyüsün. Bir sonraki kademe: <b>30 gün</b>.</p>
+        <div class="kademeler">
+          <div class="kademe acik"><svg width="26" height="30" viewBox="0 0 24 28"><ellipse cx="12" cy="22" rx="7" ry="5" fill="#A9713F"/><circle cx="12" cy="19" r="3.5" fill="#7A5A3A"/></svg><span>Tohum<br>1 gün</span></div>
+          <div class="kademe acik"><svg width="26" height="34" viewBox="0 0 24 30"><path d="M12 28v-8" stroke="#A9713F" stroke-width="2.5" stroke-linecap="round"/><path d="M12 20c0-4-3-6-7-6 0 4 3 6 7 6" fill="#4FA56F"/></svg><span>Filiz<br>3 gün</span></div>
+          <div class="kademe acik simdiki"><svg class="fidan-aktif" width="30" height="40" viewBox="0 0 24 34"><path d="M12 32V16" stroke="#A9713F" stroke-width="2.5" stroke-linecap="round"/><path d="M12 20c0-5-4-7-8-7 0 5 4 7 8 7" fill="#4FA56F"/><path d="M12 16c0-4 3-6 7-6 0 4.5-3 6.5-7 6.5" fill="#84A98C"/></svg><span><b>Fidan</b><br>7 gün ✓</span></div>
+          <div class="kademe"><svg width="34" height="46" viewBox="0 0 24 38"><path d="M12 36V12" stroke="#A9713F" stroke-width="3" stroke-linecap="round"/><ellipse cx="12" cy="10" rx="9" ry="8" fill="#84A98C"/></svg><span>Genç Ağaç<br>30 gün</span></div>
+          <div class="kademe"><svg width="38" height="52" viewBox="0 0 24 42"><path d="M12 40V14" stroke="#7A5A3A" stroke-width="3.5" stroke-linecap="round"/><ellipse cx="12" cy="11" rx="11" ry="10" fill="#84A98C"/><ellipse cx="7" cy="15" rx="5" ry="4.5" fill="#4FA56F"/></svg><span>Ulu Ağaç<br>100 gün</span></div>
+        </div>
+        <div class="streak-alt">
+          <span class="aciklama">En uzun serin: <b>19 gün</b></span>
+          <span class="rozet dogru">bugün tamamlandı ✓</span>
+        </div>
+      </section>
+
+      <!-- ROZET GALERİSİ -->
+      <section class="kart canlan g2" aria-label="Rozetler">
+        <div class="baslik-satir">
+          <span class="b-ikon" style="background:color-mix(in srgb,var(--toprak) 20%,transparent)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--toprak)" stroke-width="2"><circle cx="12" cy="9" r="6"/><path d="m8.5 14-2 7 5.5-3 5.5 3-2-7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <h2>Rozetlerin</h2>
+          <span class="aciklama" style="margin-left:auto">6 / 14 açıldı</span>
+        </div>
+        <div class="rozetler">
+          <div class="rz"><span class="rz-ikon">🌱</span><b>3 Gün Seri</b><span>açıldı</span></div>
+          <div class="rz"><span class="rz-ikon">🔥</span><b>7 Gün Seri</b><span>açıldı</span></div>
+          <div class="rz"><span class="rz-ikon">✏️</span><b>İlk 25 Soru</b><span>açıldı</span></div>
+          <div class="rz"><span class="rz-ikon">💯</span><b>100 Soru</b><span>açıldı</span></div>
+          <div class="rz"><span class="rz-ikon">📈</span><b>%80 Ustalık</b><span>açıldı</span></div>
+          <div class="rz"><span class="rz-ikon">⭐</span><b>Seviye 3</b><span>açıldı</span></div>
+          <div class="rz kilitli"><span class="rz-ikon">🌙</span><b>30 Gün Seri</b><span>30 gün üst üste çalış</span></div>
+          <div class="rz kilitli"><span class="rz-ikon">🏆</span><b>500 Soru</b><span>500 soru çöz</span></div>
+          <div class="rz kilitli"><span class="rz-ikon">🎯</span><b>%100 Ustalık</b><span>bir kazanımı kusursuzla</span></div>
+          <div class="rz kilitli"><span class="rz-ikon">👑</span><b>Seviye 8</b><span>Seviye 8'e ulaş</span></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="sutun">
+      <!-- GÜNLÜK GÖREVLER -->
+      <section class="kart canlan g1" aria-label="Günlük görevler">
+        <div class="baslik-satir">
+          <span class="b-ikon" style="background:color-mix(in srgb,var(--toprak) 20%,transparent)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--toprak)" stroke-width="2"><path d="M9 11l3 3 8-8M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <h2>Günlük Görevler</h2>
+        </div>
+        <div class="gorev">
+          <span class="g-ikon">✅</span>
+          <span class="g-bilgi"><b>Bir tekrar tamamla</b><span class="det">tamamlandı · +30 XP</span></span>
+          <button class="btn birincil kucuk odul-parla">Ödülü al</button>
+        </div>
+        <div class="gorev">
+          <span class="g-ikon">✏️</span>
+          <span class="g-bilgi"><b>20 soru çöz</b>
+            <span class="g-cubuk"><i style="width:70%"></i></span>
+            <span class="det">14 / 20</span></span>
+        </div>
+        <div class="gorev">
+          <span class="g-ikon">🎯</span>
+          <span class="g-bilgi"><b>Bugün serini koru</b><span class="det">bir blok çöz · +15 XP</span></span>
+          <span class="rozet dogru">✓</span>
+        </div>
+      </section>
+
+      <!-- SINIF -->
+      <section class="kart canlan g3" aria-label="Sınıf">
+        <div class="baslik-satir">
+          <span class="b-ikon" style="background:color-mix(in srgb,var(--adacayi) 20%,transparent)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--vurgu)" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <h2>Sınıfın</h2>
+        </div>
+        <p style="font-size:14.5px"><b>Ahmet Hoca'nın sınıfı</b></p>
+        <p class="aciklama">28 öğrenci · Eylül 2026'dan beri üyesin</p>
+        <button class="btn dis kucuk" style="margin-top:12px">Sınıftan ayrıl</button>
+      </section>
+
+      <!-- AYARLAR -->
+      <section class="kart canlan g4" aria-label="Ayarlar">
+        <div class="baslik-satir">
+          <span class="b-ikon" style="background:color-mix(in srgb,var(--adacayi) 20%,transparent)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--vurgu)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></span>
+          <h2>Ayarlar</h2>
+        </div>
+        <div class="ayar"><span>Tema</span>
+          <div class="tema-secici"><button class="aktif">☀ Gün Işığı</button><button>☾ Gece Ormanı</button></div></div>
+        <div class="ayar"><span>Sesler</span><button class="anahtar" aria-label="Sesler açık"></button></div>
+        <div class="ayar"><span>Bildirimler</span><button class="anahtar" aria-label="Bildirimler açık"></button></div>
+        <div class="ayar"><span>Günlük hedef</span>
+          <div class="sayac"><button>−</button><b>30</b><button>+</button></div></div>
+      </section>
+    </div>
+  </div>
+
+  <details class="notlar">
+    <summary>Tasarım notları (inceleme için)</summary>
+    <ul>
+      <li><b>Hero:</b> avatar (12 seçenekli seçici ✎ ile açılır) · lig + seri + toplam soru çipleri ·
+        Seviye halkası ("Seviye 4 · Seviye 5'e 340 soru" — GOREV-004'ün düz adlarıyla, "Rütbe" yok).</li>
+      <li><b>Streak Fidanı (§5.3):</b> 5 kademe (Tohum→Ulu Ağaç); mevcut kademe sallanıyor + nokta imli;
+        gelecek kademeler soluk. Dondurma hakkı rozeti (mevcut freeze mekaniği).</li>
+      <li><b>Rozet galerisi:</b> GOREV-004 düz adlarıyla birebir; kilitliler soluk + koşul metni.
+        İkonlar yer tutucu emoji — final ikon seti ayrı görsel kart (çapa ikonunun değişimi dahil).</li>
+      <li><b>Tek birincil eylem:</b> "Ödülü al" (talep edilebilir görev) — nazik parıltıyla nefes alıyor.</li>
+      <li><b>Sınıf kartı:</b> bağlı durum gösterildi; bağlı DEĞİLSE aynı kart "koda katıl" girişine döner
+        (nötr tek mesaj kuralı). Ayrılma yıkıcı → Dialog'la onaylanır.</li>
+      <li><b>Ayarlar:</b> tema segmenti (varsayılan Gün Işığı) · ses/bildirim anahtarları · günlük hedef
+        sayacı — hepsi mevcut profil alanları (0019 beyaz listesindeki istemci-yazılabilir kolonlar).</li>
+      <li><b>Veri:</b> tüm sayılar gerçek uçlardan (profil/gamification/lig); veri yoksa panel gizlenir.</li>
+    </ul>
+  </details>
+</main>
+
+<script>
+  const btn=document.getElementById('temaBtn'),html=document.documentElement;
+  btn.addEventListener('click',()=>{const g=html.dataset.tema==='gun';html.dataset.tema=g?'gece':'gun';btn.textContent=g?'☀':'☾';});
+  const azalt=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  addEventListener('load',()=>{const h=document.getElementById('svHalka');
+    if(azalt){h.style.transition='none';h.style.strokeDashoffset='118.1';return}
+    requestAnimationFrame(()=>h.style.strokeDashoffset='118.1');});
+</script>
+</body>
+</html>

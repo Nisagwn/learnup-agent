@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FİDAN Önizleme — Öğrenci Röntgeni (Öğretmen)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+
+/* ═══ FİDAN v1.2 "Soft Doğa" — Gün Işığı (VARSAYILAN) ═══ */
+:root{
+  --zemin1:#F4F7F4; --zemin2:#E8EFE9;
+  --cam:rgba(255,255,255,.78); --cam-cizgi:rgba(46,79,58,.08);
+  --cam-koyu:rgba(255,255,255,.92);
+  --m1:#183121; --m2:#4A5D4E; --m3:#7C8F80;
+  --cta:#1E4620; --cta-metin:#F2F7F3; --vurgu:#2A5A3B;
+  --adacayi:#84A98C; --yaprak:#4FA56F; --toprak:#D4A373;
+  --v0:#EFF3EF; --v1:#DCE9DE; --v2:#BBD3C0; --v3:#9BBEA3; --v4:#6FA57F;
+  --dogru:#3E8E5A; --yanlis:#C25959; --uyari:#C98A3D;
+  --golge:0 8px 28px rgba(24,49,33,.07);
+  --gunes-lekesi:radial-gradient(circle, rgba(244,215,150,.28) 0%, transparent 70%);
+}
+html.gece{
+  --zemin1:#0C120E; --zemin2:#101A13;
+  --cam:rgba(16,26,19,.72); --cam-cizgi:rgba(148,180,155,.12);
+  --cam-koyu:rgba(20,32,24,.9);
+  --m1:#E5EFE7; --m2:#A7BCAC; --m3:#75887B;
+  --cta:#2E6B47; --cta-metin:#EAF4EC; --vurgu:#7FBF95;
+  --adacayi:#5E7D66; --yaprak:#4FA56F; --toprak:#B98F66;
+  --v0:#16211A; --v1:#1C2B21; --v2:#26402F; --v3:#33573F; --v4:#458257;
+  --dogru:#5FBF83; --yanlis:#D98A8A; --uyari:#D9A968;
+  --golge:0 8px 28px rgba(0,0,0,.35);
+  --gunes-lekesi:radial-gradient(circle, rgba(163,190,140,.07) 0%, transparent 70%);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--m1);
+  background:linear-gradient(160deg,var(--zemin1) 0%,var(--zemin2) 100%);
+  min-height:100vh;transition:background .4s,color .4s;overflow-x:hidden}
+h1,h2,h3,h4{font-family:'Outfit',sans-serif}
+.mono{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--m3);font-weight:500}
+
+.band{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;
+  padding:9px 22px;background:var(--cam-koyu);backdrop-filter:blur(16px);border-bottom:1px solid var(--cam-cizgi)}
+.band .mono{color:var(--vurgu)}
+.tema-dugme{font-family:'Inter';font-size:12.5px;font-weight:600;color:var(--m2);background:var(--v0);
+  border:1px solid var(--cam-cizgi);border-radius:12px;padding:7px 14px;cursor:pointer;transition:.2s}
+.tema-dugme:hover{color:var(--m1);border-color:var(--adacayi)}
+
+.ustbar{display:flex;align-items:center;gap:26px;max-width:1320px;margin:0 auto;padding:16px 28px 0;opacity:.92}
+.logo{font-family:'Outfit';font-weight:800;font-size:17px}
+.logo span{color:var(--yaprak)}
+.sekmeler{display:flex;gap:4px;font-size:13px;font-weight:500;color:var(--m3);flex-wrap:wrap}
+.sekmeler a{padding:7px 13px;border-radius:12px;text-decoration:none;color:inherit}
+.sekmeler a.aktif{color:var(--vurgu);background:var(--v1);font-weight:600;position:relative}
+.sekmeler a.aktif::after{content:'';position:absolute;left:50%;bottom:2px;transform:translateX(-50%);width:14px;height:2.5px;border-radius:2px;background:var(--yaprak)}
+.rol-cip{margin-left:auto;font-size:11px;font-weight:700;color:var(--vurgu);background:var(--v1);padding:5px 12px;border-radius:12px}
+
+.sahne{max-width:1320px;margin:0 auto;padding:22px 28px 80px;position:relative}
+.leke{position:fixed;border-radius:50%;pointer-events:none;z-index:0}
+.leke.a{width:520px;height:520px;top:-120px;right:-80px;background:var(--gunes-lekesi)}
+
+.kart{position:relative;z-index:2;background:var(--cam);backdrop-filter:blur(16px);
+  border:1px solid var(--cam-cizgi);border-radius:20px;box-shadow:var(--golge);
+  animation:giris .5s cubic-bezier(.2,.7,.3,1) both;transition:background .4s}
+@keyframes giris{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.g1{animation-delay:0s}.g2{animation-delay:.06s}.g3{animation-delay:.12s}.g4{animation-delay:.18s}.g5{animation-delay:.24s}
+
+.btn{font-family:'Inter';font-weight:600;font-size:12.5px;border-radius:12px;cursor:pointer;transition:.2s;border:none}
+.btn-birincil{background:var(--cta);color:var(--cta-metin);padding:11px 20px;box-shadow:0 6px 16px rgba(30,70,32,.25)}
+.btn-birincil:hover{filter:brightness(1.12)}
+.btn-soluk{background:var(--v0);color:var(--m2);padding:8px 14px;border:1px solid var(--cam-cizgi)}
+.btn-soluk:hover{color:var(--m1);border-color:var(--adacayi)}
+.btn-mini{background:var(--v1);color:var(--vurgu);padding:5px 11px;font-size:11px;border-radius:10px}
+.btn-mini:hover{background:var(--v2)}
+
+/* ── başlık kartı ── */
+.baslik{display:flex;align-items:center;gap:16px;padding:16px 22px;flex-wrap:wrap}
+.geri{font-size:12.5px;font-weight:600;color:var(--m3);text-decoration:none;padding:7px 12px;border-radius:12px;background:var(--v0);border:1px solid var(--cam-cizgi)}
+.geri:hover{color:var(--m1)}
+.avatar{width:52px;height:52px;border-radius:16px;background:var(--v2);display:flex;align-items:center;justify-content:center;
+  font-family:'Outfit';font-weight:800;font-size:17px;color:var(--vurgu)}
+.kimlik h1{font-size:19px;line-height:1.2}
+.kimlik .alt{display:flex;gap:8px;align-items:center;margin-top:4px;font-size:11.5px;color:var(--m3);flex-wrap:wrap}
+.kimlik .alt .cip{background:var(--v1);color:var(--vurgu);font-weight:600;padding:2.5px 9px;border-radius:9px;font-size:10.5px}
+.gezin{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.gezin .tus-ipucu{font-size:10.5px;color:var(--m3)}
+.gezin .ok{width:34px;height:34px;border-radius:11px;background:var(--v0);border:1px solid var(--cam-cizgi);
+  color:var(--m2);font-size:14px;cursor:pointer;transition:.2s}
+.gezin .ok:hover{color:var(--m1);border-color:var(--adacayi)}
+
+/* ── stat şeridi ── */
+.statlar{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}
+@media(max-width:980px){.statlar{grid-template-columns:repeat(2,1fr)}}
+.stat{padding:15px 18px;display:flex;align-items:center;gap:13px}
+.stat .icerik{min-width:0}
+.stat .deger{font-family:'Outfit';font-size:23px;font-weight:800;line-height:1}
+.stat .etiket{margin-top:5px;font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--m3)}
+.stat .alt{margin-top:4px;font-family:'JetBrains Mono';font-size:10px;color:var(--m3)}
+.delta-iyi{color:var(--dogru);font-size:12px;font-weight:700}
+.halka{transform:rotate(-90deg)}
+.halka .ray{stroke:var(--v0)}
+.halka .dolum{stroke:url(#hgrad);stroke-linecap:round}
+.halka-metin{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:'Outfit';font-weight:800;font-size:14px;color:var(--m1)}
+
+/* ── ana ızgara ── */
+.izgara{display:grid;grid-template-columns:1.9fr 1fr;gap:14px;margin-top:14px;align-items:start}
+@media(max-width:1020px){.izgara{grid-template-columns:1fr}}
+.kolon{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+.panel-ic{padding:18px 22px}
+.panel-bas{display:flex;align-items:center;gap:9px;margin-bottom:13px}
+.panel-bas h3{font-size:14px}
+.panel-bas .say{margin-left:auto;font-family:'JetBrains Mono';font-size:10.5px;color:var(--m3)}
+.panel-bas .rozet{margin-left:auto;font-size:10px;font-weight:700;padding:3px 10px;border-radius:9px}
+.rozet-teshis{background:color-mix(in srgb,var(--uyari) 16%,transparent);color:var(--uyari)}
+
+/* matris */
+.konu-blok{margin-bottom:15px}
+.konu-baslik{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.konu-baslik h4{font-size:12.5px;color:var(--m1)}
+.konu-baslik .ort{font-family:'JetBrains Mono';font-size:10px;color:var(--m3)}
+.konu-baslik .cizgi{flex:1;height:1px;background:var(--cam-cizgi)}
+.hucreler{display:flex;gap:7px;flex-wrap:wrap}
+.hucre{width:112px;border-radius:12px;padding:8px 10px;cursor:pointer;transition:.18s;position:relative}
+.hucre:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(24,49,33,.14)}
+.hucre .ad{font-size:10.5px;font-weight:600;line-height:1.3;color:var(--m1)}
+.hucre .deger{font-family:'JetBrains Mono';font-size:9.5px;color:var(--m2);margin-top:4px}
+.h1x{background:var(--v1)}.h2x{background:var(--v2)}.h3x{background:var(--v3)}.h4x{background:var(--v4)}
+.h4x .ad,.h4x .deger{color:#14301E}
+html.gece .h4x .ad,html.gece .h4x .deger{color:#EAF4EC}
+.hucre.olcumyok{border:1.5px dashed var(--adacayi);background:transparent}
+.lejant{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--m3);flex-wrap:wrap;margin-top:12px}
+.lejant i{width:14px;height:14px;border-radius:4px;display:inline-block}
+.lejant .bos{border:1.5px dashed var(--adacayi);background:transparent}
+
+/* trend */
+.grafik-kabuk{position:relative}
+.grafik-kabuk svg{width:100%;height:auto;display:block}
+.ref-etiket{position:absolute;right:8px;top:34px;font-family:'JetBrains Mono';font-size:9.5px;color:var(--toprak)}
+.eksen{font-family:'JetBrains Mono';font-size:9px;fill:var(--m3)}
+
+/* takvim */
+.takvim{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.takvim .gun-etiket{font-family:'JetBrains Mono';font-size:9px;color:var(--m3);text-align:center;padding-bottom:2px}
+.takvim i{aspect-ratio:1;border-radius:7px;display:block}
+.takvim .bugun{outline:2px solid var(--yaprak);outline-offset:1.5px}
+
+/* öncelikler */
+.oncelik{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:14px;margin-bottom:8px;border:1px solid transparent}
+.oncelik.bir{border-color:var(--yaprak);background:color-mix(in srgb,var(--yaprak) 7%,transparent)}
+.oncelik .mini-halka{flex-shrink:0;position:relative;width:38px;height:38px}
+.oncelik .bilgi{min-width:0;flex:1}
+.oncelik .bilgi b{font-size:12px;display:block;line-height:1.3}
+.oncelik .bilgi span{font-size:10.5px;color:var(--m3);display:block;margin-top:2px}
+.oncelik .no{font-family:'Outfit';font-weight:800;font-size:11px;color:var(--m3);width:18px;text-align:center}
+
+/* yanılgı teşhisi */
+.yanilgi{border:1px solid color-mix(in srgb,var(--uyari) 25%,transparent);border-radius:14px;padding:11px 13px;margin-bottom:9px}
+.yanilgi .ust{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.yanilgi .ust b{font-size:12px;line-height:1.35}
+.yanilgi .guven{font-family:'JetBrains Mono';font-size:10px;color:var(--m3);flex-shrink:0}
+.yanilgi .cipler{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.yanilgi .cip{font-size:10px;font-weight:600;padding:2.5px 9px;border-radius:9px}
+.cip-ders{background:var(--v1);color:var(--vurgu)}
+.cip-taksonomi{background:color-mix(in srgb,var(--uyari) 15%,transparent);color:var(--uyari)}
+.cip-sik{background:color-mix(in srgb,var(--yanlis) 12%,transparent);color:var(--yanlis)}
+.yanilgi .kanit{font-size:11px;color:var(--m2);line-height:1.55;margin-top:7px}
+.yanilgi .hipotez{font-size:10.5px;color:var(--m3);font-style:italic;margin-top:4px;line-height:1.5}
+
+/* hız */
+.hiz-satir{margin-bottom:11px}
+.hiz-satir .ust{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px}
+.hiz-satir .ust b{font-weight:600}
+.hiz-satir .ust span{font-family:'JetBrains Mono';font-size:10px;color:var(--m3)}
+.hiz-cubuk{height:12px;border-radius:6px;background:var(--v0);position:relative;overflow:visible}
+.hiz-cubuk i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--adacayi),var(--toprak))}
+.hiz-cubuk .im{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--m3);border-radius:1px}
+.hiz-not{font-size:10.5px;color:var(--m3);margin-top:8px;line-height:1.5}
+
+/* cevap logları */
+.tablo{width:100%;border-collapse:collapse;font-size:12px}
+.tablo th{text-align:left;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--m3);font-weight:500;padding:7px 10px;border-bottom:1px solid var(--cam-cizgi)}
+.tablo td{padding:9px 10px;border-bottom:1px solid var(--cam-cizgi);color:var(--m2)}
+.tablo td b{color:var(--m1);font-weight:600}
+.tablo tr:last-child td{border-bottom:none}
+.sonuc{font-size:10.5px;font-weight:700;padding:2.5px 10px;border-radius:9px}
+.sonuc-dogru{background:color-mix(in srgb,var(--dogru) 14%,transparent);color:var(--dogru)}
+.sonuc-yanlis{background:color-mix(in srgb,var(--yanlis) 13%,transparent);color:var(--yanlis)}
+.sayfalama{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px}
+.sayfalama button{width:30px;height:30px;border-radius:10px;border:1px solid var(--cam-cizgi);background:transparent;
+  color:var(--m2);font-size:12px;font-weight:600;cursor:pointer}
+.sayfalama button.aktif{background:var(--v1);color:var(--vurgu);border-color:var(--adacayi)}
+
+/* ödev geçmişi */
+.odev-satir{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--cam-cizgi);font-size:12px}
+.odev-satir:last-child{border-bottom:none}
+.odev-satir b{font-weight:600}
+.odev-satir .durum{margin-left:auto;font-size:10.5px;font-weight:700;padding:2.5px 10px;border-radius:9px}
+.durum-bitti{background:color-mix(in srgb,var(--dogru) 14%,transparent);color:var(--dogru)}
+.durum-surur{background:var(--v1);color:var(--vurgu)}
+.odev-satir .oran{font-family:'JetBrains Mono';font-size:10px;color:var(--m3)}
+
+.notlar{margin-top:36px;padding:26px 30px;background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:20px;position:relative;z-index:2}
+.notlar h3{font-size:14px;margin-bottom:14px;color:var(--m2)}
+.notlar ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.notlar li{font-size:12.5px;color:var(--m2);line-height:1.6;padding-left:18px;position:relative}
+.notlar li::before{content:'🌿';position:absolute;left:0;font-size:10px;top:2px}
+.notlar b{color:var(--m1);font-weight:600}
+.notlar code{font-family:'JetBrains Mono';font-size:11px;background:var(--v1);padding:1.5px 6px;border-radius:6px;color:var(--vurgu)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<div class="band">
+  <span class="mono">FİDAN ÖNİZLEME · ÖĞRENCİ RÖNTGENİ (ÖĞRETMEN) · V1</span>
+  <button class="tema-dugme" id="temaDugme">☾ Gece Ormanı'na geç</button>
+</div>
+
+<div class="leke a"></div>
+
+<nav class="ustbar">
+  <span class="logo">Learn<span>Up</span></span>
+  <div class="sekmeler">
+    <a class="aktif" href="#">Sınıf Panosu</a>
+    <a href="#">Isı Haritası</a>
+    <a href="#">Ödev Atölyesi</a>
+    <a href="#">Karşılaştırma</a>
+  </div>
+  <span class="rol-cip">ÖĞRETMEN</span>
+</nav>
+
+<main class="sahne">
+
+  <!-- ═══ BAŞLIK KARTI ═══ -->
+  <section class="kart g1 baslik">
+    <a class="geri" href="#">← Pano</a>
+    <div class="avatar">DK</div>
+    <div class="kimlik">
+      <h1>Deniz Kaya</h1>
+      <div class="alt">
+        <span class="cip">12. sınıf</span>
+        <span>son aktivite: bugün 14:20</span>
+        <span>·</span>
+        <span>bu hafta 46 soru</span>
+      </div>
+    </div>
+    <div class="gezin">
+      <span class="tus-ipucu">← → öğrenciler arasında gezinir · Esc panoya döner</span>
+      <button class="ok">←</button>
+      <button class="ok">→</button>
+      <button class="btn btn-birincil">Hedefli ödev gönder</button>
+    </div>
+  </section>
+
+  <!-- ═══ STAT ŞERİDİ ═══ -->
+  <div class="statlar">
+    <section class="kart g2 stat">
+      <div style="position:relative;width:64px;height:64px">
+        <svg class="halka" width="64" height="64" viewBox="0 0 64 64">
+          <defs><linearGradient id="hgrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#84A98C"/><stop offset="100%" stop-color="#4FA56F"/>
+          </linearGradient></defs>
+          <circle class="ray" cx="32" cy="32" r="27" fill="none" stroke-width="7"/>
+          <circle class="dolum" cx="32" cy="32" r="27" fill="none" stroke-width="7"
+            stroke-dasharray="169.6" stroke-dashoffset="64.4"/>
+        </svg>
+        <span class="halka-metin">%62</span>
+      </div>
+      <div class="icerik">
+        <div class="etiket">Genel Ustalık</div>
+        <div class="alt">çürüme uygulanmış · 41 kazanım</div>
+      </div>
+    </section>
+
+    <section class="kart g2 stat">
+      <div class="icerik">
+        <div class="deger">41</div>
+        <div class="etiket">Kapsama</div>
+        <div class="alt">268 müfredat kazanımı içinden</div>
+      </div>
+    </section>
+
+    <section class="kart g3 stat">
+      <div class="icerik">
+        <div class="deger">%71 <span class="delta-iyi">▲6</span></div>
+        <div class="etiket">7 Gün Doğruluk</div>
+        <div class="alt">46 soru · önceki 7 güne göre</div>
+      </div>
+      <svg width="64" height="24" viewBox="0 0 64 24" style="margin-left:auto;flex-shrink:0">
+        <polyline points="2,18 12,15 22,17 32,10 42,12 52,6 62,8" fill="none" stroke="var(--yaprak)" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </section>
+
+    <section class="kart g3 stat">
+      <div class="icerik">
+        <div class="deger">3</div>
+        <div class="etiket">Açık Yanılgı</div>
+        <div class="alt">5 kazanım öncelikli</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ═══ ANA IZGARA ═══ -->
+  <div class="izgara">
+    <div class="kolon">
+
+      <!-- USTALIK MATRİSİ -->
+      <section class="kart g3 panel-ic">
+        <div class="panel-bas">
+          <h3>Ustalık Matrisi</h3>
+          <span class="say">hücreye tıkla → set gönder</span>
+        </div>
+
+        <div class="konu-blok">
+          <div class="konu-baslik"><h4>Matematik</h4><span class="ort">ort %48</span><i class="cizgi"></i></div>
+          <div class="hucreler">
+            <div class="hucre h1x"><div class="ad">Türev — zincir kuralı</div><div class="deger">%31 · 12 soru</div></div>
+            <div class="hucre h2x"><div class="ad">Limit ve süreklilik</div><div class="deger">%47 · 9 soru</div></div>
+            <div class="hucre h2x"><div class="ad">İntegral — alan</div><div class="deger">%52 · 7 soru</div></div>
+            <div class="hucre h3x"><div class="ad">Logaritma</div><div class="deger">%64 · 15 soru</div></div>
+            <div class="hucre olcumyok"><div class="ad">Diziler</div><div class="deger">ölçüm yok</div></div>
+          </div>
+        </div>
+
+        <div class="konu-blok">
+          <div class="konu-baslik"><h4>Fizik</h4><span class="ort">ort %66</span><i class="cizgi"></i></div>
+          <div class="hucreler">
+            <div class="hucre h2x"><div class="ad">Elektrik alan</div><div class="deger">%55 · 8 soru</div></div>
+            <div class="hucre h3x"><div class="ad">Newton yasaları</div><div class="deger">%68 · 11 soru</div></div>
+            <div class="hucre h4x"><div class="ad">Basit harmonik</div><div class="deger">%81 · 6 soru</div></div>
+          </div>
+        </div>
+
+        <div class="konu-blok">
+          <div class="konu-baslik"><h4>Kimya</h4><span class="ort">ort %73</span><i class="cizgi"></i></div>
+          <div class="hucreler">
+            <div class="hucre h3x"><div class="ad">Mol kavramı</div><div class="deger">%69 · 9 soru</div></div>
+            <div class="hucre h4x"><div class="ad">Kimyasal denge</div><div class="deger">%77 · 5 soru</div></div>
+          </div>
+        </div>
+
+        <div class="lejant">
+          <i style="background:var(--v1)"></i>başlangıç
+          <i style="background:var(--v2)"></i>gelişiyor
+          <i style="background:var(--v3)"></i>oturuyor
+          <i style="background:var(--v4)"></i>güçlü
+          <i class="bos"></i>ölçüm yok
+        </div>
+      </section>
+
+      <!-- TREND -->
+      <section class="kart g4 panel-ic">
+        <div class="panel-bas">
+          <h3>Doğruluk Trendi</h3>
+          <span class="say">son 30 gün · günlük hacim çubuklarıyla</span>
+        </div>
+        <div class="grafik-kabuk">
+          <svg viewBox="0 0 640 190">
+            <text class="eksen" x="4" y="14">%100</text>
+            <text class="eksen" x="12" y="80">%50</text>
+            <text class="eksen" x="18" y="146">%0</text>
+            <line x1="38" y1="10" x2="632" y2="10" stroke="var(--cam-cizgi)"/>
+            <line x1="38" y1="76" x2="632" y2="76" stroke="var(--cam-cizgi)"/>
+            <line x1="38" y1="142" x2="632" y2="142" stroke="var(--cam-cizgi)"/>
+            <!-- sınıf ortalaması referansı -->
+            <line x1="38" y1="58" x2="632" y2="58" stroke="var(--toprak)" stroke-width="1.5" stroke-dasharray="6 5"/>
+            <!-- günlük hacim -->
+            <g fill="var(--adacayi)" opacity=".28">
+              <rect x="60" y="158" width="10" height="18" rx="2"/><rect x="104" y="150" width="10" height="26" rx="2"/>
+              <rect x="148" y="162" width="10" height="14" rx="2"/><rect x="192" y="144" width="10" height="32" rx="2"/>
+              <rect x="236" y="154" width="10" height="22" rx="2"/><rect x="280" y="148" width="10" height="28" rx="2"/>
+              <rect x="324" y="160" width="10" height="16" rx="2"/><rect x="368" y="140" width="10" height="36" rx="2"/>
+              <rect x="412" y="152" width="10" height="24" rx="2"/><rect x="456" y="146" width="10" height="30" rx="2"/>
+              <rect x="500" y="156" width="10" height="20" rx="2"/><rect x="544" y="138" width="10" height="38" rx="2"/>
+              <rect x="588" y="148" width="10" height="28" rx="2"/>
+            </g>
+            <!-- doğruluk çizgisi -->
+            <polyline points="65,96 109,88 153,102 197,78 241,84 285,70 329,80 373,62 417,68 461,54 505,60 549,44 593,50"
+              fill="none" stroke="var(--yaprak)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <g fill="var(--yaprak)">
+              <circle cx="65" cy="96" r="3"/><circle cx="197" cy="78" r="3"/><circle cx="329" cy="80" r="3"/>
+              <circle cx="461" cy="54" r="3"/><circle cx="593" cy="50" r="3"/>
+            </g>
+            <text class="eksen" x="56" y="184">24 Haz</text>
+            <text class="eksen" x="310" y="184">8 Tem</text>
+            <text class="eksen" x="570" y="184">23 Tem</text>
+          </svg>
+          <span class="ref-etiket">— — sınıf ort. %64</span>
+        </div>
+      </section>
+
+      <!-- TAKVİM -->
+      <section class="kart g5 panel-ic">
+        <div class="panel-bas">
+          <h3>Çalışma Takvimi</h3>
+          <span class="say">son 6 hafta</span>
+        </div>
+        <div class="takvim">
+          <span class="gun-etiket">Pt</span><span class="gun-etiket">Sa</span><span class="gun-etiket">Ça</span>
+          <span class="gun-etiket">Pe</span><span class="gun-etiket">Cu</span><span class="gun-etiket">Ct</span><span class="gun-etiket">Pz</span>
+          <i style="background:var(--v1)"></i><i style="background:var(--v2)"></i><i style="background:var(--v0)"></i><i style="background:var(--v2)"></i><i style="background:var(--v3)"></i><i style="background:var(--v1)"></i><i style="background:var(--v0)"></i>
+          <i style="background:var(--v2)"></i><i style="background:var(--v3)"></i><i style="background:var(--v2)"></i><i style="background:var(--v0)"></i><i style="background:var(--v2)"></i><i style="background:var(--v4)"></i><i style="background:var(--v1)"></i>
+          <i style="background:var(--v0)"></i><i style="background:var(--v2)"></i><i style="background:var(--v3)"></i><i style="background:var(--v2)"></i><i style="background:var(--v1)"></i><i style="background:var(--v0)"></i><i style="background:var(--v2)"></i>
+          <i style="background:var(--v3)"></i><i style="background:var(--v4)"></i><i style="background:var(--v2)"></i><i style="background:var(--v3)"></i><i style="background:var(--v2)"></i><i style="background:var(--v1)"></i><i style="background:var(--v0)"></i>
+          <i style="background:var(--v2)"></i><i style="background:var(--v3)"></i><i style="background:var(--v4)"></i><i style="background:var(--v3)"></i><i style="background:var(--v2)"></i><i style="background:var(--v3)"></i><i style="background:var(--v1)"></i>
+          <i style="background:var(--v3)"></i><i style="background:var(--v2)"></i><i style="background:var(--v4)"></i><i style="background:var(--v3)"></i><i style="background:var(--v3)"></i><i style="background:var(--v0)"></i><i class="bugun" style="background:var(--v2)"></i>
+        </div>
+      </section>
+
+      <!-- CEVAP LOGLARI -->
+      <section class="kart g5 panel-ic">
+        <div class="panel-bas">
+          <h3>Cevap Logları</h3>
+          <span class="say">142 kayıt · sayfa 1/15</span>
+        </div>
+        <div style="overflow-x:auto">
+        <table class="tablo">
+          <thead><tr><th>Tarih</th><th>Kazanım</th><th>Sonuç</th><th>Süre</th><th>Seçilen</th></tr></thead>
+          <tbody>
+            <tr><td>bugün 14:20</td><td><b>Türev — zincir kuralı</b> · Matematik</td><td><span class="sonuc sonuc-yanlis">yanlış</span></td><td>1 dk 42 sn</td><td>B (doğru: D)</td></tr>
+            <tr><td>bugün 14:17</td><td><b>Türev — zincir kuralı</b> · Matematik</td><td><span class="sonuc sonuc-dogru">doğru</span></td><td>58 sn</td><td>A</td></tr>
+            <tr><td>bugün 14:12</td><td><b>Elektrik alan</b> · Fizik</td><td><span class="sonuc sonuc-dogru">doğru</span></td><td>1 dk 05 sn</td><td>C</td></tr>
+            <tr><td>dün 19:41</td><td><b>Limit ve süreklilik</b> · Matematik</td><td><span class="sonuc sonuc-yanlis">yanlış</span></td><td>2 dk 18 sn</td><td>E (doğru: B)</td></tr>
+            <tr><td>dün 19:35</td><td><b>Mol kavramı</b> · Kimya</td><td><span class="sonuc sonuc-dogru">doğru</span></td><td>49 sn</td><td>D</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <div class="sayfalama">
+          <button>‹</button><button class="aktif">1</button><button>2</button><button>3</button><button>›</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- ═══ SAĞ KOLON ═══ -->
+    <div class="kolon">
+
+      <!-- ÖNCELİKLER -->
+      <section class="kart g3 panel-ic">
+        <div class="panel-bas">
+          <h3>Önce Bunlara Çalışsın</h3>
+        </div>
+        <div class="oncelik bir">
+          <span class="no">1</span>
+          <div class="mini-halka">
+            <svg class="halka" width="38" height="38" viewBox="0 0 38 38">
+              <circle class="ray" cx="19" cy="19" r="15" fill="none" stroke-width="4.5"/>
+              <circle class="dolum" cx="19" cy="19" r="15" fill="none" stroke-width="4.5" stroke-dasharray="94.2" stroke-dashoffset="65"/>
+            </svg>
+            <span class="halka-metin" style="font-size:9px">%31</span>
+          </div>
+          <div class="bilgi">
+            <b>Türev — zincir kuralı</b>
+            <span>ustalık düşük + açık yanılgı kaydı var</span>
+          </div>
+          <button class="btn btn-mini">Set gönder</button>
+        </div>
+        <div class="oncelik">
+          <span class="no">2</span>
+          <div class="mini-halka">
+            <svg class="halka" width="38" height="38" viewBox="0 0 38 38">
+              <circle class="ray" cx="19" cy="19" r="15" fill="none" stroke-width="4.5"/>
+              <circle class="dolum" cx="19" cy="19" r="15" fill="none" stroke-width="4.5" stroke-dasharray="94.2" stroke-dashoffset="50"/>
+            </svg>
+            <span class="halka-metin" style="font-size:9px">%47</span>
+          </div>
+          <div class="bilgi">
+            <b>Limit ve süreklilik</b>
+            <span>16 gündür tekrar edilmedi — çürüme başladı</span>
+          </div>
+          <button class="btn btn-mini">Set gönder</button>
+        </div>
+        <div class="oncelik">
+          <span class="no">3</span>
+          <div class="mini-halka">
+            <svg class="halka" width="38" height="38" viewBox="0 0 38 38">
+              <circle class="ray" cx="19" cy="19" r="15" fill="none" stroke-width="4.5"/>
+              <circle class="dolum" cx="19" cy="19" r="15" fill="none" stroke-width="4.5" stroke-dasharray="94.2" stroke-dashoffset="42.4"/>
+            </svg>
+            <span class="halka-metin" style="font-size:9px">%55</span>
+          </div>
+          <div class="bilgi">
+            <b>Elektrik alan</b>
+            <span>doğruluk dalgalı — pekişmemiş</span>
+          </div>
+          <button class="btn btn-mini">Set gönder</button>
+        </div>
+        <div class="oncelik" style="border:1.5px dashed var(--adacayi)">
+          <span class="no">•</span>
+          <div class="bilgi">
+            <b>Diziler</b>
+            <span>hiç ölçülmedi — tanışma seti önerilir</span>
+          </div>
+          <button class="btn btn-mini">Set gönder</button>
+        </div>
+      </section>
+
+      <!-- YANILGI TEŞHİSİ -->
+      <section class="kart g4 panel-ic">
+        <div class="panel-bas">
+          <h3>Yanılgı Teşhisi</h3>
+          <span class="rozet rozet-teshis">yalnız öğretmen görür</span>
+        </div>
+
+        <div class="yanilgi">
+          <div class="ust">
+            <b>Zincir kuralında iç türevi atlıyor</b>
+            <span class="guven">güven %82</span>
+          </div>
+          <div class="cipler">
+            <span class="cip cip-ders">Matematik</span>
+            <span class="cip cip-taksonomi">işlem adımı atlama</span>
+            <span class="cip cip-sik">sık seçilen: B</span>
+          </div>
+          <p class="kanit">Son 5 yanlışın 4'ünde dış fonksiyonun türevi doğru, iç fonksiyon çarpanı eksik. Çeldirici B tam bu hatayı hedefliyor.</p>
+          <p class="hipotez">Önkoşul hipotezi: bileşke fonksiyon kavrayışı eksik olabilir.</p>
+        </div>
+
+        <div class="yanilgi">
+          <div class="ust">
+            <b>Limitte soldan/sağdan ayrımını karıştırıyor</b>
+            <span class="guven">güven %64</span>
+          </div>
+          <div class="cipler">
+            <span class="cip cip-ders">Matematik</span>
+            <span class="cip cip-taksonomi">kavram karışması</span>
+            <span class="cip cip-sik">sık seçilen: E</span>
+          </div>
+          <p class="kanit">Parçalı fonksiyon sorularında tek yönlü limiti çift yönlü sanıp "limit yoktur" şıkkına yöneliyor.</p>
+        </div>
+
+        <div class="yanilgi">
+          <div class="ust">
+            <b>Elektrik alanda vektör yönünü ihmal ediyor</b>
+            <span class="guven">güven %57</span>
+          </div>
+          <div class="cipler">
+            <span class="cip cip-ders">Fizik</span>
+            <span class="cip cip-taksonomi">model eksikliği</span>
+          </div>
+          <p class="kanit">Skaler toplama eğilimi: iki yük arasındaki net alan sorularında büyüklükleri doğrudan topluyor.</p>
+        </div>
+      </section>
+
+      <!-- HIZ -->
+      <section class="kart g5 panel-ic">
+        <div class="panel-bas">
+          <h3>Hız</h3>
+          <span class="say">hedef imi 40 sn</span>
+        </div>
+        <div class="hiz-satir">
+          <div class="ust"><b>İntegral — alan</b><span>ort 1 dk 38 sn</span></div>
+          <div class="hiz-cubuk"><i style="width:82%"></i><span class="im" style="left:34%"></span></div>
+        </div>
+        <div class="hiz-satir">
+          <div class="ust"><b>Logaritma</b><span>ort 1 dk 04 sn</span></div>
+          <div class="hiz-cubuk"><i style="width:54%"></i><span class="im" style="left:34%"></span></div>
+        </div>
+        <p class="hiz-not">Doğru ama yavaş: bu kazanımlarda bilgi oturuyor, otomasyon eksik. Süre baskılı mini setler işe yarar.</p>
+      </section>
+
+      <!-- ÖDEV GEÇMİŞİ -->
+      <section class="kart g5 panel-ic">
+        <div class="panel-bas">
+          <h3>Ödev Geçmişi</h3>
+        </div>
+        <div class="odev-satir">
+          <b>Türev tekrar seti</b><span class="oran">7/10</span>
+          <span class="durum durum-surur">sürüyor</span>
+        </div>
+        <div class="odev-satir">
+          <b>Limit hazırlık</b><span class="oran">10/10 · %60</span>
+          <span class="durum durum-bitti">tamamlandı</span>
+        </div>
+        <div class="odev-satir">
+          <b>Fizik karma</b><span class="oran">8/8 · %75</span>
+          <span class="durum durum-bitti">tamamlandı</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ═══ NOTLAR ═══ -->
+  <div class="notlar">
+    <h3>Tasarım notları — Öğrenci Röntgeni (uygulama kartına girecek)</h3>
+    <ul>
+      <li><b>"Aynı ürün" ilkesi:</b> paneller öğrencinin Analizler ekranından (<code>rontgen.tsx</code>) AYNEN gelir; öğretmen farkı yalnız eylem fiili (<code>Set gönder</code>) ve <b>teşhis dilinin açık olması</b>. Tüm veriler temsilîdir.</li>
+      <li><b>Teşhis dili YALNIZ öğretmende:</b> taksonomi çipleri, güven yüzdesi, kanıt cümlesi ve önkoşul hipotezi öğrenci ucunda hiç dönmez — panel rozeti bunu açıkça söyler.</li>
+      <li><b>Tek birincil eylem:</b> başlıktaki "Hedefli ödev gönder" (koyu). Öncelik satırları ve matris hücreleri yumuşak <code>Set gönder</code> pilleriyle Ödev Atölyesi'ne ÖN-DOLU gider.</li>
+      <li><b>Sınıf ortalaması referans çizgisi</b> trend'de kesikli toprak tonu (EKRAN-HARITASI [HAZIR] maddesi — sınıf özeti verisi zaten çekiliyor).</li>
+      <li><b>Klavye:</b> ← → roster sırasında öğrenci değiştirir, Esc panoya döner (mevcut davranış korunur; girdi alanındayken devre dışı).</li>
+      <li><b>null≠0:</b> ölçülmeyen kazanım kesikli "ölçüm yok" hücresi; trend/log verisi olmayan öğrencide paneller kendini gizler, boş durumda tek birincil "Tanışma seti gönder".</li>
+      <li><b>Cevap Logları</b> (EKRAN-HARITASI §13): sayfalı tablo — sonuç HER ZAMAN kelimeli rozet; "seçilen şık" yanlışsa doğru şık yanında gösterilir. <b>Sunucu ucu doğrulanacak</b> — sayfalı log ucu yoksa BACKEND kartı önerilir.</li>
+      <li><b>Hareket-azalt:</b> kart giriş animasyonları ve hover büyümeleri <code>prefers-reduced-motion</code>'da tamamen durur.</li>
+    </ul>
+  </div>
+</main>
+
+<script>
+const dugme = document.getElementById('temaDugme');
+dugme.addEventListener('click', () => {
+  const gece = document.documentElement.classList.toggle('gece');
+  dugme.textContent = gece ? '☀ Gün Işığı\'na dön' : '☾ Gece Ormanı\'na geç';
+});
+</script>
+</body>
+</html>

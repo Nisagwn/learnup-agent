@@ -99,7 +99,33 @@ const OZGUNLUK_ESIKLERI: Record<string, number> = {
   'Kimya': 0.56,
   'Türk Dili ve Edebiyatı': 0.43,
 }
-export const ozgunlukEsigi = (subject: string): number => OZGUNLUK_ESIKLERI[subject] ?? ESIK_TABAN
+
+/**
+ * DB'DEN GELEN EŞİK TABLOSU (0025) — yönetici panelinden düzenlenir.
+ *
+ * ⚠️ NEDEN ENJEKSİYON, DOĞRUDAN SORGU DEĞİL: bu dosya bağımlılıksız bir util'dir ve
+ * eval script'leri dahil her yerden import edilir. İçine Supabase istemcisi koymak,
+ * saf bir benzerlik kütüphanesini veritabanına bağımlı hâle getirirdi. Okuma işini
+ * lib/ozgunluk-esik.ts yapar ve sonucu buraya YAZAR.
+ *
+ * ⚠️ NEDEN `ozgunlukEsigi` HÂLÂ SENKRON: üretim hattının sıcak yolunda (generation.ts,
+ * aday başına çağrılıyor) ve eval'de kullanılıyor. Async yapmak o yolları da async'e
+ * çevirirdi; kazanç yok, kırılma riski çok. Tazeleme ARKA PLANDA olur, okuma anlıktır.
+ *
+ * null = DB'den hiç okunamadı → kod tablosu geçerli. Üretim ASLA eşiksiz kalmaz.
+ */
+let DB_ESIKLERI: Readonly<Record<string, number>> | null = null
+
+/** lib/ozgunluk-esik.ts çağırır. `null` geçmek kod tablosuna geri döner. */
+export function esikleriAyarla(tablo: Record<string, number> | null): void {
+  DB_ESIKLERI = tablo ? Object.freeze({ ...tablo }) : null
+}
+
+/** Eşikler DB'den mi geliyor? Panel bunu söylemek zorunda (sessiz fallback yok). */
+export const esikKaynagiDB = (): boolean => DB_ESIKLERI !== null
+
+export const ozgunlukEsigi = (subject: string): number =>
+  DB_ESIKLERI?.[subject] ?? OZGUNLUK_ESIKLERI[subject] ?? ESIK_TABAN
 
 const SHINGLE = 4
 

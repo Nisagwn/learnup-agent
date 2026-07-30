@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FİDAN Önizleme — Kullanıcılar (Yönetici)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+:root{
+  --zemin1:#F4F7F4; --zemin2:#E8EFE9; --cam:rgba(255,255,255,.78); --cam-cizgi:rgba(46,79,58,.08);
+  --cam-koyu:rgba(255,255,255,.92); --m1:#183121; --m2:#4A5D4E; --m3:#7C8F80;
+  --cta:#1E4620; --cta-metin:#F2F7F3; --vurgu:#2A5A3B; --adacayi:#84A98C; --yaprak:#4FA56F; --toprak:#D4A373;
+  --v0:#EFF3EF; --v1:#DCE9DE; --v2:#BBD3C0; --v3:#9BBEA3; --v4:#6FA57F;
+  --dogru:#3E8E5A; --yanlis:#C25959; --uyari:#C98A3D; --bilgi:#0E8FA3;
+  --golge:0 8px 28px rgba(24,49,33,.07); --gunes-lekesi:radial-gradient(circle, rgba(244,215,150,.28) 0%, transparent 70%);
+}
+html.gece{
+  --zemin1:#0C120E; --zemin2:#101A13; --cam:rgba(16,26,19,.72); --cam-cizgi:rgba(148,180,155,.12);
+  --cam-koyu:rgba(20,32,24,.9); --m1:#E5EFE7; --m2:#A7BCAC; --m3:#75887B;
+  --cta:#2E6B47; --cta-metin:#EAF4EC; --vurgu:#7FBF95; --adacayi:#5E7D66; --yaprak:#4FA56F; --toprak:#B98F66;
+  --v0:#16211A; --v1:#1C2B21; --v2:#26402F; --v3:#33573F; --v4:#458257;
+  --dogru:#5FBF83; --yanlis:#D98A8A; --uyari:#D9A968; --bilgi:#5BC8D9;
+  --golge:0 8px 28px rgba(0,0,0,.35); --gunes-lekesi:radial-gradient(circle, rgba(163,190,140,.07) 0%, transparent 70%);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--m1);background:linear-gradient(160deg,var(--zemin1) 0%,var(--zemin2) 100%);min-height:100vh;transition:background .4s,color .4s;overflow-x:hidden}
+h1,h2,h3,h4{font-family:'Outfit',sans-serif}
+.mono{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--m3);font-weight:500}
+.band{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:9px 22px;background:var(--cam-koyu);backdrop-filter:blur(16px);border-bottom:1px solid var(--cam-cizgi)}
+.band .mono{color:var(--vurgu)}
+.tema-dugme{font-family:'Inter';font-size:12.5px;font-weight:600;color:var(--m2);background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:12px;padding:7px 14px;cursor:pointer;transition:.2s}
+.tema-dugme:hover{color:var(--m1);border-color:var(--adacayi)}
+.ustbar{display:flex;align-items:center;gap:26px;max-width:1320px;margin:0 auto;padding:16px 28px 0;opacity:.92}
+.logo{font-family:'Outfit';font-weight:800;font-size:17px}.logo span{color:var(--yaprak)}
+.sekmeler{display:flex;gap:4px;font-size:13px;font-weight:500;color:var(--m3);flex-wrap:wrap}
+.sekmeler a{padding:7px 13px;border-radius:12px;text-decoration:none;color:inherit}
+.sekmeler a.aktif{color:var(--vurgu);background:var(--v1);font-weight:600;position:relative}
+.sekmeler a.aktif::after{content:'';position:absolute;left:50%;bottom:2px;transform:translateX(-50%);width:14px;height:2.5px;border-radius:2px;background:var(--yaprak)}
+.rol-cip{margin-left:auto;font-size:11px;font-weight:700;color:var(--toprak);background:color-mix(in srgb,var(--toprak) 15%,transparent);padding:5px 12px;border-radius:12px}
+.sahne{max-width:1320px;margin:0 auto;padding:22px 28px 80px;position:relative}
+.leke{position:fixed;border-radius:50%;pointer-events:none;z-index:0}
+.leke.a{width:520px;height:520px;top:-120px;right:-80px;background:var(--gunes-lekesi)}
+.kart{position:relative;z-index:2;background:var(--cam);backdrop-filter:blur(16px);border:1px solid var(--cam-cizgi);border-radius:20px;box-shadow:var(--golge);animation:giris .5s cubic-bezier(.2,.7,.3,1) both;transition:background .4s}
+@keyframes giris{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.g1{animation-delay:0s}.g2{animation-delay:.06s}.g3{animation-delay:.12s}.g4{animation-delay:.18s}
+.baslik{padding:16px 22px}.baslik h1{font-size:20px}.baslik .alt{font-size:12.5px;color:var(--m3);margin-top:4px;line-height:1.5}
+.durum{float:right;font-family:'JetBrains Mono';font-size:10.5px;padding:5px 12px;border-radius:11px;background:color-mix(in srgb,var(--uyari) 14%,transparent);color:var(--uyari)}
+.statlar{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}
+@media(max-width:980px){.statlar{grid-template-columns:repeat(2,1fr)}}
+.stat{padding:15px 18px;text-align:left}
+.stat.neon{border:1.5px solid var(--uyari);cursor:pointer}
+.stat .deger{font-family:'Outfit';font-size:23px;font-weight:800;line-height:1;margin-top:5px}
+.stat .deger.uyari{color:var(--uyari)}
+.stat .etiket{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--m3)}
+.stat .alt{margin-top:4px;font-size:10.5px;color:var(--m3)}
+.izgara{display:grid;grid-template-columns:1.9fr 1fr;gap:14px;margin-top:20px;align-items:start}
+@media(max-width:1020px){.izgara{grid-template-columns:1fr}}
+.kolon{display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel-ic{padding:18px 22px}
+.panel-bas{display:flex;align-items:center;gap:9px;margin-bottom:13px;flex-wrap:wrap}
+.panel-bas h3{font-size:14px}
+.segment{margin-left:auto;display:inline-flex;background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:12px;padding:3px;gap:2px}
+.segment button{font-family:'Inter';font-size:12px;font-weight:600;color:var(--m3);background:transparent;border:none;border-radius:9px;padding:6px 12px;cursor:pointer;min-height:0}
+.segment button.aktif{background:var(--cam-koyu);color:var(--vurgu);box-shadow:0 2px 8px rgba(24,49,33,.08)}
+.arac{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.ara{flex:1;min-width:200px;display:flex;align-items:center;gap:8px;border:1.5px solid var(--cam-cizgi);border-radius:12px;padding:9px 13px;color:var(--m3)}
+.ara input{flex:1;border:none;background:transparent;outline:none;font-size:13px;color:var(--m1)}
+.filtre-cip{font-family:'Inter';font-size:12px;font-weight:600;color:var(--m2);background:transparent;border:1.5px solid var(--cam-cizgi);border-radius:12px;padding:8px 13px;cursor:pointer;min-height:44px}
+.filtre-cip.aktif{color:var(--vurgu);background:var(--v1);border-color:var(--adacayi)}
+.utablo{width:100%;border-collapse:collapse;font-size:12.5px}
+.utablo th{text-align:left;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--m3);font-weight:500;padding:7px 10px;border-bottom:1px solid var(--cam-cizgi)}
+.utablo td{padding:10px;border-bottom:1px solid var(--cam-cizgi);color:var(--m2)}
+.utablo tr{cursor:pointer}
+.utablo tr.secili td{background:var(--v1)}
+.utablo tr:hover td{background:var(--v0)}
+.utablo b{color:var(--m1);font-weight:600}
+.utablo .epost{font-family:'JetBrains Mono';font-size:10.5px;color:var(--m3)}
+.rrozet{font-size:10px;font-weight:700;padding:2.5px 9px;border-radius:8px;white-space:nowrap}
+.r-student{background:var(--v1);color:var(--vurgu)}
+.r-teacher{background:color-mix(in srgb,var(--bilgi) 14%,transparent);color:var(--bilgi)}
+.r-admin{background:color-mix(in srgb,var(--toprak) 16%,transparent);color:var(--toprak)}
+.r-onaysiz{background:color-mix(in srgb,var(--uyari) 15%,transparent);color:var(--uyari)}
+.mini-onay{background:var(--cta);color:var(--cta-metin);border:none;border-radius:9px;padding:5px 11px;font-size:10.5px;font-weight:600;cursor:pointer;min-height:34px}
+.sayfalama{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:12px;border-top:1px solid var(--cam-cizgi);font-family:'JetBrains Mono';font-size:11px;color:var(--m3)}
+.sayfalama button{background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:10px;padding:6px 13px;font-size:11.5px;font-weight:600;color:var(--m2);cursor:pointer;min-height:0}
+/* detay paneli */
+.detay{padding:18px 20px}
+.detay .ad{font-family:'Outfit';font-size:16px;font-weight:800}
+.detay .epost{font-family:'JetBrains Mono';font-size:11px;color:var(--m3);margin-top:2px}
+.detay .cipler{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.dchip{font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:9px;background:var(--v0);color:var(--m2);border:1px solid var(--cam-cizgi)}
+.dchip.sen{background:color-mix(in srgb,var(--bilgi) 12%,transparent);color:var(--bilgi);border:none}
+.bolum{margin-top:16px;padding-top:12px;border-top:1px solid var(--cam-cizgi)}
+.bolum .etiket{font-family:'Outfit';font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--m3);margin-bottom:8px}
+.aktif-izgara{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px}
+.aktif-izgara .s{display:flex;justify-content:space-between;gap:8px}
+.aktif-izgara .s span:first-child{color:var(--m3)}
+.aktif-izgara .s span:last-child{font-family:'JetBrains Mono';color:var(--m2)}
+.basvuru-kutu{background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:12px;padding:11px 13px;margin-top:6px}
+.basvuru-not{font-size:12px;font-style:italic;color:var(--m2);margin-top:8px;line-height:1.5}
+.btn{font-family:'Inter';font-weight:600;font-size:12px;border-radius:11px;cursor:pointer;border:none;min-height:40px}
+.btn-birincil{background:var(--cta);color:var(--cta-metin);padding:9px 16px}
+.btn-soluk{background:var(--v0);color:var(--m2);border:1px solid var(--cam-cizgi);padding:9px 14px}
+.detay .eylemler{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--cam-cizgi)}
+.kilit-not{font-size:11px;color:var(--m3);margin-top:8px;line-height:1.5}
+/* denetim akışı */
+.denetim-satir{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--cam-cizgi);font-size:11.5px}
+.denetim-satir:last-child{border-bottom:none}
+.denetim-satir .zaman{font-family:'JetBrains Mono';font-size:10px;color:var(--m3);white-space:nowrap}
+.denetim-satir .eylem{color:var(--m2)}
+.denetim-satir .eylem b{color:var(--m1);font-weight:600}
+.notlar{margin-top:36px;padding:26px 30px;background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:20px;position:relative;z-index:2}
+.notlar h3{font-size:14px;margin-bottom:14px;color:var(--m2)}
+.notlar ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.notlar li{font-size:12.5px;color:var(--m2);line-height:1.6;padding-left:18px;position:relative}
+.notlar li::before{content:'🌿';position:absolute;left:0;font-size:10px;top:2px}
+.notlar b{color:var(--m1);font-weight:600}
+.notlar code{font-family:'JetBrains Mono';font-size:11px;background:var(--v1);padding:1.5px 6px;border-radius:6px;color:var(--vurgu)}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="band"><span class="mono">FİDAN ÖNİZLEME · KULLANICILAR (YÖNETİCİ) · V1</span><button class="tema-dugme" id="temaDugme">☾ Gece Ormanı'na geç</button></div>
+<div class="leke a"></div>
+<nav class="ustbar">
+  <span class="logo">Learn<span>Up</span></span>
+  <div class="sekmeler"><a href="#">Yönetim</a><a class="aktif" href="#">Kullanıcılar</a><a href="#">Soru Havuzu</a><a href="#">Özgünlük</a></div>
+  <span class="rol-cip">YÖNETİCİ</span>
+</nav>
+<main class="sahne">
+  <section class="kart g1 baslik">
+    <span class="durum">2 öğretmen onay bekliyor · 1 başvuru bekliyor</span>
+    <h1>Kullanıcılar</h1>
+    <p class="alt">Hesaplar, roller ve sınıf bağları — sistemdeki her yetkinin tek yönetim noktası.</p>
+  </section>
+
+  <div class="statlar">
+    <section class="kart g2 stat neon">
+      <div class="etiket">Onay Bekleyen</div>
+      <div class="deger uyari">2</div>
+      <div class="alt">öğretmen panele giremiyor — filtrelemek için tıkla</div>
+    </section>
+    <section class="kart g2 stat"><div class="etiket">Toplam Hesap</div><div class="deger">1 284</div><div class="alt">filtresiz</div></section>
+    <section class="kart g3 stat"><div class="etiket">Bu Sayfada</div><div class="deger">50</div><div class="alt">1/26. sayfa</div></section>
+    <section class="kart g3 stat"><div class="etiket">Denetim Kaydı</div><div class="deger">347</div><div class="alt">toplam işlem</div></section>
+  </div>
+
+  <div class="izgara">
+    <div class="kolon">
+      <section class="kart g3 panel-ic">
+        <div class="panel-bas">
+          <h3>Hesaplar</h3>
+          <div class="segment"><button class="aktif">Hepsi</button><button>Öğrenci</button><button>Öğretmen</button><button>Yönetici</button></div>
+        </div>
+        <div class="arac">
+          <label class="ara">🔍 <input placeholder="Ad ya da e-posta ara"></label>
+          <button class="filtre-cip">Yalnız onay bekleyen</button>
+          <button class="filtre-cip aktif">Yalnız başvuru bekleyen</button>
+        </div>
+        <table class="utablo">
+          <thead><tr><th>Hesap</th><th>Rol</th><th>Sınıf</th><th></th></tr></thead>
+          <tbody>
+            <tr class="secili"><td><b>Deniz Kaya</b><div class="epost">deniz.kaya@ornek.com</div></td><td><span class="rrozet r-student">öğrenci</span></td><td class="epost">— · başvuru bekliyor</td><td></td></tr>
+            <tr><td><b>Elif Aydın</b><div class="epost">elif.aydin@ornek.com</div></td><td><span class="rrozet r-teacher">öğretmen</span> <span class="rrozet r-onaysiz">onaysız</span></td><td class="epost">kod YEŞİL42</td><td><button class="mini-onay">Onayla</button></td></tr>
+            <tr><td><b>Mert Bulut</b><div class="epost">mert.bulut@ornek.com</div></td><td><span class="rrozet r-teacher">öğretmen</span> <span class="rrozet r-onaysiz">onaysız</span></td><td class="epost">kod ADA17</td><td><button class="mini-onay">Onayla</button></td></tr>
+            <tr><td><b>Selin Çelik</b><div class="epost">selin.celik@ornek.com</div></td><td><span class="rrozet r-teacher">öğretmen</span></td><td class="epost">kod FİLİZ8 · 24 öğrenci</td><td></td></tr>
+            <tr><td><b>Ada Yıldız</b><div class="epost">ada.yildiz@ornek.com</div></td><td><span class="rrozet r-admin">yönetici</span></td><td class="epost">—</td><td></td></tr>
+          </tbody>
+        </table>
+        <div class="sayfalama"><span>1–50 / 1 284</span><div style="display:flex;gap:8px"><button>Önceki</button><button>Sonraki</button></div></div>
+      </section>
+    </div>
+
+    <div class="kolon">
+      <section class="kart g3 detay">
+        <div class="panel-bas"><h3>Hesap</h3><span style="margin-left:auto;color:var(--m3);cursor:pointer">✕</span></div>
+        <div class="ad">Deniz Kaya</div>
+        <div class="epost">deniz.kaya@ornek.com</div>
+        <div class="cipler"><span class="dchip r-student" style="background:var(--v1);color:var(--vurgu);border:none">öğrenci</span><span class="dchip" style="background:color-mix(in srgb,var(--uyari) 15%,transparent);color:var(--uyari);border:none">⏳ başvuru bekliyor</span><span class="dchip">12. sınıf</span></div>
+
+        <div class="bolum"><div class="etiket">Sınıf</div><p style="font-size:12.5px;color:var(--m2)">Sınıfa kayıtlı değil</p></div>
+
+        <div class="bolum">
+          <div class="etiket">Etkinlik</div>
+          <div class="aktif-izgara">
+            <div class="s"><span>Toplam cevap</span><span>842</span></div>
+            <div class="s"><span>Son 7 gün</span><span>46</span></div>
+            <div class="s"><span>Takip kazanım</span><span>41</span></div>
+            <div class="s"><span>Son görülme</span><span>bugün</span></div>
+          </div>
+        </div>
+
+        <div class="bolum">
+          <div class="etiket">Öğretmen Başvurusu</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+            <span class="dchip" style="background:color-mix(in srgb,var(--uyari) 15%,transparent);color:var(--uyari);border:none">⏳ başvuru bekliyor</span>
+            <span style="font-family:'JetBrains Mono';font-size:11px;color:var(--m3)">23.07.2026</span>
+          </div>
+          <p class="basvuru-not">"Matematik öğretmeniyim, sınıfımı LearnUp'a taşımak istiyorum."</p>
+          <button class="btn btn-birincil" style="margin-top:12px;width:100%">✓ Öğretmen olarak onayla</button>
+          <p class="kilit-not">Onaylarsan hesap öğretmen olur, sınıf kodu üretilir ve panel hemen açılır. Rolü sonradan geri alabilirsin.</p>
+        </div>
+
+        <div class="eylemler">
+          <button class="btn btn-soluk">Rolü değiştir</button>
+          <button class="btn btn-soluk">Sınıfa ata</button>
+        </div>
+      </section>
+
+      <section class="kart g4 panel-ic">
+        <div class="panel-bas"><h3>Denetim Defteri</h3><span style="margin-left:auto;font-family:'JetBrains Mono';font-size:10px;color:var(--m3)">append-only</span></div>
+        <div class="denetim-satir"><span class="zaman">14:20</span><span class="eylem"><b>rol_degis</b> Elif A. → öğretmen · Ada Y.</span></div>
+        <div class="denetim-satir"><span class="zaman">dün</span><span class="eylem"><b>ogretmen_onay</b> Selin Ç. · Ada Y.</span></div>
+        <div class="denetim-satir"><span class="zaman">dün</span><span class="eylem"><b>sinif_ata</b> Kaan T. → FİLİZ8 · Ada Y.</span></div>
+        <div class="denetim-satir"><span class="zaman">2 gün</span><span class="eylem"><b>rol_degis</b> test → öğrenci · Ada Y.</span></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="notlar">
+    <h3>Tasarım notları — Kullanıcılar (uygulama kartına girecek)</h3>
+    <ul>
+      <li><b>Tüm veri GERÇEK uçlardan</b> (mock yok): <code>/admin/kullanicilar</code> (sayfalı, <code>role/approved/basvuru/q</code> filtreleri sunucuda), <code>/admin/kullanici/:id</code> (detay + etkinlik + başvuru + hesap denetimi), <code>/admin/denetim</code> (append-only defter). Sayfalama SUNUCUDA — 1000-satır PostgREST tuzağı yok.</li>
+      <li><b>İKİ AYRI kuyruk:</b> "onay bekleyen" (is_approved=false öğretmen) ile "başvuru bekleyen" (0021 öğrenci başvurusu) farklı filtreler — karıştırılmaz.</li>
+      <li><b>Tek neon = bekleyen onay:</b> onay bekleyen varsa sayfanın tek vurgulu kartı odur (yöneticinin bakması gereken tek sayı); yoksa nötr stat.</li>
+      <li><b>Başvuru onayı = mevcut rol-değiştirme akışı</b> (<code>onRol(id,'teacher')</code>) — ayrı onay ucu yok; terfi başvuruyu kapatır + sınıf kodu üretir. İyimser güncelleme YOK → buton dönerken devre dışı, sonuç reload.</li>
+      <li><b>Kendi rolün KİLİTLİ:</b> "bu sensin" çipi + rol-değiştir devre dışı (yönetici kendini kilitleyemez).</li>
+      <li><b>Denetim izi zorunlu:</b> her mutasyon <code>yonetim_denetim</code>'e yazılır; <code>denetimYazildi:false</code> dönerse "0020 uygulanmamış olabilir" uyarısı — sessiz başarı YOK.</li>
+      <li><b>Rol değişince yan etki söylenir:</b> "N öğrencinin sınıf bağı koptu" toast'ı (geri gelmeyen sonuç sessiz kalmaz).</li>
+      <li><b>null≠0 & renk-körü:</b> etkinliği olmayan hesap "ölçülecek veri yok" der; rol rozetleri kelime+renk; onaysız öğretmen ayrı "onaysız" rozeti.</li>
+    </ul>
+  </div>
+</main>
+<script>
+const dugme=document.getElementById('temaDugme');
+dugme.addEventListener('click',()=>{const g=document.documentElement.classList.toggle('gece');dugme.textContent=g?'☀ Gün Işığı\'na dön':'☾ Gece Ormanı\'na geç';});
+</script>
+</body>
+</html>

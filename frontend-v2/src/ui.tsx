@@ -30,27 +30,26 @@ export interface Tokens {
   isDark: boolean
 }
 
-// DEEP OCEAN — iki palet: KIYI (açık) + OKYANUS (koyu). Mavi tonlu soft.
-// Birincil aksiyon = soft azura (sky); teal ikincil yakamoz vurgusu.
-// Hex'ler Tailwind varsayılanlarıyla hizalı → inline-stilli eski ekranlar,
-// Tailwind'e taşınmış yeni kodla uyumlu görünür.
+// FİDAN v1.2 "Soft Doğa" — iki palet: KIYI (Gün Işığı/açık) + OKYANUS (Gece Ormanı/koyu).
+// Nesne ADLARI (KIYI/OKYANUS) bilerek korunuyor — yeniden adlandırma ayrı temizlik kartı.
+// Bu nesneler inline-stilli LEGACY ekranlar içindir; değerler TASARIM-DILI §2'den (yalnız değer değişti).
 const KIYI: Tokens = {
-  bg: '#F3F7FC', sunken: '#E7EFF8', card: '#FFFFFF', raised: '#FFFFFF',
-  hairline: 'rgba(2,64,110,0.10)', hairlineStrong: 'rgba(2,64,110,0.20)',
-  ink: '#16324A', inkSoft: '#46647E', inkMuted: '#7A93AA',
-  action: '#0284C7', actionEdge: '#0369A1', onAction: '#FFFFFF',
-  brass: '#B8863B', ember: '#D97706', gold: '#D9A406',
-  correct: '#059669', wrong: '#E11D48', teal: '#0D9488', sky: '#0284C7',
+  bg: '#F4F7F4', sunken: '#EDF2ED', card: '#FFFFFF', raised: '#FBFDFB',
+  hairline: 'rgba(34,76,56,0.06)', hairlineStrong: 'rgba(34,76,56,0.14)',
+  ink: '#183121', inkSoft: '#4A5D4E', inkMuted: '#7C8F80',
+  action: '#1E4620', actionEdge: '#163518', onAction: '#FFFFFF',
+  brass: '#B8863B', ember: '#C77E2E', gold: '#D4A373',
+  correct: '#2E8B57', wrong: '#D9534F', teal: '#6FA8B5', sky: '#2A5A3B',
   isDark: false,
 }
 
 const OKYANUS: Tokens = {
-  bg: '#0B1520', sunken: '#060D15', card: '#0E1B28', raised: '#122334',
-  hairline: 'rgba(56,189,248,0.10)', hairlineStrong: 'rgba(56,189,248,0.20)',
-  ink: '#E2E8F0', inkSoft: '#94A3B8', inkMuted: '#64748B',
-  action: '#38BDF8', actionEdge: '#0284C7', onAction: '#082F49',
-  brass: '#C99A4A', ember: '#F59E0B', gold: '#FBBF24',
-  correct: '#34D399', wrong: '#FB7185', teal: '#2DD4BF', sky: '#38BDF8',
+  bg: '#0E140F', sunken: '#0A0F0B', card: '#141E17', raised: '#18251B',
+  hairline: 'rgba(200,230,205,0.05)', hairlineStrong: 'rgba(200,230,205,0.12)',
+  ink: '#E6EFE7', inkSoft: '#A9BCA9', inkMuted: '#74887A',
+  action: '#2E6B47', actionEdge: '#255A3B', onAction: '#FFFFFF',
+  brass: '#D9B267', ember: '#D4A373', gold: '#D8A45B',
+  correct: '#58C08A', wrong: '#E37A72', teal: '#7FB6C4', sky: '#7FC79C',
   isDark: true,
 }
 

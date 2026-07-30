@@ -1,58 +1,44 @@
-import { useMemo } from 'react'
-import Particles, { ParticlesProvider } from '@tsparticles/react'
-import { loadSlim } from '@tsparticles/slim'
-import type { Engine, ISourceOptions } from '@tsparticles/engine'
-import { useTheme } from '../lib/theme'
-
 /**
- * Tema-duyarlı ambiyans partikülleri.
- * Koyu: yükselen yakamoz planktonu/kabarcıklar · Açık: süzülen ışık tozu.
- * Bu bileşen Shell'de React.lazy ile yüklenir (tsparticles ana bundle'a girmez)
- * ve YALNIZ masaüstü + hareket-serbest ortamda çizilir (kapsayıcı karar verir).
+ * FİDAN ambiyansı — ağır çekim süzülen yapraklar (onaylı önizleme `bugun.html` v4 portu).
+ * Işık lekeleri `fx.tsx` YakamozBackdrop'ta; burası YALNIZ yaprak katmanı (çift güneş olmasın).
+ * Shell'de React.lazy ile yüklenir → yalnız MASAÜSTÜ (≥900px) + hareket-serbest ortamda çizilir
+ * (animasyonlar `@media (prefers-reduced-motion: no-preference)` altında; azalt tercihinde statik).
+ * İçeriğin önüne geçmez: pointer-events yok, z-index içerik altı, düşük opaklık.
  */
 
-const motoruKur = async (engine: Engine): Promise<void> => {
-  await loadSlim(engine)
-}
+const YAPRAKLAR = [
+  { sol: '12%', en: 26, sure: 24, gecikme: 0, renk: '#84A98C' },
+  { sol: '32%', en: 18, sure: 30, gecikme: 6, renk: '#D4A373' },
+  { sol: '55%', en: 22, sure: 26, gecikme: 12, renk: '#4FA56F' },
+  { sol: '74%', en: 16, sure: 34, gecikme: 3, renk: '#84A98C' },
+  { sol: '90%', en: 24, sure: 28, gecikme: 16, renk: '#D4A373' },
+]
 
 export default function Ambiyans() {
-  const { theme } = useTheme()
-
-  const secenekler = useMemo<ISourceOptions>(() => {
-    const koyu = theme === 'dark'
-    return {
-      fullScreen: { enable: false },
-      fpsLimit: 45,
-      detectRetina: true,
-      pauseOnBlur: true,
-      pauseOnOutsideViewport: true,
-      interactivity: { events: { onHover: { enable: false }, onClick: { enable: false } } },
-      particles: {
-        number: { value: koyu ? 26 : 16, density: { enable: true, width: 1400, height: 900 } },
-        color: { value: koyu ? ['#38BDF8', '#2DD4BF', '#7DD3FC'] : ['#0284C7', '#67E8F9'] },
-        shape: { type: 'circle' },
-        size: { value: { min: 1, max: koyu ? 3 : 2.2 } },
-        opacity: {
-          value: { min: 0.08, max: koyu ? 0.4 : 0.22 },
-          animation: { enable: true, speed: 0.6, sync: false },
-        },
-        move: {
-          enable: true,
-          direction: koyu ? 'top' : 'none',
-          speed: koyu ? 0.5 : 0.25,
-          random: true,
-          straight: false,
-          outModes: { default: 'out' },
-        },
-      },
-    }
-  }, [theme])
-
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
-      <ParticlesProvider init={motoruKur}>
-        <Particles id="ambiyans" options={secenekler} className="h-full w-full" />
-      </ParticlesProvider>
+    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 hidden overflow-hidden min-[900px]:block">
+      <style>{`
+        @media (prefers-reduced-motion: no-preference) {
+          .amb-yprk { animation: amb-suzul linear infinite; }
+          @keyframes amb-suzul {
+            0%   { transform: translateY(-8vh) translateX(0) rotate(0deg) }
+            25%  { transform: translateY(22vh) translateX(34px) rotate(65deg) }
+            50%  { transform: translateY(52vh) translateX(-22px) rotate(150deg) }
+            75%  { transform: translateY(82vh) translateX(28px) rotate(230deg) }
+            100% { transform: translateY(112vh) translateX(-12px) rotate(320deg) }
+          }
+        }
+      `}</style>
+      {YAPRAKLAR.map((y, i) => (
+        <svg
+          key={i}
+          className="amb-yprk absolute top-[-8vh]"
+          style={{ left: y.sol, width: y.en, opacity: 0.45, animationDuration: `${y.sure}s`, animationDelay: `${y.gecikme}s` }}
+          viewBox="0 0 24 24"
+        >
+          <path d="M12 2C7 7 5 12 12 22 19 12 17 7 12 2Z" fill={y.renk} />
+        </svg>
+      ))}
     </div>
   )
 }

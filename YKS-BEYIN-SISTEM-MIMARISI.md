@@ -32,7 +32,7 @@
 11. [**Yönetici paneli (Kule)**](#11)
 12. [API yüzeyi](#12)
 13. [Migration tarihçesi](#13)
-14. [Frontend — COASTAL](#14)
+14. [Frontend — FİDAN](#14)
 15. [İşletme kılavuzu](#15)
 16. [Altyapı, arıza modları, deploy](#16)
 17. [Açık işler](#17)
@@ -46,15 +46,18 @@ LearnUp bir YKS hazırlık platformu. Kod tabanında **birbirine karışmayan ik
 
 | Dünya | Tablolar | Şık | Kim okur |
 |---|---|---|---|
-| **Beyin** | `yks_questions` (ÖSYM çıkmış) · `yks_ai_questions` (AI üretimi) · `yks_knowledge` · `yks_exemplars` | 5 | RAG, ajanlar, "Çıkmış Sorular" ekranı, ödev atölyesi |
+| **Beyin** | `yks_questions` (ÖSYM çıkmış) · `yks_ai_questions` (AI üretimi) · `yks_knowledge` · `yks_exemplars` | 5 | RAG, ajanlar, yönetici iç görünümleri (2026-07-22 telif kararı: kullanıcı yüzüne yayın YOK) |
 | **App** | `questions` · adaptif motor · gamification · bahçe | 4 | Öğrencinin günlük çözme akışı, ödevler |
 
 **Kaynak ayrımı bir ürün kuralıdır, DB'de kilitlidir.** `question_source` enum'u
 (`osym_cikmis · ai_generated · ogretmen`) + insert sonrası **değiştirilemezlik trigger'ı**
 (0004). Adaptif montaj her zaman `source_type='ai_generated' AND verified` okur — çıkmış soru
-adaptif havuza **asla** sızmaz. Çıkmışlar ayrı serviste yaşar ve arayüzde brass "ÖSYM ÇIKMIŞ
-SORU" mührüyle gösterilir. `yks_exemplars` çıkmışların *üslup/few-shot kaynağıdır*: AI sorular
-çıkmışlardan beslenir ama onlarla karışmaz.
+adaptif havuza **asla** sızmaz. **2026-07-22 telif kararı:** ÖSYM çıkmış soruları kullanıcı
+arayüzünde YAYINLANMAZ (6114 sayılı ÖSYM Kanunu / telif riski — kullanıcı kararı, "3. yol"):
+çıkmışlar yalnız RAG/üretim kaynağı ve yönetici iç operasyonudur; "Çıkmış Sorular" ekranı ile
+kehribar "ÖSYM ÇIKMIŞ SORU" mührü (FİDAN öncesi adı "brass") rafa kaldırıldı, lisans alınırsa
+döner (kaldırma: GOREV-015 frontend + GOREV-016 backend). `yks_exemplars` çıkmışların
+*üslup/few-shot kaynağıdır*: AI sorular çıkmışlardan beslenir ama onlarla karışmaz.
 
 ### Depolar
 
@@ -395,17 +398,28 @@ Tek kaynak: **`profiles.role`** — `student | teacher | admin` (0016 CHECK'i).
 > (süreç-içi Map 60 sn + FIFO tavan 5000 → Redis 60 sn) bunu kullanıcı başına ~dakikada bire
 > indirir. **Redis yoksa DB'ye düşer, asla "izin ver"e düşmez.**
 
-### İki kapı — `src/middleware/requireRole.ts`
+### Üç kapı — `src/middleware/`
 
 ```
-requireRole('teacher') → role==='teacher' && is_approved===true
-requireRole('admin')   → role==='admin'
+requireAktifHesap        → askiya_alindi === false            (0025, TÜM /api/v1 yollarında)
+requireRole('admin')     → role==='admin'
+requireOgretmenKapsami   → teacher: kapsam = kendisi
+                           admin  : kapsam = ?ogretmenId (ZORUNLU) + adminVekili=true
 ```
 
-> ⚠️ **ADMİN, ÖĞRETMEN UÇLARINDAN GEÇMEZ.** Öğretmen uçları sınıfı `req.userId`'den türetiyor;
-> admin oraya girseydi hata almaz, **sessizce boş sınıf** görürdü. Sessiz yanlış, gürültülü
-> hatadan kötüdür. İki yüzey kesin ayrı kalır — yöneticinin sınıf verisine tek meşru penceresi
-> `GET /admin/kullanici/:id`'dir.
+> ⚠️ **ASKI KAPISI HER YOLA TAKILIR** (`app.ts` → `kimlikli = [requireAuth, requireAktifHesap]`).
+> Rol kapısına gömülseydi askıdaki bir **öğrenci** soru çözmeye, ödev göndermeye ve sohbet
+> etmeye devam ederdi — rol kapısı öğrenci yollarında yok. **Rol muafiyeti yoktur:** askıdaki
+> yönetici de dışarıda kalır; "son yönetici askıya alınamaz" koruması **uçtadır**, kapıda değil.
+
+> ⚠️ **YÖNETİCİ ARTIK SINIF YÜZEYİNE GİREBİLİR — AMA KAPSAM SEÇEREK** (0025 ile değişti).
+> Eskiden `/teacher/*` admin'e kapalıydı çünkü kapsam `req.userId`'den türüyordu ve admin
+> **sessizce boş sınıf** görürdü. Artık kapsam açık bir parametre: `?ogretmenId=<uuid>`.
+> Yönetici parametresiz girerse **400 `ogretmen_secilmedi`** alır — sessiz boş sınıf ASLA.
+> Kapsamlı girdiğinde `adminVekili=true` işaretlenir ve **her yazma** (ödev, öğrenci
+> ekleme/çıkarma) denetim defterine `ogretmen_adina_*` olarak, hedefi o öğretmen olacak
+> şekilde işlenir. Öğretmenin **kendi** yazması izlenmez: olağan iş akışını deftere doldurmak
+> yönetim eylemlerini görünmez kılardı.
 
 ### Yetki matrisi
 
@@ -413,8 +427,23 @@ requireRole('admin')   → role==='admin'
 |---|---|---|---|
 | `/mastery`, `/answers`, `/practice`, `/garden`… (kendi verisi) | ✅ | ✅ (boş) | ✅ (boş) |
 | `/sinif/*` — katıl / ayrıl | ✅ | ⛔ `ogrenci_degil` | ⛔ `ogrenci_degil` |
-| `/teacher/*` — 13 uç | ⛔ 403 | ✅ | **⛔ 403** |
-| `/admin/*` — 11 uç | ⛔ 403 | ⛔ 403 | ✅ |
+| `/teacher/*` — okuma | ⛔ 403 | ✅ kendi sınıfı | ✅ **`?ogretmenId` ile** |
+| `/teacher/*` — yazma (ödev · öğrenci) | ⛔ 403 | ✅ izsiz | ✅ **izli** (`ogretmen_adina_*`) |
+| `/admin/*` — kullanıcı, havuz, ops, denetim | ⛔ 403 | ⛔ 403 | ✅ |
+| Askıdaki hesap (`askiya_alindi`) | ⛔ 403 | ⛔ 403 | ⛔ 403 |
+
+### Yöneticinin yazma yetkileri (0025)
+
+| Alan | Uçlar | Not |
+|---|---|---|
+| Hesap yaşam döngüsü | `POST /admin/kullanici` (davet) · `PATCH /admin/kullanici/:id` · `POST …/sifre-sifirla` · `POST …/aski` · `POST /admin/basvuru/:id/reddet` | **Kalıcı silme YOK** — askı geri alınabilir, silme değil |
+| Rol & sınıf | `POST …/rol` · `POST …/sinif` · `POST /admin/ogretmen/:id/onay` | Kendi rolünü değiştiremez; son yönetici düşürülemez/askıya alınamaz |
+| Havuz moderasyonu | `GET/PATCH /admin/havuz/soru*` · `POST …/dogrulama` · `POST …/karantina` · `POST /admin/havuz/uretim` | Metin düzenleme YOK (bkz. §11) |
+| Ops | `PUT /admin/ozgunluk/esik` · `POST /admin/eval/kosum` · `POST /admin/onbellek/dus` · `POST /admin/gorev/:id/{yeniden,iptal}` | Hepsi izli |
+
+> 🔒 **Şifre sıfırlama ≠ hesaba girme.** Uç `resetPasswordForEmail` kullanır, `admin.generateLink`
+> **değil**: generateLink kurtarma URL'ini çağırana döndürür ve o URL yöneticinin eline geçerse
+> hesabı devralmaya yeter. Bağlantı yalnız kullanıcının e-posta kutusuna gider.
 
 ### İki katmanlı savunma: RLS satırı, GRANT kolonu
 
@@ -532,7 +561,25 @@ Kazanım başına kota + `kaynak_soru_id` (0018) ile tekrar gönderim dışlamas
 <a name="11"></a>
 ## 11. Yönetici paneli (Kule)
 
-Motor dairesi + kullanıcı yönetimi. Dört ekran: **Kule · Kullanıcılar · Soru Havuzu · Özgünlük**.
+Motor dairesi + kullanıcı yönetimi. **Yedi ekran** (0025'te 4→7):
+
+| Ekran | Yol | Ne yapar |
+|---|---|---|
+| Yönetim | `/kule` | Sistem sağlığı: havuz · eval · ajan görevleri |
+| Kullanıcılar | `/kule/kullanicilar` | Hesap aç · rol · onay · sınıf · künye · şifre · **askı** · başvuru reddi |
+| **Sınıflar** | `/kule/siniflar` | Öğretmen seç → sınıfını **onun gözüyle** aç (`?ogretmenId`) |
+| Soru Havuzu | `/kule/havuz` | Özet + **Sorular** sekmesi (moderasyon çekmecesi) |
+| Özgünlük | `/kule/ozgunluk` | Bariyerin ölçümü ve ispat tablosu (salt-okunur) |
+| **Denetim** | `/kule/denetim` | Filtreli defter + CSV |
+| **Ayarlar** | `/kule/ayarlar` | Kendi künyesi · şifre · **eşik editörü** · ops düğmeleri |
+
+> ⚠️ **Eşik AYARLAR'da, Özgünlük ekranında değil.** O ekran bariyeri *açıklar*, burası
+> *değiştirir*. Ayırmak "okurken yanlışlıkla değiştirme" riskini kaldırır.
+
+> ⚠️ **Sınıf sekmesi navda YOK.** Yönetici sınıfa Sınıflar ekranından, kapsam seçerek girer;
+> içeride gezinme **vekil şeridinden** sürer (üst nav yöneticide Kule sekmelerini gösterir).
+> Kapsamsız `/sinif` isteği "önce bir sınıf seç" ekranıyla karşılanır — beş panel dolusu
+> hata toast'ı değil.
 
 ### Okuyan uçlar
 
@@ -550,15 +597,21 @@ Motor dairesi + kullanıcı yönetimi. Dört ekran: **Kule · Kullanıcılar · 
    yetki değil açıktır.
 2. **Her mutasyon önbellek düşürür** (`kimligiUnut` / `sinifiUnut`) — yoksa yetki katmanı
    60 saniye eski gerçeği söyler.
-3. **Kendi rolünü değiştiremezsin.** Bu panelin onarılamaz TEK hatası kendini
-   yetkisizleştirmektir; kurtarmak elle SQL gerektirir.
+3. **Kendini yetkisizleştiremezsin.** Bu panelin onarılamaz TEK hatası budur; kurtarmak elle
+   SQL gerektirir. İki kapı: kendi **rolünü** değiştiremez, kendi hesabını **askıya alamaz**.
+   Üçüncüsü sistem çapında: **son (askıda olmayan) yönetici** düşürülemez ve askıya alınamaz.
 
 | Uç | Notlar |
 |---|---|
 | `POST /admin/ogretmen/:id/onay` | Onay **verme** tek tık; **kaldırma** diyalogdan geçer (öğretmen 60 sn'de sınıfını kaybeder) |
 | `POST /admin/kullanici/:id/rol` | ↓ üç yan etki |
 | `POST /admin/kullanici/:id/sinif` | Öğrenciyi taşı/çıkar. Onaysız öğretmene atama reddedilir — o sınıf hiçbir panelde görünmez |
+| `POST /admin/kullanici` | **Davetle** hesap açar (`inviteUserByEmail`). Şifreyi yönetici belirlemez; SMTP yoksa 502 + `davetGonderildi:false` — "hesap açıldı" DEMEZ |
+| `PATCH /admin/kullanici/:id` | Yalnız künye (`name · school · grade · student_class`). Rol/onay/sınıf **buradan yazılamaz** — her birinin kendi kapısı ve koruması var |
+| `POST /admin/kullanici/:id/aski` | Hesabı durdurur. **Gerekçe zorunlu** · `kimligiUnut` zorunlu (yoksa askı 60 sn hiçbir şey yapmaz) |
+| `POST /admin/basvuru/:id/reddet` | Onayın karşılığı: kuyruğu kapatır, **role dokunmaz** |
 | `POST /admin/gorev/:id/yeniden` | ↓ `attempts` tuzağı |
+| `POST /admin/gorev/:id/iptal` | Tersi: FAILED'a çeker **ve `attempts=3`** yapar — yoksa bekçi görevi yeniden toplardı |
 
 **Rol değişiminin yan etkileri (hepsi zorunlu):**
 - `teacher →` başka rol: **sınıfı boşalır.** Yapılmasaydı öğrenciler artık öğretmen olmayan bir
@@ -586,9 +639,58 @@ tetikleyicisiyle** engellenir.
 > tetikleyiciyle kapatıldı.
 
 Alanlar: `admin_id · eylem · hedef_id · hedef_tur · detay jsonb · created_at`.
-Eylemler: `ogretmen_onay · rol_degis · sinif_ata · gorev_yeniden`.
+`hedef_tur`: `kullanici · gorev · ogretmen · soru · sistem`.
 RLS açık + politika yok → `authenticated` hiçbir satır göremez; okuma yalnız
-`GET /admin/denetim` üzerinden, `requireRole('admin')` kapısının ardından.
+`GET /admin/denetim` üzerinden, `requireRole('admin')` kapısının ardından. Kanonik eylem
+listesi **kodda**: `lib/denetim.ts → DenetimEylemi` (DB'de CHECK yok; yeni yetki eklemek
+migration beklemesin diye 0020 böyle bıraktı).
+
+| Grup | Eylemler |
+|---|---|
+| 0020 | `ogretmen_onay · rol_degis · sinif_ata · gorev_yeniden` |
+| Hesap (0025) | `hesap_olustur · profil_duzelt · sifre_sifirla · hesap_askiya · hesap_geri_al · basvuru_reddet` |
+| Havuz (0025) | `soru_dogrulama · soru_karantina · soru_etiket · uretim_tetik` |
+| Ops (0025) | `esik_degis · eval_tetik · onbellek_dus · gorev_iptal` |
+| Vekil (0025) | `ogretmen_adina_odev · ogretmen_adina_ogrenci` |
+
+Ekran: **`/kule/denetim`** — eylem · yönetici · hedef · tarih filtreleri, sayfalama, CSV
+(yalnız görünen sayfa; bu ekranda açıkça yazılır).
+
+### Havuz moderasyonu (0025) — `admin-havuz.routes.ts`
+
+> ⚠️ **METİN DÜZENLEME YOK.** `PATCH /admin/havuz/soru/:id` yalnız `difficulty` + `kazanim_id`
+> yazar. Soru gövdesini elle değiştirmek iki şeyi birden bozar: `content_hash` dedup'u (aynı
+> soru yeniden üretilip ikinci kez havuza girer) ve eval ölçümü (hattın ürettiği metin ile
+> ölçülen metin ayrışır). **Bozuk soru düzeltilmez, karantinaya alınır.**
+
+> ⚠️ **`karantina` ≠ `verified=false`.** `verified` doğrulama hattının kararıdır ve kalite
+> metriğinin paydasıdır; `karantina` insan müdahalesidir. Aynı kolona bindirmek "hattımız
+> kötüleşti" diye okunacak sahte bir kalite düşüşü üretirdi. **Servis eden her sorgu ikisini
+> de dışlar** (`test-modes · odev-derle · practice · aiquestions · teacher/soru-havuzu ·
+> topup-planner`); panel ikisini **ayrı** sayar.
+
+Üretim tetikleme mevcut güvenli yolu kullanır: `forge_topup` görevi (`agents/ritim.ts`) —
+istemci yalnız *hangi kazanım* der, ders/konu/başlık `curriculum_nodes`'tan türer, tavan 10.
+
+### Özgünlük eşikleri — koddan DB'ye (0025)
+
+`ozgunluk_esikleri` tablosu + `PUT /admin/ozgunluk/esik`. `utils/benzerlik.ts`'teki tablo
+**fallback olarak kalır**: DB boş/erişilemezse üretim koddaki değerlerle sürer — eşiksiz
+üretim = bariyersiz üretim. `ozgunlukEsigi()` **senkron kalır** (üretimin sıcak yolunda,
+aday başına çağrılıyor); tazeleme `lib/ozgunluk-esik.ts` üzerinden 60 sn önbellekle
+arka planda yapılır ve `generateVerifiedSet` girişinde tetiklenir. Panel `kaynakDB: false`
+gördüğünde bunu **ekranda söyler** — yönetici yürürlükte olmayan bir eşiği düzenlediğini sanmasın.
+
+### Eval anlıkları — dosyadan DB'ye (0025)
+
+> 🚨 **Sessiz veri kaybı, kapatıldı.** Anlıklar `learnup-brain/eval-sonuclari/*.json`
+> dosyalarındaydı; o dizin için **Docker volume yok** ve brain imajı kaynağı COPY ediyor →
+> panelin gösterdiği ölçüm geçmişi imaja gömülüydü ve her `up --build` ile sıfırlanıyordu.
+
+`eval_anliklari` tablosu asıl kaynak; dosyalar yalnız yedek (`lib/eval-anlik.ts` önce DB'ye
+bakar). `POST /admin/eval/kosum` → `eval` görev türü (`bus.ts` + `ritim.ts`) → `lib/eval-olc.ts`
+ölçümü koşar ve tabloya yazar. **Senkron koşmaz** (binlerce soru, O(n²) NN benzerliği) ve
+aynı anda ikinci koşum 409 ile reddedilir.
 
 **`/uretim-hatti` kasten YOK** — §17.
 
@@ -604,19 +706,27 @@ Tüm route'lar hem `/api` hem `/api/v1` altında mount edilir (`app.ts`).
 /tests /agents /questions /ai       llmLimiter
 /telemetry /question-state /answers /questions/osym /questions/ai
 /practice /mastery /assignments /gamification /garden /account   standardLimiter
-/sinif                requireAuth  (rol kontrolü handler içinde)
-/teacher              requireAuth → standardLimiter → requireRole('teacher')
-/admin                requireAuth → standardLimiter → requireRole('admin')
+/sinif                kimlikli  (rol kontrolü handler içinde)
+/teacher              kimlikli → standardLimiter → requireOgretmenKapsami
+/admin                kimlikli → standardLimiter → requireRole('admin')
 ```
-`standardLimiter` **`requireRole`'dan önce** — rol yoklayan döngü de sınırlansın.
+`kimlikli = [requireAuth, requireAktifHesap]` — **tek sabitte** tanımlı (0025). Yeni bir router
+eklerken kapılardan birinin sessizce unutulması bu sayede imkânsız.
+`standardLimiter` **rol kapısından önce** — rol yoklayan döngü de sınırlansın.
 
 **Öğretmen (13):** `GET /ozet · /sinif · /sinif/isi-haritasi · /sinif/zayif-kazanimlar ·
 /ogrenci/:id · /ogrenci/:id/rontgen · /ogrenci/:id/loglar · /odevler · /soru-havuzu` ·
 `POST /odev · /hedefli-odev · /ogrenci` · `DELETE /ogrenci/:id`
+→ hepsi yöneticide **`?ogretmenId` ile** çalışır (0025).
 
-**Yönetici (11):** `GET /havuz · /eval · /ozgunluk · /gorevler · /kullanicilar · /kullanici/:id ·
-/denetim` · `POST /ogretmen/:id/onay · /kullanici/:id/rol · /kullanici/:id/sinif ·
-/gorev/:id/yeniden`
+**Yönetici (25):**
+`GET /havuz · /eval · /ozgunluk · /gorevler · /kullanicilar · /kullanici/:id · /denetim ·
+/havuz/sorular · /havuz/soru/:id`
+`POST /ogretmen/:id/onay · /kullanici · /kullanici/:id/rol · /kullanici/:id/sinif ·
+/kullanici/:id/sifre-sifirla · /kullanici/:id/aski · /basvuru/:id/reddet ·
+/havuz/soru/:id/dogrulama · /havuz/soru/:id/karantina · /havuz/uretim · /eval/kosum ·
+/onbellek/dus · /gorev/:id/yeniden · /gorev/:id/iptal`
+`PATCH /kullanici/:id · /havuz/soru/:id` · `PUT /ozgunluk/esik`
 
 **Sınıf (3):** `GET /sinif` · `POST /sinif/katil · /sinif/ayril`
 
@@ -653,6 +763,19 @@ Supabase Dashboard → SQL Editor → dosya içeriğini yapıştır → RUN. **H
 | 0018 | `odev_kaynak_izi` | `questions.kaynak_soru_id` — tekrar gönderim dışlaması |
 | 0019 | `profil_kolon_yetkisi` | 🚨 **Ayrıcalık yükseltme açığını kapatır** (§9) |
 | 0020 | `yonetim_denetim` | Yönetici eylem defteri, append-only (§11) |
+| 0021 | `ogretmen_basvuru` | Başvuru kolonları + kayıt kapısı sertleştirmesi |
+| 0022 | `zorluk_siralama_nulls_last` | Etiketsiz zorluk sıralamada sona |
+| 0023 | `isi_ogrenci_kirilimi` | Isı haritası hücresinde öğrenci kırılımı |
+| 0024 | `acik_ogretmen_kaydi` | Kayıtta "Öğretmenim" — yönetici onayı kaldırıldı |
+| 0025 | `yonetici_yetki` | **Yönetici yetki genişletmesi:** `profiles` askı kolonları · `ozgunluk_esikleri` · `yks_ai_questions.karantina` · `eval_anliklari` (§9, §11) |
+
+**0025'in üç dürüstlük ayrıntısı:**
+- Askı kolonları 0019 GRANT beyaz listesine **eklenmez** — aksi hâlde askıdaki kullanıcı
+  tarayıcı konsolundan kendi askısını kaldırırdı (0019'un kapattığı açığın aynısı).
+- `karantina` ayrı kolon: `verified`'a bindirilseydi insan müdahalesi hattın kalite
+  metriğini kirletir, sahte bir kalite düşüşü olarak okunurdu.
+- `ozgunluk_esikleri` **seed'i `on conflict do nothing`** — yeniden koşum, yöneticinin
+  panelden değiştirdiği eşiği kod varsayılanına geri çevirmez.
 
 **0016'nın hayat kurtaran ayrıntısı:** `is_approved` `default false` ve kod hiçbir yerde `true`
 yapmıyordu. Geri-doldurma olmadan onay kapısı **deploy günü her öğretmeni kilitlerdi**.
@@ -665,19 +788,29 @@ bir deploy'u bekleyen ayrıcalık yükseltmesidir.
 ---
 
 <a name="14"></a>
-## 14. Frontend — COASTAL
+## 14. Frontend — FİDAN
 
-İki tema: **Kıyı** (açık) / **Okyanus** (koyu). `.glass` / `.glass-solid`, `--data-hue`,
-`--heat-zero`, `--page-bg`.
+> **2026-07-21:** COASTAL/denizcilik tasarım dili emekli edildi — kullanıcı kararı: "sıkıcı ve
+> soğuk kaldı". Yerine **FİDAN**: organik doğa, **AÇIK tema varsayılan** (Gün Işığı), koyu
+> (Gece Ormanı) tercihe bağlı, arayüz metinleri düz işlevsel. Görsel dilin TEK kaynağı
+> [`docs/design/TASARIM-DILI.md`](docs/design/TASARIM-DILI.md) — palet/tipografi/bütçe buraya
+> kopyalanmaz. Dönüşüm kart-bazlıdır (`docs/agents/handoff/`): metin dönüşümü GOREV-002,
+> rozet adları GOREV-003/004, görsel sahneler sonraki kartlar — kodda geçici COASTAL kalıntısı
+> olabilir, hedef her zaman FİDAN'dır.
+
+İki tema: **Gün Işığı** (açık — VARSAYILAN) / **Gece Ormanı** (koyu — tercihe bağlı).
+Değişkenler: `--data-hue`, `--heat-zero`, `--page-bg`.
 
 **İmza yerleşim:** `lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]`
 **Sarmalayıcı:** `mx-auto max-w-7xl px-[clamp(16px,3.5vw,44px)] pb-20 pt-9`
 
-### Bütçeler (aşılmaz)
-- Görünüm başına **≤5 bulanık yüzey**
-- Sayfa başına **1 kalıcı `GlowBorder`** — sayfanın tek neonu, bakılması gereken tek sayıya gider
-- Sayfa başına **1 `PingDot`** — zaten `ProfileMenu` tarafından harcandı → **yeni ekran PingDot kullanmaz**, canlılık için `StatusLine`
-- **Brass yalnız ÖSYM mührünün kimliğidir** — başka hiçbir yerde kullanılmaz
+### Bütçeler (aşılmaz — kanonik liste TASARIM-DILI §9)
+- Görünüm başına **≤3 bulanık yüzey** — ferahlık camdan değil, katmanlı mat yüzeylerden
+- Sayfa başına **1 ışıltı vurgusu** — bakılması gereken tek sayıya gider
+- Sayfa başına **1 canlı nokta** — zaten `ProfileMenu` tarafından harcandı → yeni ekran `StatusLine` kullanır
+- **Kehribar yalnız ÖSYM mührünün kimliğidir** (eski "brass") — 2026-07-22 telif kararıyla RAFTA:
+  şu an hiçbir ekranda kullanılmaz
+- **Denizcilik terimi kullanıcı metnine giremez** — adlar düz işlevseldir (TASARIM-DILI §6)
 
 ### Reveal kadansı
 başlık `0` → KPI `0.04` → sol `0.10/0.16/0.20` → sağ `0.14/0.18/0.22/0.26`.
@@ -687,9 +820,13 @@ Sol ve sağ iç içe geçer (göz çapraz okur). **`0.3` aşılmaz** — ötesi 
 
 | Rol | Nav | Ekranlar |
 |---|---|---|
-| Öğrenci | 7 sekme | Bugün · Harita · Rota · Kaptan · Arşiv · Bahçe · Ben |
+| Öğrenci | 6 sekme | Bugün · Harita · Rota · Kaptan · Bahçe · Ben — *Arşiv 2026-07-22 telif kararıyla kaldırıldı (dosya ölü)* |
 | Öğretmen | 5 sekme | SinifPanosu · SinifIsi · OdevAtolyesi · Karsilastir · Ben |
 | Yönetici | 4 sekme | Kule · Kullanicilar · SoruHavuzu · OzgunlukBariyeri |
+
+> Tablodaki adlar **bileşen/kod adlarıdır** ve değişmez. Kullanıcıya görünen nav **etiketleri**
+> FİDAN §6 tablosuna göredir: Analizler · Çalışma Planı · Koç · Profilim ·
+> Yönetim · Özgünlük Denetimi (dönüşüm: GOREV-002; Çıkmış Sorular 2026-07-22'de kaldırıldı).
 
 **Nav eklemeli değil, kapsamlı.** Öğretmen `/harita`, `/bahce`, `/rota` görmez — bunlar öğretmen
 hesabında **verisi olmayan** kişisel ekranlar. Üç rolü birleştirmek 16 sekmelik bir nav üretirdi.

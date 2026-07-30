@@ -1,8 +1,8 @@
 import { supabase } from '../clients/supabase.js'
 import { logger } from '../utils/logger.js'
 import {
-  todayISO, getWeekId, ensureGamification, xpForAnswer, applyStreak, applyAnswerToQuests,
-  evaluateBadges, levelFromCorrect, displayName, isStudent, applySrsAnswer,
+  todayISO, getWeekId, ensureGamification, generateDailyQuests, xpForAnswer, applyStreak, applyAnswerToQuests,
+  evaluateBadges, levelFromCorrect, displayName, isStudent, applySrsAnswer, type SubjectStats,
 } from './gamification.js'
 import { pushSignal } from './signals.js'
 import { updateMastery } from './mastery.js'
@@ -105,16 +105,17 @@ export async function processAnswer(userId: string, body: AnswerBody) {
         : null
 
   // ── 0) DOĞRULUK SUNUCUDA BELİRLENİR — istemcinin isCorrect iddiası bağlayıcı değil ──
-  const { isCorrect, dogrulandi } = await dogrulukKontrol(
-    questionId ? String(questionId) : null,
-    selectedOption,
-    typeof body.isCorrect === 'boolean' ? body.isCorrect : null,
-  )
-
-  // ── 1) Gamification hesabı (saf, /record ile birebir) ──
+  // 1) Profil ve YKS/legacy doğruluk paralel okunur (birbirinden bağımsız).
+  const [{ isCorrect, dogrulandi }, { data: profile }] = await Promise.all([
+    dogrulukKontrol(
+      questionId ? String(questionId) : null,
+      selectedOption,
+      typeof body.isCorrect === 'boolean' ? body.isCorrect : null,
+    ),
+    supabase.from('profiles').select('*').eq('id', userId).single(),
+  ])
   const today = todayISO()
   const weekId = getWeekId()
-  const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single()
   const userData: any = profile || {}
   const g = ensureGamification(userData.gamification, today, weekId)
 
@@ -128,9 +129,9 @@ export async function processAnswer(userId: string, body: AnswerBody) {
   if (isCorrect === true) g.correctAnswers = (g.correctAnswers || 0) + 1
 
   const subjKey = String(subject).toLowerCase().trim()
-  const sub = g.subjects[subjKey] || { solved: 0, correct: 0 }
-  sub.solved += 1
-  if (isCorrect === true) sub.correct += 1
+  const sub: SubjectStats = g.subjects[subjKey] || { solved: 0, correct: 0 }
+  sub.solved = (sub.solved || 0) + 1
+  if (isCorrect === true) sub.correct = (sub.correct || 0) + 1
   g.subjects[subjKey] = sub
 
   const streakResult = applyStreak(g.streak, today)
@@ -139,17 +140,19 @@ export async function processAnswer(userId: string, body: AnswerBody) {
   const questResult = applyAnswerToQuests(g.dailyQuests, {
     isCorrect: isCorrect === true, isSkipped: !!isSkipped, attemptNumber, subject,
   })
-  g.dailyQuests = questResult.dailyQuests
+  g.dailyQuests = questResult.dailyQuests ?? generateDailyQuests(today)
   g.league.weeklyXP = (g.league.weeklyXP || 0) + xpGained
 
-  const masteryScores: any = {}
-  Object.entries(g.subjects).forEach(([k, v]: any) => {
-    masteryScores[k] = { score: v.solved > 0 ? Math.round((v.correct / v.solved) * 100) : 0 }
+  const masteryScores: Record<string, { score: number }> = {}
+  Object.entries(g.subjects).forEach(([k, v]) => {
+    const solved = v.solved || 0
+    const correct = v.correct || 0
+    masteryScores[k] = { score: solved > 0 ? Math.round((correct / solved) * 100) : 0 }
   })
   const level = levelFromCorrect(g.correctAnswers)
   const earnedBadges = evaluateBadges({
     streakDays: g.streak.count, totalSolved: g.totalSolved,
-    correctAnswers: g.correctAnswers, level, masteryScores,
+    level, masteryScores,
   })
   const persistedBadges = Object.keys(userData.unlocked_badges || {})
   const newBadges = earnedBadges.filter((id) => !persistedBadges.includes(id))

@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FİDAN Önizleme — Öğrenci Karşılaştırma (Öğretmen)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+
+/* ═══ FİDAN v1.2 "Soft Doğa" — Gün Işığı (VARSAYILAN) ═══ */
+:root{
+  --zemin1:#F4F7F4; --zemin2:#E8EFE9;
+  --cam:rgba(255,255,255,.78); --cam-cizgi:rgba(46,79,58,.08);
+  --cam-koyu:rgba(255,255,255,.92);
+  --m1:#183121; --m2:#4A5D4E; --m3:#7C8F80;
+  --cta:#1E4620; --cta-metin:#F2F7F3; --vurgu:#2A5A3B;
+  --adacayi:#84A98C; --yaprak:#4FA56F; --toprak:#D4A373;
+  --v0:#EFF3EF; --v1:#DCE9DE; --v2:#BBD3C0; --v3:#9BBEA3; --v4:#6FA57F;
+  --dogru:#3E8E5A; --yanlis:#C25959; --uyari:#C98A3D;
+  --golge:0 8px 28px rgba(24,49,33,.07);
+  --gunes-lekesi:radial-gradient(circle, rgba(244,215,150,.28) 0%, transparent 70%);
+}
+html.gece{
+  --zemin1:#0C120E; --zemin2:#101A13;
+  --cam:rgba(16,26,19,.72); --cam-cizgi:rgba(148,180,155,.12);
+  --cam-koyu:rgba(20,32,24,.9);
+  --m1:#E5EFE7; --m2:#A7BCAC; --m3:#75887B;
+  --cta:#2E6B47; --cta-metin:#EAF4EC; --vurgu:#7FBF95;
+  --adacayi:#5E7D66; --yaprak:#4FA56F; --toprak:#B98F66;
+  --dogru:#5FBF83; --yanlis:#D98A8A; --uyari:#D9A968;
+  --golge:0 8px 28px rgba(0,0,0,.35);
+  --gunes-lekesi:radial-gradient(circle, rgba(163,190,140,.07) 0%, transparent 70%);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--m1);
+  background:linear-gradient(160deg,var(--zemin1) 0%,var(--zemin2) 100%);
+  min-height:100vh;transition:background .4s,color .4s;overflow-x:hidden}
+h1,h2,h3,h4{font-family:'Outfit',sans-serif}
+.mono{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--m3);font-weight:500}
+
+.band{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;
+  padding:9px 22px;background:var(--cam-koyu);backdrop-filter:blur(16px);border-bottom:1px solid var(--cam-cizgi)}
+.band .mono{color:var(--vurgu)}
+.tema-dugme{font-family:'Inter';font-size:12.5px;font-weight:600;color:var(--m2);background:var(--v0);
+  border:1px solid var(--cam-cizgi);border-radius:12px;padding:7px 14px;cursor:pointer;transition:.2s}
+.tema-dugme:hover{color:var(--m1);border-color:var(--adacayi)}
+
+.ustbar{display:flex;align-items:center;gap:26px;max-width:1320px;margin:0 auto;padding:16px 28px 0;opacity:.92}
+.logo{font-family:'Outfit';font-weight:800;font-size:17px}
+.logo span{color:var(--yaprak)}
+.sekmeler{display:flex;gap:4px;font-size:13px;font-weight:500;color:var(--m3);flex-wrap:wrap}
+.sekmeler a{padding:7px 13px;border-radius:12px;text-decoration:none;color:inherit}
+.sekmeler a.aktif{color:var(--vurgu);background:var(--v1);font-weight:600;position:relative}
+.sekmeler a.aktif::after{content:'';position:absolute;left:50%;bottom:2px;transform:translateX(-50%);width:14px;height:2.5px;border-radius:2px;background:var(--yaprak)}
+.rol-cip{margin-left:auto;font-size:11px;font-weight:700;color:var(--vurgu);background:var(--v1);padding:5px 12px;border-radius:12px}
+
+.sahne{max-width:1320px;margin:0 auto;padding:22px 28px 80px;position:relative}
+.leke{position:fixed;border-radius:50%;pointer-events:none;z-index:0}
+.leke.a{width:520px;height:520px;top:-120px;right:-80px;background:var(--gunes-lekesi)}
+
+.kart{position:relative;z-index:2;background:var(--cam);backdrop-filter:blur(16px);
+  border:1px solid var(--cam-cizgi);border-radius:20px;box-shadow:var(--golge);
+  animation:giris .5s cubic-bezier(.2,.7,.3,1) both;transition:background .4s}
+@keyframes giris{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.g1{animation-delay:0s}.g2{animation-delay:.06s}.g3{animation-delay:.12s}
+
+/* başlık */
+.baslik{padding:16px 22px}
+.baslik h1{font-size:20px}
+.baslik .alt{font-size:12.5px;color:var(--m3);margin-top:4px;line-height:1.5}
+.durum-cip{float:right;font-family:'JetBrains Mono';font-size:10.5px;color:var(--vurgu);background:var(--v1);padding:5px 12px;border-radius:11px}
+
+/* seçici */
+.secici{padding:16px 22px;margin-top:14px}
+.secici .etiket{font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--m3);margin-bottom:10px;display:block}
+.ogr-cipler{display:flex;gap:8px;flex-wrap:wrap}
+.ogr-cip{display:flex;align-items:center;gap:8px;font-family:'Inter';font-size:12.5px;font-weight:600;color:var(--m2);
+  background:transparent;border:1.5px solid var(--cam-cizgi);border-radius:12px;padding:8px 13px;cursor:pointer;transition:.2s;min-height:44px}
+.ogr-cip:hover{border-color:var(--adacayi)}
+.ogr-cip.secili{color:var(--vurgu);background:var(--v1);border-color:var(--adacayi)}
+.ogr-cip .avatar{width:24px;height:24px;border-radius:8px;background:var(--v2);display:flex;align-items:center;justify-content:center;
+  font-family:'Outfit';font-weight:700;font-size:9.5px;color:var(--vurgu)}
+.ogr-cip.secili .avatar{background:var(--yaprak);color:#fff}
+.ogr-cip.dolu{opacity:.4;cursor:not-allowed}
+.secici .not{font-size:11px;color:var(--m3);margin-top:10px}
+
+/* karşılaştırma ızgarası */
+.izgara-kabuk{padding:20px 24px;margin-top:14px;overflow-x:auto;border:1.5px solid var(--adacayi)}
+.izgara{display:grid;gap:9px 14px;min-width:520px;align-items:center}
+.iz-bas{font-family:'Outfit';font-weight:700;font-size:12.5px;text-align:center;color:var(--m1);padding-bottom:6px}
+.iz-bas.ort{color:var(--toprak)}
+.iz-bas .avatar{width:32px;height:32px;border-radius:10px;background:var(--v2);display:flex;align-items:center;justify-content:center;
+  font-family:'Outfit';font-weight:700;font-size:11px;color:var(--vurgu);margin:0 auto 5px}
+.iz-bas.ort .avatar{background:var(--v1);color:var(--toprak);border:1.5px dashed var(--toprak)}
+.iz-olcut{font-size:12px;color:var(--m2);font-weight:500;position:sticky;left:0;background:var(--cam);padding-right:8px}
+.iz-hucre{text-align:center}
+.iz-deger{font-family:'JetBrains Mono';font-size:13px;color:var(--m2);display:flex;align-items:center;justify-content:center;gap:4px}
+.iz-deger.kazanan{color:var(--dogru);font-weight:700}
+.iz-deger.ort{color:var(--toprak)}
+.iz-ray{height:5px;border-radius:3px;background:var(--v0);margin-top:5px;overflow:hidden}
+.iz-ray i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--adacayi),var(--yaprak))}
+.iz-ray.ort i{background:var(--toprak);opacity:.5}
+.iz-satir-cizgi{grid-column:1/-1;height:1px;background:var(--cam-cizgi)}
+
+/* son aktiflik */
+.aktiflik{padding:18px 22px;margin-top:14px}
+.aktiflik .panel-bas{font-size:14px;font-family:'Outfit';font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.akt-satir{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--cam-cizgi)}
+.akt-satir:last-child{border-bottom:none}
+.akt-satir .avatar{width:30px;height:30px;border-radius:9px;background:var(--v2);display:flex;align-items:center;justify-content:center;
+  font-family:'Outfit';font-weight:700;font-size:10px;color:var(--vurgu);flex-shrink:0}
+.akt-satir .ad{font-size:12.5px;font-weight:600;min-width:110px}
+.akt-nokta{display:flex;gap:3px;flex:1}
+.akt-nokta i{flex:1;height:22px;border-radius:4px;max-width:16px}
+.akt-satir .son{font-family:'JetBrains Mono';font-size:10px;color:var(--m3);margin-left:auto;white-space:nowrap}
+
+.bos{padding:40px 24px;text-align:center;margin-top:14px}
+.bos .filiz{width:64px;height:64px;margin:0 auto 14px;opacity:.8}
+.bos h3{font-size:15px;color:var(--m2)}
+.bos p{font-size:12.5px;color:var(--m3);margin-top:6px;max-width:340px;margin-inline:auto;line-height:1.55}
+
+.notlar{margin-top:36px;padding:26px 30px;background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:20px;position:relative;z-index:2}
+.notlar h3{font-size:14px;margin-bottom:14px;color:var(--m2)}
+.notlar ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.notlar li{font-size:12.5px;color:var(--m2);line-height:1.6;padding-left:18px;position:relative}
+.notlar li::before{content:'🌿';position:absolute;left:0;font-size:10px;top:2px}
+.notlar b{color:var(--m1);font-weight:600}
+.notlar code{font-family:'JetBrains Mono';font-size:11px;background:var(--v1);padding:1.5px 6px;border-radius:6px;color:var(--vurgu)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<div class="band">
+  <span class="mono">FİDAN ÖNİZLEME · ÖĞRENCİ KARŞILAŞTIRMA (ÖĞRETMEN) · V1</span>
+  <button class="tema-dugme" id="temaDugme">☾ Gece Ormanı'na geç</button>
+</div>
+
+<div class="leke a"></div>
+
+<nav class="ustbar">
+  <span class="logo">Learn<span>Up</span></span>
+  <div class="sekmeler">
+    <a href="#">Sınıf Panosu</a>
+    <a href="#">Isı Haritası</a>
+    <a href="#">Ödev Atölyesi</a>
+    <a class="aktif" href="#">Karşılaştırma</a>
+  </div>
+  <span class="rol-cip">ÖĞRETMEN</span>
+</nav>
+
+<main class="sahne">
+
+  <!-- ═══ BAŞLIK ═══ -->
+  <section class="kart g1 baslik">
+    <span class="durum-cip">3/4 seçili</span>
+    <h1>Öğrenci Karşılaştırma</h1>
+    <p class="alt">Aynı satır, aynı ölçek — fark göze çarpsın diye. Her ölçüt kendi içinde normalize edilir.</p>
+  </section>
+
+  <!-- ═══ SEÇİCİ ═══ -->
+  <section class="kart g2 secici">
+    <span class="etiket">Öğrenci seç · en fazla 4</span>
+    <div class="ogr-cipler">
+      <button class="ogr-cip secili"><span class="avatar">DK</span> Deniz Kaya</button>
+      <button class="ogr-cip secili"><span class="avatar">EA</span> Elif Aydın</button>
+      <button class="ogr-cip secili"><span class="avatar">MB</span> Mert Bulut</button>
+      <button class="ogr-cip"><span class="avatar">SÇ</span> Selin Çelik</button>
+      <button class="ogr-cip"><span class="avatar">AY</span> Ada Yıldız</button>
+      <button class="ogr-cip"><span class="avatar">KT</span> Kaan Toprak</button>
+    </div>
+    <p class="not">Seçim adres çubuğunda taşınır (<code>?ogrenci=a,b,c</code>) — karşılaştırmayı yenile, yapıştır, geri tuşuyla dön: hepsi çalışır.</p>
+  </section>
+
+  <!-- ═══ ÖLÇÜT KARŞILAŞTIRMASI ═══ -->
+  <section class="kart g3 izgara-kabuk">
+    <div class="izgara" style="grid-template-columns:170px repeat(3,minmax(84px,1fr)) minmax(84px,1fr)">
+      <!-- başlık satırı -->
+      <span></span>
+      <span class="iz-bas"><span class="avatar">DK</span>Deniz</span>
+      <span class="iz-bas"><span class="avatar">EA</span>Elif</span>
+      <span class="iz-bas"><span class="avatar">MB</span>Mert</span>
+      <span class="iz-bas ort"><span class="avatar">Σ</span>Sınıf ort.</span>
+      <span class="iz-satir-cizgi"></span>
+
+      <!-- Ortalama ustalık -->
+      <span class="iz-olcut">Ortalama ustalık</span>
+      <span class="iz-hucre"><span class="iz-deger">%62</span><span class="iz-ray"><i style="width:76%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger kazanan">%74 ✓</span><span class="iz-ray"><i style="width:90%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger">%58</span><span class="iz-ray"><i style="width:71%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger ort">%64</span><span class="iz-ray ort"><i style="width:78%"></i></span></span>
+      <span class="iz-satir-cizgi"></span>
+
+      <!-- Doğruluk -->
+      <span class="iz-olcut">Doğruluk</span>
+      <span class="iz-hucre"><span class="iz-deger">%71</span><span class="iz-ray"><i style="width:88%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger">%69</span><span class="iz-ray"><i style="width:85%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger kazanan">%81 ✓</span><span class="iz-ray"><i style="width:100%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger ort">%70</span><span class="iz-ray ort"><i style="width:86%"></i></span></span>
+      <span class="iz-satir-cizgi"></span>
+
+      <!-- Çözülen soru -->
+      <span class="iz-olcut">Çözülen soru</span>
+      <span class="iz-hucre"><span class="iz-deger kazanan">842 ✓</span><span class="iz-ray"><i style="width:100%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger">610</span><span class="iz-ray"><i style="width:72%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger">487</span><span class="iz-ray"><i style="width:58%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger ort">598</span><span class="iz-ray ort"><i style="width:71%"></i></span></span>
+      <span class="iz-satir-cizgi"></span>
+
+      <!-- Takip edilen kazanım -->
+      <span class="iz-olcut">Takip edilen kazanım</span>
+      <span class="iz-hucre"><span class="iz-deger">41</span><span class="iz-ray"><i style="width:87%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger kazanan">47 ✓</span><span class="iz-ray"><i style="width:100%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger">33</span><span class="iz-ray"><i style="width:70%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger ort">40</span><span class="iz-ray ort"><i style="width:85%"></i></span></span>
+      <span class="iz-satir-cizgi"></span>
+
+      <!-- Açık yanılgı (düşük iyi) -->
+      <span class="iz-olcut">Açık yanılgı <span style="color:var(--m3);font-size:10px">· az iyi</span></span>
+      <span class="iz-hucre"><span class="iz-deger">3</span><span class="iz-ray"><i style="width:60%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger kazanan">1 ✓</span><span class="iz-ray"><i style="width:20%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger">5</span><span class="iz-ray"><i style="width:100%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger ort">3</span><span class="iz-ray ort"><i style="width:60%"></i></span></span>
+      <span class="iz-satir-cizgi"></span>
+
+      <!-- XP -->
+      <span class="iz-olcut">XP</span>
+      <span class="iz-hucre"><span class="iz-deger kazanan">4 210 ✓</span><span class="iz-ray"><i style="width:100%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger">3 480</span><span class="iz-ray"><i style="width:83%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger">2 615</span><span class="iz-ray"><i style="width:62%"></i></span></span>
+      <span class="iz-hucre"><span class="iz-deger ort">3 190</span><span class="iz-ray ort"><i style="width:76%"></i></span></span>
+    </div>
+  </section>
+
+  <!-- ═══ SON AKTİFLİK ═══ -->
+  <section class="kart g3 aktiflik">
+    <div class="panel-bas">📅 Son 14 Gün Aktiflik</div>
+    <div class="akt-satir">
+      <span class="avatar">DK</span><span class="ad">Deniz Kaya</span>
+      <span class="akt-nokta">
+        <i style="background:var(--v2)"></i><i style="background:var(--v3)"></i><i style="background:var(--v1)"></i><i style="background:var(--v0)"></i><i style="background:var(--v3)"></i><i style="background:var(--v4)"></i><i style="background:var(--v2)"></i>
+        <i style="background:var(--v3)"></i><i style="background:var(--v2)"></i><i style="background:var(--v4)"></i><i style="background:var(--v3)"></i><i style="background:var(--v1)"></i><i style="background:var(--v2)"></i><i style="background:var(--v3)"></i>
+      </span>
+      <span class="son">bugün</span>
+    </div>
+    <div class="akt-satir">
+      <span class="avatar">EA</span><span class="ad">Elif Aydın</span>
+      <span class="akt-nokta">
+        <i style="background:var(--v3)"></i><i style="background:var(--v4)"></i><i style="background:var(--v3)"></i><i style="background:var(--v2)"></i><i style="background:var(--v4)"></i><i style="background:var(--v3)"></i><i style="background:var(--v4)"></i>
+        <i style="background:var(--v2)"></i><i style="background:var(--v3)"></i><i style="background:var(--v3)"></i><i style="background:var(--v4)"></i><i style="background:var(--v3)"></i><i style="background:var(--v4)"></i><i style="background:var(--v3)"></i>
+      </span>
+      <span class="son">bugün</span>
+    </div>
+    <div class="akt-satir">
+      <span class="avatar">MB</span><span class="ad">Mert Bulut</span>
+      <span class="akt-nokta">
+        <i style="background:var(--v1)"></i><i style="background:var(--v0)"></i><i style="background:var(--v2)"></i><i style="background:var(--v0)"></i><i style="background:var(--v0)"></i><i style="background:var(--v1)"></i><i style="background:var(--v2)"></i>
+        <i style="background:var(--v0)"></i><i style="background:var(--v1)"></i><i style="background:var(--v0)"></i><i style="background:var(--v2)"></i><i style="background:var(--v1)"></i><i style="background:var(--v0)"></i><i style="background:var(--v1)"></i>
+      </span>
+      <span class="son">3 gün önce</span>
+    </div>
+  </section>
+
+  <!-- ═══ BOŞ DURUM (referans) ═══ -->
+  <section class="kart bos" style="opacity:.7">
+    <svg class="filiz" viewBox="0 0 32 32"><defs><linearGradient id="fg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#84A98C"/><stop offset="1" stop-color="#4FA56F"/></linearGradient></defs><g fill="none" stroke="url(#fg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 27V14"/><path d="M16 17c0-3.6-2.9-5.9-7-5.9 0 3.6 2.9 5.9 7 5.9Z"/><path d="M16 15c0-3 2.4-5.1 6-5.1 0 3-2.4 5.1-6 5.1Z"/></g></svg>
+    <h3>En az iki öğrenci seç</h3>
+    <p>Karşılaştırma, iki öğrencinin aynı ölçütteki farkını yan yana gösterir. (Bu bölüm yalnız 0–1 seçimde görünür — referans için burada.)</p>
+  </section>
+
+  <!-- ═══ NOTLAR ═══ -->
+  <div class="notlar">
+    <h3>Tasarım notları — Öğrenci Karşılaştırma (uygulama kartına girecek)</h3>
+    <ul>
+      <li><b>Tüm ölçütler GERÇEK roster alanlarından</b> (mock yok): ortalama ustalık, doğruluk, çözülen soru, takip edilen kazanım, açık yanılgı (az iyi), XP — <code>OLCUTLER</code> dizisi aynen. Değeri olmayan <code>ölçüm yok</code>/<code>veri yok</code> der, sıfır çizilmez (null≠0).</li>
+      <li><b>Ölçek SATIR BAŞINA normalize</b> (koddaki kural): her ölçüt kendi içinde en büyüğe göre çubuklanır — yatay tarama dürüst olur. Bu davranış <code>KarsilastirmaIzgarasi</code>'nda zaten var, korunur.</li>
+      <li><b>Kazanan asla yalnız renkle değil:</b> ✓ ikonu + renk BİRLİKTE ("az iyi" ölçütlerde — açık yanılgı — en düşük kazanır). Tek öğrenci seçiliyken kazanan işaretlenmez.</li>
+      <li><b>Sınıf ortalaması sütunu</b> (EKRAN-HARITASI §15 [HAZIR]): kesikli toprak tonlu sanal sütun — "4 öğrenci + referans". Sınıf özeti verisi zaten çekiliyor; <b>uç doğrulanacak</b> (sınıf ort. alanı yoksa sütun gizlenir + backend kartı — uydurulmaz).</li>
+      <li><b>Seçim URL'de</b> (<code>?ogrenci=a,b,c</code>, replace:true): karşılaştırmanın kendisi paylaşılabilir artefakt. En fazla 4; dolunca kalan çipler soluk/pasif.</li>
+      <li><b>Son aktiflik şeridi:</b> öğrenci başına son 14 gün nokta ızgarası — mevcut <code>SonAktiflikSeridi</code> verisinden; gün yoğunluğu 4-ton, boş gün <code>--v0</code>.</li>
+      <li><b>Boş durum:</b> &lt;2 seçimde Lighthouse yerine FİDAN filizi + "En az iki öğrenci seç"; yatay kaydırma yalnız ızgara kabuğunda (<code>overflow-x</code>), sayfa gövdesi taşmaz.</li>
+      <li><b>Hareket-azalt:</b> kart girişleri + çubuk dolumları <code>prefers-reduced-motion</code>'da durur.</li>
+    </ul>
+  </div>
+</main>
+
+<script>
+const dugme = document.getElementById('temaDugme');
+dugme.addEventListener('click', () => {
+  const gece = document.documentElement.classList.toggle('gece');
+  dugme.textContent = gece ? '☀ Gün Işığı\'na dön' : '☾ Gece Ormanı\'na geç';
+});
+</script>
+</body>
+</html>

@@ -30,8 +30,24 @@ aiQuestionsRouter.get('/', async (req, res, next) => {
         ? req.query.difficulty
         : null
     const kazanimId = Number(req.query.kazanimId) || null
+    const konuId = Number(req.query.konuId) || null
     const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20))
     const offset = Math.max(0, Number(req.query.offset) || 0)
+
+    // Konu → kazanım listesi (0026 eşleme katmanı). Soruda konu etiketi TUTULMAZ; konunun
+    // soruları daima kazanım üzerinden türer, böylece kazanımın konusu düzeltilince eski
+    // sorular da otomatik doğru konuya geçer (denormalize etiket kayması yok).
+    let konuKazanimlari: number[] | null = null
+    if (konuId) {
+      const { data } = await supabase.from('kazanim_konu').select('kazanim_id').eq('konu_id', konuId)
+      konuKazanimlari = (data ?? []).map((r) => Number(r.kazanim_id))
+      // Eşlemesi olmayan konu: BOŞ küme dön. Filtreyi atlamak "konu seçtim, alakasız
+      // soru geldi" demek olurdu — sessiz yanlış, boş listeden kötü.
+      if (!konuKazanimlari.length) {
+        res.json({ questions: [], total: 0, limit, offset })
+        return
+      }
+    }
 
     let q = supabase
       .from('yks_ai_questions')
@@ -40,11 +56,13 @@ aiQuestionsRouter.get('/', async (req, res, next) => {
         { count: 'exact' },
       )
       .eq('verified', true)
+      .eq('karantina', false) // 0025: yöneticinin düşürdüğü soru görüntüleyicide de YOK
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
     if (subject) q = q.eq('subject', subject)
     if (difficulty) q = q.eq('difficulty', difficulty)
     if (kazanimId) q = q.eq('kazanim_id', kazanimId)
+    if (konuKazanimlari) q = q.in('kazanim_id', konuKazanimlari)
 
     const { data, error, count } = await q
     if (error) throw error
@@ -58,7 +76,7 @@ aiQuestionsRouter.get('/', async (req, res, next) => {
 aiQuestionsRouter.get('/facets', async (_req, res, next) => {
   try {
     const data = await fetchAll<{ subject: string; difficulty: string | null }>(() =>
-      supabase.from('yks_ai_questions').select('subject, difficulty').eq('verified', true),
+      supabase.from('yks_ai_questions').select('subject, difficulty').eq('verified', true).eq('karantina', false),
     )
     const dersler = new Map<string, number>()
     const zorluklar = new Map<string, number>()
@@ -98,6 +116,225 @@ aiQuestionsRouter.get('/topics', async (_req, res, next) => {
         .map(([subject, list]) => ({ subject, count: list.reduce((s, t) => s + t.count, 0), topics: list }))
         .sort((a, b) => b.count - a.count),
     })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/v1/questions/ai/konular — ÖĞRENCİNİN DERS → KONU LİSTESİ (0026 konu katmanı).
+ *
+ * Kullanıcının asıl istediği ekran bunu tüketir: "Matematik → Türev → türev soruları".
+ * MEB ünite hiyerarşisi ve ltree path'i BURADAN ÇIKMAZ — arayüz iki seviye görür (ders, konu).
+ *
+ * ⚠️ DERS GÖRÜNÜRLÜĞÜ ÖĞRENCİNİN ALANINA BAĞLI (kullanıcı kararı):
+ *   · TYT dersleri (ders_kapsam.tyt) HERKESE görünür — alan seçilmemiş olsa bile.
+ *   · AYT dersleri yalnız o dersi okuyan alanlara (ders_kapsam.ayt_alanlar).
+ * Alan NULL ise (henüz seçmemiş / öğretmen / yönetici) yalnız TYT döner. NULL'u 'sayisal'
+ * varsaymak sözelci öğrenciye Fizik/Kimya listelemek olurdu.
+ *
+ * ⚠️ AYNI DERSİN TYT ve AYT KONULARI AYRI SÜZÜLÜR. Sayısalcıya Matematik'in hem TYT hem AYT
+ * konuları gösterilir; sözelciye YALNIZ TYT Matematik. Ders seviyesinde süzmek yetmez —
+ * sözelci öğrenci "Türev"i (AYT konusu) görürdü.
+ *
+ * Varsayılan olarak İÇİ BOŞ KONU DÖNMEZ (soruSayisi>0). Seçilebilir ama 0 soru veren bir
+ * konu, ürünün bozuk olduğunu düşündürür. ?tumu=1 ile kapsama analizi için hepsi döner.
+ */
+aiQuestionsRouter.get('/konular', async (req, res, next) => {
+  try {
+    const tumu = req.query.tumu === '1'
+
+    const { data: profil } = await supabase
+      .from('profiles')
+      .select('alan')
+      .eq('id', String(req.userId))
+      .maybeSingle()
+    const alan = (profil?.alan as string | null) ?? null
+
+    // ── ÖĞRENCİNİN ÜNİTE İLERLEMESİ ──
+    // Kunduz düzenindeki "%N Tamamlandı · %N Başarı" bunlardan üretilir. Kart deseni ancak
+    // gerçek veriyle dolu görünür; uydurma yüzde basmak kartı süsler ama yalan söyler.
+    //
+    // ⚠️ ÖĞRENCİYE ÖZEL: her satır req.userId ile filtrelenir. Ders/ünite listesi herkes
+    // için aynı, ilerleme kişiye özeldir; ikisini tek uçta döndürmek panel-önbelleğine
+    // ALINMAMASI gereken bir yanıt üretir (bu uç zaten önbelleksiz).
+    const [aiSorular, eslemeler] = await Promise.all([
+      fetchAll<{ id: string; kazanim_id: number | null }>(() =>
+        supabase.from('yks_ai_questions').select('id, kazanim_id').eq('verified', true).eq('karantina', false),
+      ),
+      fetchAll<{ kazanim_id: number; konu_id: number }>(() =>
+        supabase.from('kazanim_konu').select('kazanim_id, konu_id'),
+      ),
+    ])
+    const kazanimKonu = new Map(eslemeler.map((e) => [Number(e.kazanim_id), Number(e.konu_id)]))
+    const soruKonu = new Map<string, number>()
+    for (const s of aiSorular) {
+      const konuId = s.kazanim_id == null ? undefined : kazanimKonu.get(Number(s.kazanim_id))
+      if (konuId) soruKonu.set(String(s.id), konuId)
+    }
+    // Atlananlar sayılmaz: bilmediği için atlayan öğrenci "yanlış yaptı" değildir.
+    const cevaplar = soruKonu.size
+      ? await fetchAll<{ question_id: string | null; is_correct: boolean | null }>(() =>
+          supabase
+            .from('user_answers')
+            .select('question_id, is_correct')
+            .eq('user_id', String(req.userId))
+            .eq('skipped', false)
+            .in('question_id', [...soruKonu.keys()]),
+        )
+      : []
+    /** konu_id → { cozulen: farklı soru adedi, dogru: doğru sayısı } */
+    const konuIlerleme = new Map<number, { cozulen: Set<string>; dogru: number }>()
+    for (const c of cevaplar) {
+      const konuId = c.question_id ? soruKonu.get(c.question_id) : undefined
+      if (!konuId) continue
+      const cur = konuIlerleme.get(konuId) ?? { cozulen: new Set<string>(), dogru: 0 }
+      cur.cozulen.add(String(c.question_id))
+      if (c.is_correct === true) cur.dogru += 1
+      konuIlerleme.set(konuId, cur)
+    }
+
+    const [{ data: kapsamlar }, havuz] = await Promise.all([
+      supabase.from('ders_kapsam').select('subject, tyt, ayt_alanlar, sira').order('sira'),
+      fetchAll<{
+        konu_id: number
+        subject: string
+        ad: string
+        sinav: string
+        sira: number
+        unite: string | null
+        unite_sira: number
+        soru_sayisi: number
+        kolay: number
+        orta: number
+        zor: number
+      }>(() =>
+        supabase
+          .from('konu_havuz')
+          .select('konu_id, subject, ad, sinav, sira, unite, unite_sira, soru_sayisi, kolay, orta, zor'),
+      ),
+    ])
+
+    const konuByDers = new Map<string, typeof havuz>()
+    for (const k of havuz) {
+      const l = konuByDers.get(k.subject) ?? []
+      l.push(k)
+      konuByDers.set(k.subject, l)
+    }
+
+    const dersler = []
+    for (const kap of (kapsamlar ?? []) as Array<{
+      subject: string
+      tyt: boolean
+      ayt_alanlar: string[]
+      sira: number
+    }>) {
+      const aytVar = alan != null && (kap.ayt_alanlar ?? []).includes(alan)
+      if (!kap.tyt && !aytVar) continue // ne TYT'de ne öğrencinin alanında → ders hiç görünmez
+
+      const gorunur = (konuByDers.get(kap.subject) ?? [])
+        .filter((k) => (k.sinav === 'TYT' ? kap.tyt : aytVar))
+        .filter((k) => tumu || Number(k.soru_sayisi) > 0)
+
+      // ── ÜNİTELERE GRUPLA (0031) ──
+      // Ünite ayrı bir gezinti seviyesi DEĞİL, listenin bölüm başlığı. 34 satırlık düz
+      // liste 5-7 taranabilir bloğa iner. Gruplama SUNUCUDA yapılır: istemci aynı sıralama
+      // kurallarını ikinci kez uygulamak zorunda kalmasın (iki yerde tutulan sıra ayrışır).
+      //
+      // ⚠️ ÜNİTESİ NULL OLAN KONU KAYBOLMAZ. 0031 tüm sözlüğü atıyor ama ileride eklenen
+      // bir konu ünitesiz kalabilir; onu düşürmek konuyu arayüzden sessizce yok ederdi.
+      // Böyleleri "Diğer" bloğunda, en sonda toplanır.
+      const uniteler: Array<{
+        ad: string
+        sinav: string
+        sira: number
+        toplam: number
+        cozulen: number
+        dogru: number
+        konular: Array<{
+          konuId: number; ad: string; sinav: string; soruSayisi: number
+          kolay: number; orta: number; zor: number; cozulen: number
+        }>
+      }> = []
+      const uniteIdx = new Map<string, number>()
+      for (const k of gorunur.sort(
+        (a, b) =>
+          // TYT bloğu AYT'den önce; sonra ünite sırası; sonra ünite içi konu sırası.
+          (a.sinav === b.sinav ? 0 : a.sinav === 'TYT' ? -1 : 1) ||
+          Number(a.unite_sira) - Number(b.unite_sira) ||
+          Number(a.sira) - Number(b.sira),
+      )) {
+        const uniteAdi = k.unite ?? 'Diğer'
+        const anahtar = `${k.sinav}|${uniteAdi}`
+        let i = uniteIdx.get(anahtar)
+        if (i == null) {
+          i = uniteler.length
+          uniteIdx.set(anahtar, i)
+          uniteler.push({
+            ad: uniteAdi, sinav: k.sinav, sira: Number(k.unite_sira),
+            toplam: 0, cozulen: 0, dogru: 0, konular: [],
+          })
+        }
+        const ilerleme = konuIlerleme.get(Number(k.konu_id))
+        uniteler[i].konular.push({
+          konuId: Number(k.konu_id),
+          ad: k.ad,
+          sinav: k.sinav,
+          soruSayisi: Number(k.soru_sayisi),
+          kolay: Number(k.kolay),
+          orta: Number(k.orta),
+          zor: Number(k.zor),
+          cozulen: ilerleme?.cozulen.size ?? 0,
+        })
+        uniteler[i].toplam += Number(k.soru_sayisi)
+        uniteler[i].cozulen += ilerleme?.cozulen.size ?? 0
+        uniteler[i].dogru += ilerleme?.dogru ?? 0
+      }
+
+      dersler.push({
+        subject: kap.subject,
+        tyt: kap.tyt,
+        ayt: aytVar,
+        toplam: uniteler.reduce((s, u) => s + u.toplam, 0),
+        konuSayisi: uniteler.reduce((s, u) => s + u.konular.length, 0),
+        cozulen: uniteler.reduce((s, u) => s + u.cozulen, 0),
+        dogru: uniteler.reduce((s, u) => s + u.dogru, 0),
+        uniteler,
+      })
+    }
+
+    res.json({ alan, dersler, toplam: dersler.reduce((s, d) => s + d.toplam, 0) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/v1/questions/ai/konu-talep — body: { konuId }
+ *
+ * Öğrenci seyrek/boş bir konuya girdiğinde ilgisini kaydeder (0028). ÜRETİM TETİKLEMEZ:
+ * yalnız yöneticinin kapsama ekranındaki öncelik sayacını besler. Otomatik üretim
+ * tavansız paralı harcama demekti (bkz. 0028 gerekçesi ve env.ts NIGHTLY_FORGE).
+ *
+ * Kişi başı tek satır (PK konu_id+user_id) → tekrar çağrı sessizce yutulur.
+ */
+aiQuestionsRouter.post('/konu-talep', async (req, res, next) => {
+  try {
+    const konuId = Number((req.body as { konuId?: unknown } | undefined)?.konuId) || null
+    if (!konuId) {
+      res.status(400).json({ error: 'konu_gerekli', message: 'konuId zorunlu.' })
+      return
+    }
+    // Var olmayan konuya talep yazmak, kapsama ekranında hayalet satır üretirdi.
+    const { data: konu } = await supabase.from('konular').select('id').eq('id', konuId).maybeSingle()
+    if (!konu) {
+      res.status(404).json({ error: 'konu_bulunamadi', message: 'Konu bulunamadı.' })
+      return
+    }
+    await supabase
+      .from('konu_talep')
+      .upsert({ konu_id: konuId, user_id: String(req.userId) }, { onConflict: 'konu_id,user_id', ignoreDuplicates: true })
+    res.json({ ok: true })
   } catch (err) {
     next(err)
   }
@@ -158,6 +395,7 @@ aiQuestionsRouter.get('/kalite', async (_req, res, next) => {
           .from('yks_ai_questions')
           .select('question_text, options, correct_option, subject, difficulty, quality')
           .eq('verified', true)
+          .eq('karantina', false) // 0025: kalite raporu SERVİS EDİLEN havuzu ölçer
           .returns<KaliteRow[]>(),
       ),
       fetchAll<KaliteRow>(() =>
@@ -266,7 +504,7 @@ export async function poolTopics(): Promise<
   Array<{ kazanimId: number; code: string | null; title: string; subject: string; count: number }>
 > {
   const rows = await fetchAll<{ kazanim_id: number | null; subject: string }>(() =>
-    supabase.from('yks_ai_questions').select('kazanim_id, subject').eq('verified', true),
+    supabase.from('yks_ai_questions').select('kazanim_id, subject').eq('verified', true).eq('karantina', false),
   )
   const sayac = new Map<number, { subject: string; count: number }>()
   for (const r of rows) {
@@ -295,3 +533,23 @@ export async function poolTopics(): Promise<
     })
     .sort((a, b) => b.count - a.count)
 }
+
+/**
+ * SON DURAK — /questions/ai altında eşleşmeyen yol BURADA biter, düşmez.
+ *
+ * ⚠️ NEDEN ŞART (ölçüldü, kullanıcı bunu yaşadı): Express `app.use()`'ları SIRAYLA dener ve
+ * bir router hiçbir rotasına uymayan isteği `next()` ile bırakır. app.ts'te mount sırası
+ *     /questions/ai  → standardLimiter (60/dk)
+ *     /questions     → llmLimiter      (10/dk, PAHALI üretim kotası)
+ * olduğu için, /questions/ai altındaki BİLİNMEYEN bir yol (eski imaj, yazım hatası, henüz
+ * deploy edilmemiş uç) sessizce /questions'a düşüyor ve ÜRETİM KOTASINI yiyordu.
+ *
+ * Somut sonuç: salt-okunur `/questions/ai/konular` isteği 404 alıyor, ama 10 denemede
+ * kullanıcının günlük üretim hakkı tükeniyor ve ekranda "Dakikada 10 ÜRETİM isteği sınırı
+ * aşıldı" yazıyor — hiç üretim istenmemişken. Hem yanlış fatura hem yanlış teşhis.
+ *
+ * Bu handler zincirin sonunda: üstteki rotalar eşleşirse buraya hiç gelinmez.
+ */
+aiQuestionsRouter.use((_req, res) => {
+  res.status(404).json({ error: 'not_found' })
+})

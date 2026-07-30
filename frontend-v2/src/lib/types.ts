@@ -17,7 +17,47 @@ export interface HavuzSoru {
   source_type?: string
 }
 
-export type CozKaynak = 'ai' | 'osym' | 'review' | 'antrenman' | 'tanisma' | 'odev'
+export type CozKaynak = 'ai' | 'osym' | 'review' | 'antrenman' | 'tanisma' | 'odev' | 'konu'
+
+/* ═══ GET /questions/ai/konular — ders → konu listesi (0026 konu katmanı) ═══ */
+export interface KonuOgesi {
+  konuId: number
+  ad: string
+  sinav: 'TYT' | 'AYT'
+  soruSayisi: number
+  kolay: number
+  orta: number
+  zor: number
+  /** Öğrencinin bu konuda çözdüğü FARKLI soru adedi. */
+  cozulen: number
+}
+/** Ünite = ders içindeki konu öbeği (0031). Kart olarak gösterilir. */
+export interface KonuUnitesi {
+  ad: string
+  sinav: 'TYT' | 'AYT'
+  sira: number
+  toplam: number
+  /** Öğrencinin bu ünitede çözdüğü farklı soru adedi (ilerleme yüzdesi bundan). */
+  cozulen: number
+  /** Çözdüklerinin kaçı doğru (başarı yüzdesi bundan). */
+  dogru: number
+  konular: KonuOgesi[]
+}
+export interface KonuDersi {
+  subject: string
+  tyt: boolean
+  ayt: boolean
+  toplam: number
+  konuSayisi: number
+  cozulen: number
+  dogru: number
+  uniteler: KonuUnitesi[]
+}
+export interface KonularYaniti {
+  alan: 'sayisal' | 'sozel' | 'esit_agirlik' | null
+  dersler: KonuDersi[]
+  toplam: number
+}
 
 // Çöz ekranına router state ile geçirilen oturum tarifi.
 export interface CozSpec {
@@ -25,6 +65,7 @@ export interface CozSpec {
   title?: string
   subject?: string
   kazanimId?: number
+  konuId?: number           // konu: Konular ekranından seçilen klasik konu (0026)
   year?: number             // osym: yıla göre çöz
   label?: string            // osym: sınav etiketi (TYT / AYT-…) — prova setleri
   difficulty?: 'kolay' | 'orta' | 'zor'

@@ -6,18 +6,30 @@
  *                   kusurunu yakalamalı, temizleri geçirmeli. (LLM'siz, DB'siz.)
  *   2b YAPISAL    : havuz ↔ gerçek ÖSYM, aynı metriklerle yan yana; özgünlük eşiğinin
  *                   İSPATI (yüzdelik + yanlış-alarm tablosu) burada basılır. (DB-only.)
- *   2c DRİFT      : koşu metrikleri eval-sonuclari/'a yazılır, öncekiyle fark basılır.
- *                   ⚠️ Eşikler TABAN-ÇİZGİSİNE göredir: ilk koşu baseline yazar, sonrakiler
- *                   KÖTÜLEŞMEYİ yakalar. (Mutlak sıfır-tolerans mevcut havuzdaki bilinen
- *                   kopya çiftini ilk koşuda anında düşürürdü.)
+ *   2c DRİFT      : koşu metrikleri eval-sonuclari/'a yazılır ve İŞARETLİ baseline'a
+ *                   kıyaslanır (işaret: eval-sonuclari/baseline.json → snapshot dosyası).
+ *                   Baseline'ı YALNIZ --baseline-al değiştirir; olağan koşu işarete asla
+ *                   dokunmaz. Snapshot kural-seti hash'i taşır; hash uyuşmazsa kıyas
+ *                   YAPILMAZ — açık mesajla exit 1 (sessiz yeşil de sessiz kırmızı da yasak).
+ *                   (Mutlak sıfır-tolerans yerine kıyas: havuzdaki bilinen kopya çiftini
+ *                   mutlak eşik ilk koşuda anında düşürürdü.)
+ *                   NEDEN (GOREV-017 §0, kanıtlı): eski kural "en son .json'a kıyasla" idi —
+ *                   QA turunun KIRMIZI'sı ikinci koşuda YEŞİL'e döndü (degrade değerler
+ *                   baseline'a gömüldü); eşik değişimi (0.75→0.62) baseline'ı sessizce
+ *                   bayatlattı (sahte "NN regresyonu"); snapshot-olmayan analiz .json'u
+ *                   baseline sanılıp `eski.ai undefined` çökmesi yaşandı (GOREV-019).
+ *   Bayraklar: --baseline-al[=<snap>] baseline işaretler (bu koşuyla ya da var olan
+ *   snapshot'la, DB'siz). --drift-prova=<snap>: DB'siz replay — verilen snapshot işaretli
+ *   baseline'a kıyaslanır, HİÇBİR dosya yazılmaz (017 gömülme senaryosunun kanıt aracı).
  *   2d HAKEM      : `--hakem` bayrağıyla; KREDİLİDİR. Bayraksız TEK LLM çağrısı yapılmaz;
  *                   bayrakla önce maliyet tahmini basılır, `--evet` olmadan koşmaz.
  *
  * Neden var: bu oturumda aynı ölçümler _tmp dosyalarına yazılıp silindi ve bir regex hatası
  * ("grafiği" vs \b) yanlış tabloya yol açtı. Kalıcı pipeline hatayı bir kez düzeltir.
  */
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { supabase } from '../clients/supabase.js'
 import { celdiriciKusatmasi, sikUzunlukSizintisi, sayiya, type SikliSoru } from '../utils/shufflers.js'
 import { soruLatexBozuk, hamMatematikKacagi } from '../utils/latex.js'
@@ -29,6 +41,154 @@ import { ALTIN_SET } from './eval-altin-set.js'
 const argv = process.argv.slice(2)
 const HAKEM = argv.includes('--hakem')
 const EVET = argv.includes('--evet')
+
+// ═════════════════════════════════════════════════════════════════════════
+// İŞARETLİ BASELINE + KURAL-SETİ HASH ALTYAPISI (GOREV-020)
+// NEDEN (GOREV-017 §0): drift "en son .json"a kıyaslıyordu (readdirSync().sort().at(-1)).
+// Üç kanıtlı arıza: (1) degrade QA koşusu bir sonraki koşuda baseline olup KIRMIZI'yı
+// YEŞİL'e gömdü; (2) eşik değişimi (0.75→0.62) baseline'ı sessizce bayatlatıp sahte
+// "NN regresyonu" üretti; (3) snapshot-olmayan gorev-017-nn-kusatma-analiz.json baseline
+// sanılıp `eski.ai undefined` ile çöktü (GOREV-019). Kalıcı çözüm: baseline yalnız açık
+// bayrakla İŞARETLENİR, koşular işarete dokunmaz; snapshot adı desen-doğrulanır; snapshot
+// kapı sabitlerinin hash'ini taşır — hash uyuşmazsa kıyas yapılmaz, açık mesajla exit 1.
+// ═════════════════════════════════════════════════════════════════════════
+const DIR = join(import.meta.dir, '..', '..', 'eval-sonuclari')
+mkdirSync(DIR, { recursive: true })
+const ISARET_DOSYASI = join(DIR, 'baseline.json')
+// Yalnız eval'in kendi yazdığı zaman-damgalı adlar snapshot sayılır; desen dışı .json'lar
+// (analiz çıktıları vb.) baseline OLAMAZ — 019'daki çökmenin kalıcı önlemi.
+const SNAP_DESENI = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/
+
+// Kural-seti hash'i: 2c'nin kıyasladığı BÜTÜN metrikleri üreten kapı sabitleri şu üç
+// dosyada yaşar — NN eşikleri+shingle: benzerlik.ts · kuşatma+uzunluk-sızıntısı:
+// shufflers.ts · görsel desenleri: soru-saglik.ts. Dosya İÇERİĞİ hash'lenir (CRLF
+// normalize): eşik/kural değişen her durumda hash değişir ve kıyas ancak bilinçli
+// --baseline-al ile yeniden açılır (017'deki "eşik değişti, baseline sessizce bayatladı"
+// sınıfı bir daha sessiz kalamaz). Yorum değişikliğinin de hash'i oynatması KABUL edilen
+// bedeldir: eşik gerekçeleri o dosyalarda yorum olarak yaşar (kural 8), muhafazakâr taraf
+// "gürültülü ama açık" taraftır.
+const KURAL_DOSYALARI = ['benzerlik.ts', 'shufflers.ts', 'soru-saglik.ts'] as const
+const kuralHashHesapla = (): string => {
+  const h = createHash('sha256')
+  for (const f of KURAL_DOSYALARI)
+    h.update(readFileSync(join(import.meta.dir, '..', 'utils', f), 'utf8').replace(/\r\n/g, '\n'))
+  return h.digest('hex')
+}
+const KURAL_HASH = kuralHashHesapla()
+const kisa = (h?: string): string => (h ? h.slice(0, 12) : 'yok')
+
+type SnapAi = { n: number; sizintiOrani: number; kusatmaIhlalOrani: number; gorselGonderme: number; nnKopya: number; nnP90: number }
+type Snapshot = { tarih: string; kuralHash?: string; ai: SnapAi; osym: { n: number } }
+type Isaret = { dosya: string; kuralHash: string; isaretTarihi: string; not?: string }
+
+const snapshotOku = (ad: string): Snapshot | null => {
+  try {
+    const j = JSON.parse(readFileSync(join(DIR, ad), 'utf8')) as Snapshot
+    // Şema nöbeti: 019'daki `eski.ai undefined` TypeError'ı bir daha çökme olamaz.
+    return j && typeof j === 'object' && j.ai && typeof j.ai.sizintiOrani === 'number' ? j : null
+  } catch {
+    return null
+  }
+}
+const isaretOku = (): Isaret | null => {
+  if (!existsSync(ISARET_DOSYASI)) return null
+  try {
+    const j = JSON.parse(readFileSync(ISARET_DOSYASI, 'utf8')) as Isaret
+    return j && typeof j.dosya === 'string' ? j : null
+  } catch {
+    return null
+  }
+}
+const isaretYaz = (dosya: string, not: string): void => {
+  const isaret: Isaret = { dosya, kuralHash: KURAL_HASH, isaretTarihi: new Date().toISOString(), not }
+  writeFileSync(ISARET_DOSYASI, JSON.stringify(isaret, null, 2))
+}
+
+// Drift kıyası TEK fonksiyondur: canlı koşu (2c) da --drift-prova da buradan geçer —
+// prova kanıtı canlı yolun AYNISINI çalıştırmış olur, kopya mantık kayamaz.
+type DriftCikti = { satirlar: Array<[string, number, number, boolean]>; engel: string | null }
+const driftKiyasla = (cariAi: SnapAi, cariHash: string | undefined, isaret: Isaret): DriftCikti => {
+  if (!SNAP_DESENI.test(isaret.dosya))
+    return { satirlar: [], engel: `baseline işareti snapshot desenine uymuyor: ${isaret.dosya}` }
+  const eski = snapshotOku(isaret.dosya)
+  if (!eski)
+    return { satirlar: [], engel: `baseline snapshot okunamadı / şema tanınmadı: ${isaret.dosya}` }
+  // Eski-şema snapshot'lar (hash alanı yok) hash'i işaretten alır: işaretleme anı
+  // "bu snapshot cari kural setiyle geçerli" beyanıdır.
+  const eskiHash = eski.kuralHash ?? isaret.kuralHash
+  if (cariHash !== undefined && eskiHash !== cariHash)
+    return {
+      satirlar: [],
+      engel: `kural seti değişti (baseline ${kisa(eskiHash)} ≠ cari ${kisa(cariHash)}) — drift kıyası YAPILMADI; bilinçli yeniden-baseline gerekli: bun run eval --baseline-al`,
+    }
+  const kontrol: Array<[string, number, number]> = [
+    ['sızıntı oranı', eski.ai.sizintiOrani, cariAi.sizintiOrani],
+    ['kuşatma ihlal oranı', eski.ai.kusatmaIhlalOrani, cariAi.kusatmaIhlalOrani],
+    ['görsel gönderme adedi', eski.ai.gorselGonderme, cariAi.gorselGonderme],
+    ['NN kopya adedi', eski.ai.nnKopya, cariAi.nnKopya],
+  ]
+  return { satirlar: kontrol.map(([ad, once, simdi]) => [ad, once, simdi, simdi > once + 1e-9]), engel: null }
+}
+
+// ── Yönetim modları (DB'siz, LLM'siz, $0; snapshot YAZMAZLAR) ─────────────
+const bayrakDeger = (ad: string): string | null => {
+  const a = argv.find((x) => x === ad || x.startsWith(`${ad}=`))
+  return a && a.includes('=') ? a.slice(ad.length + 1) : null
+}
+const BASELINE_AL = argv.some((a) => a === '--baseline-al' || a.startsWith('--baseline-al='))
+const BASELINE_HEDEF = bayrakDeger('--baseline-al')
+const PROVA_HEDEF = bayrakDeger('--drift-prova')
+
+if (BASELINE_HEDEF !== null) {
+  // Var olan bir snapshot'ı koşusuz işaretle (ilk kurulum / bilinçli yeniden-baseline).
+  if (!SNAP_DESENI.test(BASELINE_HEDEF)) {
+    console.log(`✗ baseline-al: desen dışı ad: ${BASELINE_HEDEF} (beklenen: YYYY-AA-GGTss-dd-ss-mmmZ.json)`)
+    process.exit(1)
+  }
+  if (!snapshotOku(BASELINE_HEDEF)) {
+    console.log(`✗ baseline-al: snapshot okunamadı / şema tanınmadı: ${BASELINE_HEDEF}`)
+    process.exit(1)
+  }
+  isaretYaz(BASELINE_HEDEF, 'elle işaret (--baseline-al=<dosya>)')
+  console.log(`✓ baseline işaretlendi: ${BASELINE_HEDEF} · kuralHash ${kisa(KURAL_HASH)}`)
+  process.exit(0)
+}
+if (PROVA_HEDEF !== null) {
+  // 017 gömülme senaryosunun REPLAY kanıtı: verilen snapshot "cari koşu"ymuş gibi işaretli
+  // baseline'a kıyaslanır. HİÇBİR dosya yazılmaz, işaret DEĞİŞMEZ — degrade snapshot kaç
+  // kez prova edilirse edilsin sonuç aynı kalır (kırmızı gömülemez).
+  const isaret = isaretOku()
+  if (!isaret) {
+    console.log('✗ drift-prova: işaretli baseline yok (bun run eval --baseline-al=<snapshot.json>)')
+    process.exit(1)
+  }
+  if (!SNAP_DESENI.test(PROVA_HEDEF)) {
+    console.log(`✗ drift-prova: desen dışı ad: ${PROVA_HEDEF}`)
+    process.exit(1)
+  }
+  const cari = snapshotOku(PROVA_HEDEF)
+  if (!cari) {
+    console.log(`✗ drift-prova: snapshot okunamadı / şema tanınmadı: ${PROVA_HEDEF}`)
+    process.exit(1)
+  }
+  console.log(`drift-prova: ${PROVA_HEDEF} → baseline ${isaret.dosya} (işaret: ${isaret.isaretTarihi} · kuralHash ${kisa(isaret.kuralHash)})`)
+  if (cari.kuralHash === undefined)
+    console.log('  (bilgi) prova snapshot\'ı eski şema — kuralHash taşımıyor, hash denetimi atlandı')
+  const sonuc = driftKiyasla(cari.ai, cari.kuralHash, isaret)
+  if (sonuc.engel) {
+    console.log(`  ✗ ${sonuc.engel}`)
+    process.exit(1)
+  }
+  let kotuSayisi = 0
+  for (const [ad, once, simdi, kotu] of sonuc.satirlar) {
+    if (kotu) {
+      kotuSayisi++
+      console.log(`  ✗ KÖTÜLEŞME — ${ad}: ${once.toFixed(3)} → ${simdi.toFixed(3)} (baseline: ${isaret.dosya})`)
+    } else console.log(`  ✓ ${ad}: ${once.toFixed(3)} → ${simdi.toFixed(3)}`)
+  }
+  console.log(kotuSayisi > 0 ? `SONUÇ: KIRMIZI — ${kotuSayisi} kötüleşme (prova; işaret değişmedi)` : 'SONUÇ: YEŞİL (prova; işaret değişmedi)')
+  process.exit(kotuSayisi > 0 ? 1 : 0)
+}
 
 let kirmizi = 0
 const KIRMIZI = (msg: string): void => {
@@ -60,6 +220,9 @@ for (const k of ALTIN_SET) {
     else KIRMIZI(`KAÇTI [${k.kusur}] (tespit: ${[...tespit].join(',') || 'yok'}): ${k.ad}`)
   }
 }
+// --baseline-al reddi için ayrık sayaç: kapılar (2a) bozukken üretilen ölçüm güvenilmez,
+// böyle bir koşu baseline işaretleyemez (GOREV-020).
+const altinKirmizi = kirmizi
 
 // ═════════════════════════════════════════════════════════════════════════
 // 2b — YAPISAL KARŞILAŞTIRMA (DB-only)
@@ -257,11 +420,13 @@ let kumeCakisan = 0
 console.log(`  çeldirici-küme çakışması (çift) : ${kumeCakisan}  ← ~0 beklenir; değilse kapı metinsel alt-tipe daralır`)
 
 // ═════════════════════════════════════════════════════════════════════════
-// 2c — DRİFT (taban-çizgisine göre)
+// 2c — DRİFT (işaretli baseline'a göre — GOREV-020; eski "en son dosya" kuralı için
+// dosya başındaki NEDEN bloğuna bak: GOREV-017 §0 gömülme/bayatlama/çökme üçlüsü)
 // ═════════════════════════════════════════════════════════════════════════
-console.log(`\n══ 2c DRİFT ══`)
-const SNAP = {
+console.log(`\n══ 2c DRİFT — işaretli baseline'a göre ══`)
+const SNAP: Snapshot = {
   tarih: new Date().toISOString(),
+  kuralHash: KURAL_HASH, // kapı sabitlerinin parmak izi — hash uyuşmadan kıyas yok
   ai: {
     n: TA.n,
     sizintiOrani: TA.sizintiOlculen ? TA.sizinti / TA.sizintiOlculen : 0,
@@ -272,25 +437,39 @@ const SNAP = {
   },
   osym: { n: TO.n },
 }
-const DIR = join(import.meta.dir, '..', '..', 'eval-sonuclari')
-mkdirSync(DIR, { recursive: true })
-const onceki = readdirSync(DIR).filter((f) => f.endsWith('.json')).sort().at(-1)
-if (!onceki) {
-  console.log('  ilk koşu — taban çizgisi yazıldı, karşılaştırma yok.')
+// Tarihçe her koşuda yazılır ama baseline'ı ETKİLEMEZ — işaret ayrı dosyada, ayrı fiille.
+const snapshotAdi = `${SNAP.tarih.replace(/[:.]/g, '-')}.json`
+writeFileSync(join(DIR, snapshotAdi), JSON.stringify(SNAP, null, 2))
+console.log(`  snapshot yazıldı: ${snapshotAdi} · kuralHash ${kisa(KURAL_HASH)}`)
+
+const isaret = isaretOku()
+if (!isaret) {
+  if (BASELINE_AL) console.log('  (bilgi) işaretli baseline yok — bu koşuyla işaretlenecek')
+  // İşaretsiz kıyas sessizce YEŞİL sayılamaz: kapı görevini yapamıyorsa söyler ve kırmızıdır.
+  else KIRMIZI('işaretli baseline yok — drift kıyası yapılamadı. İşaretle: bun run eval --baseline-al (bu koşu) veya --baseline-al=<snapshot.json>')
 } else {
-  const eski = JSON.parse(readFileSync(join(DIR, onceki), 'utf8')) as typeof SNAP
-  const kontrol: Array<[string, number, number]> = [
-    ['sızıntı oranı', eski.ai.sizintiOrani, SNAP.ai.sizintiOrani],
-    ['kuşatma ihlal oranı', eski.ai.kusatmaIhlalOrani, SNAP.ai.kusatmaIhlalOrani],
-    ['görsel gönderme adedi', eski.ai.gorselGonderme, SNAP.ai.gorselGonderme],
-    ['NN kopya adedi', eski.ai.nnKopya, SNAP.ai.nnKopya],
-  ]
-  for (const [ad, once, simdi] of kontrol) {
-    if (simdi > once + 1e-9) KIRMIZI(`KÖTÜLEŞME — ${ad}: ${once.toFixed(3)} → ${simdi.toFixed(3)} (baseline: ${onceki})`)
-    else YESIL(`${ad}: ${once.toFixed(3)} → ${simdi.toFixed(3)}`)
+  const sonuc = driftKiyasla(SNAP.ai, KURAL_HASH, isaret)
+  if (sonuc.engel) {
+    // --baseline-al'da engel bilgiye düşer: yeniden-işaretleme zaten engelin reçetesidir.
+    if (BASELINE_AL) console.log(`  (bilgi) ${sonuc.engel}`)
+    else KIRMIZI(sonuc.engel)
+  } else {
+    console.log(`  baseline: ${isaret.dosya} (işaret: ${isaret.isaretTarihi} · kuralHash ${kisa(isaret.kuralHash)})`)
+    for (const [ad, once, simdi, kotu] of sonuc.satirlar) {
+      if (!kotu) YESIL(`${ad}: ${once.toFixed(3)} → ${simdi.toFixed(3)}`)
+      else if (BASELINE_AL) console.log(`  (bilgi) KÖTÜLEŞME — ${ad}: ${once.toFixed(3)} → ${simdi.toFixed(3)} — yeni baseline BİLİNÇLİ kabul ediyor`)
+      else KIRMIZI(`KÖTÜLEŞME — ${ad}: ${once.toFixed(3)} → ${simdi.toFixed(3)} (baseline: ${isaret.dosya})`)
+    }
   }
 }
-writeFileSync(join(DIR, `${SNAP.tarih.replace(/[:.]/g, '-')}.json`), JSON.stringify(SNAP, null, 2))
+if (BASELINE_AL) {
+  // Yeniden-baseline yalnız açık bayrakla; 2a kırmızıysa ölçümün kendisi şüphelidir → red.
+  if (altinKirmizi > 0) KIRMIZI(`--baseline-al REDDEDİLDİ: altın-set ${altinKirmizi} kırmızı — kapılar bozukken baseline işaretlenmez`)
+  else {
+    isaretYaz(snapshotAdi, 'koşu ile işaret (--baseline-al)')
+    console.log(`  ✓ yeni baseline işaretlendi: ${snapshotAdi} · kuralHash ${kisa(KURAL_HASH)}`)
+  }
+}
 
 // ═════════════════════════════════════════════════════════════════════════
 // 2d — HAKEM MODÜLÜ (kredili; bayraksız TEK LLM çağrısı yok)

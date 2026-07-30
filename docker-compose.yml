@@ -12,7 +12,7 @@ services:
   # ── Frontend: Vite build → nginx (statik + /api proxy → brain) ──
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend-v2
       args:
         # PUBLIC değerler kök .env'den gömülür (anon key tarayıcıya inebilir; service_role ASLA).
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}

@@ -21,6 +21,9 @@ const EVENTS_TTL_SEC = 3600
 export type TaskKind =
   | 'topup' | 'session' | 'roadmap'                       // legacy
   | 'forge_topup' | 'plan' | 'diagnose' | 'affect' | 'compact' | 'nudge' | 'closure_check'
+  // Yönetim (0025): yapısal eval ölçümü. Kullanıcıya değil SİSTEME ait bir görevdir;
+  // `userId` yalnız "kim tetikledi" izidir (POST /admin/eval/kosum).
+  | 'eval'
 export type TaskStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
 
 export type AgentTask = {

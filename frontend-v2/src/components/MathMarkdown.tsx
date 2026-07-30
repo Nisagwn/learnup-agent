@@ -3,6 +3,7 @@ import ReactMarkdown, { type Options } from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { autoWrapLatex } from '../lib/latex.js'
+import 'katex/dist/katex.min.css'
 
 /**
  * SORU METNİ RENDER'I — matematik KaTeX ile çizilir.

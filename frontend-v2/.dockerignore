@@ -1,0 +1,7 @@
+# Build bağlamına girmemeli — imaj içinde bun taze kurar / vite taze derler.
+node_modules
+dist
+.env
+.env.*
+*.log
+.DS_Store

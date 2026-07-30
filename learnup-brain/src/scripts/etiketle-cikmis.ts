@@ -32,15 +32,21 @@ import { ZORLUK_MERDIVENI, MEKANIZMALAR } from '../persona/osym.charter.js'
 import { hakemZorluguTuret, type Verdict } from '../lib/generation.js'
 import { jsonCoz } from '../lib/model-router.js'
 
-const MODEL = 'nvidia/nemotron-3-ultra-550b-a55b:free' // TEK model — zincir yok, paralı yedek yok
+const MODEL = process.env.ETIKET_MODEL ?? 'nvidia/nemotron-3-ultra-550b-a55b:free' // TEK model — zincir yok, paralı yedek yok. ETIKET_MODEL ile ancak CETVEL EŞLEŞMESİ ÖLÇÜLMÜŞ bir :free model verilebilir
 const KEY = process.env.OPENROUTER_API_KEY
 if (!KEY) { console.error('OPENROUTER_API_KEY yok'); process.exit(1) }
 
 /** Bu koşunun istek bütçesi. Gerçek tavan ~1000/gün (hesapta $10+); verify denetçisi de aynı
  *  havuzdan yediği için pay bırakılır. Gün içinde başka koşu yapıldıysa düşür: ETIKET_GUNLUK=400 */
 const GUNLUK = Number(process.env.ETIKET_GUNLUK) || 850
-const ES_ZAMANLI = 6 // 20/dk resmî limitin altında kalır (ort. çağrı 20-60sn → ~6-15/dk)
-const DAKIKA_LIMIT = 17
+const ES_ZAMANLI = Number(process.env.ETIKET_ESZAMAN) || 6 // 20/dk resmî limitin altında (ort. çağrı 20-60sn)
+const DAKIKA_LIMIT = Number(process.env.ETIKET_DAKIKA) || 17 // resmî ücretsiz limit 20/dk — kota-bitirme koşusunda 19 denebilir
+/** GÜN SONU MODU (ETIKET_AGRESIF=1): kapasite tıkanıklığında kibar bekleme yerine kısa bekle,
+ *  çok dene. Normalde israftır (aynı hak yarın da geçerli olsaydı beklemek doğruydu) — ama
+ *  gün biterken KULLANILMAYAN HAK YANAR; yanacak hakkın verimi diye bir şey yok. 2026-07-20
+ *  gecesi için eklendi: Nvidia ücretsiz havuzu akşam ağır işlere pencere açıp kapatıyor,
+ *  pencere yakalamak bekleme süresinden çok DENEME SIKLIĞINA bağlı. */
+const AGRESIF = process.env.ETIKET_AGRESIF === '1'
 
 const DOSYA = fileURLToPath(new URL('../../data/etiketler-cikmis.jsonl', import.meta.url))
 
@@ -108,7 +114,7 @@ type TaramaSonucu = { etiket: string; turet: string | null; mek: Mek[]; sn: numb
 const tara = async (q: Soru): Promise<TaramaSonucu> => {
   const bas = Date.now()
   let tavan = 4000
-  for (let deneme = 1; deneme <= 5; deneme++) {
+  for (let deneme = 1; deneme <= (AGRESIF ? 10 : 5); deneme++) {
     if (dur || istek >= GUNLUK) return 'durdur'
     await hizBekle()
     istek++
@@ -153,7 +159,7 @@ const tara = async (q: Soru): Promise<TaramaSonucu> => {
         continue
       }
       if (j.error || durum < 200 || durum >= 300) { // 5xx / kapasite (Nvidia 502'leri) → sabırlı bekle
-        await new Promise((r) => setTimeout(r, 15_000 * deneme))
+        await new Promise((r) => setTimeout(r, AGRESIF ? 4_000 : 15_000 * deneme))
         continue
       }
       if (j.choices?.[0]?.finish_reason === 'length') tavan = 8000
@@ -166,7 +172,7 @@ const tara = async (q: Soru): Promise<TaramaSonucu> => {
       const turet = hakemZorluguTuret({ mechanisms: mek, actualDifficulty: v.etiket } as Verdict)
       return { etiket: String(v.etiket), turet, mek, sn: (Date.now() - bas) / 1000 }
     } catch {
-      await new Promise((r) => setTimeout(r, 15_000 * deneme))
+      await new Promise((r) => setTimeout(r, AGRESIF ? 4_000 : 15_000 * deneme))
     }
   }
   return null // 5 deneme öldü → kaydedilmez → SONRAKİ koşu bu soruyu yeniden dener

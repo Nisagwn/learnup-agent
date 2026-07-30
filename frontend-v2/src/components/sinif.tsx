@@ -4,8 +4,8 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '../lib/cn'
 import { dersAnahtar } from '../lib/format'
 import { Icon } from '../ui'
-import { Badge, Chip, FiltreCipi, GlowButton, SegmentGecis, SubjectName } from './ui'
-import { CanliSayi, Halka, IsiHucre, Meter, PanelBaslik, Sayi, Sparkline, Tip } from './cekirdek'
+import { Badge, Chip, GlowButton, SegmentGecis, SubjectName } from './ui'
+import { CanliSayi, Halka, IsiHucre, Meter, PanelBaslik, Sayi, Tip } from './cekirdek'
 import type { IsiHaritasiYaniti, OgrenciRisk, OgrenciSatiri, SinifZayifKazanim } from '../lib/types.teacher'
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -619,43 +619,78 @@ export function SinifBaslik({ ad, altBilgi, sag }: {
   )
 }
 
-export function OgrenciBaslik({ ad, grade, onGeri, sag }: {
+/** "Deniz Kaya" → "DK" (tek kelimede tek harf; boşsa '?'). */
+const basHarfler = (ad: string | null): string => {
+  const parcalar = (ad ?? '').trim().split(/\s+/).filter(Boolean)
+  if (!parcalar.length) return '?'
+  return parcalar.map((p) => p.charAt(0)).slice(0, 2).join('').toLocaleUpperCase('tr-TR')
+}
+
+/**
+ * Öğrenci kimlik kartı — FİDAN başlık (GOREV-036, onaylı önizleme:
+ * docs/design/onizleme/ogrenci-rontgeni.html). Tek cam kart: ← Pano · avatar ·
+ * ad + sınıf çipi + altBilgi · sağ slot (gezinme + ekranın TEK birincil eylemi).
+ */
+export function OgrenciBaslik({ ad, grade, onGeri, sag, altBilgi }: {
   ad: string | null
   grade: string | null
   onGeri: () => void
   sag?: ReactNode
+  /** Sınıf çipinin yanına satır içi ek bilgi (son aktivite, hafta hacmi…) — yalnız GERÇEK veri. */
+  altBilgi?: ReactNode
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <button
-          type="button"
-          onClick={onGeri}
-          aria-label="Sınıf panosuna dön"
-          className="grid size-9 shrink-0 cursor-pointer place-items-center rounded-lg text-slate-500 transition-colors hover:bg-sky-500/10 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+    <section
+      className="glass flex flex-wrap items-center gap-4 rounded-[20px] p-[18px] shadow-card"
+      aria-label="Öğrenci kimliği"
+    >
+      <button
+        type="button"
+        onClick={onGeri}
+        aria-label="Sınıf panosuna dön"
+        className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-xl border px-3 py-[7px] text-[12.5px] font-semibold transition-colors hover:[color:var(--metin1)]"
+        style={{ background: 'var(--v0)', borderColor: 'var(--cam-kenar)', color: 'var(--metin3)' }}
+      >
+        <Icon name="chevronLeft" size={14} color="currentColor" /> Pano
+      </button>
+      <span
+        className="grid size-[52px] shrink-0 place-items-center rounded-[16px] text-[17px] font-extrabold"
+        style={{ background: 'var(--v2)', color: 'var(--vurgu)', fontFamily: 'Outfit, sans-serif' }}
+        aria-hidden
+      >
+        {basHarfler(ad)}
+      </span>
+      <div className="min-w-0">
+        <h1
+          className="truncate text-[19px] font-bold leading-tight tracking-tight"
+          style={{ color: 'var(--metin1)', fontFamily: 'Outfit, sans-serif' }}
         >
-          <Icon name="chevronLeft" size={18} color="currentColor" />
-        </button>
-        <Avatar ad={ad} />
-        <div className="min-w-0">
-          <h1 className="truncate font-display text-[24px] font-bold tracking-tight text-slate-800 dark:text-slate-100">
-            {ad ?? 'İsimsiz öğrenci'}
-          </h1>
-          {grade && <p className="font-mono text-[11px] text-slate-400 dark:text-slate-500">{grade}. sınıf</p>}
+          {ad ?? 'İsimsiz öğrenci'}
+        </h1>
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11.5px]" style={{ color: 'var(--metin3)' }}>
+          {grade && (
+            <span
+              className="rounded-[9px] px-2 py-0.5 text-[10.5px] font-semibold"
+              style={{ background: 'var(--v1)', color: 'var(--vurgu)' }}
+            >
+              {grade}. sınıf
+            </span>
+          )}
+          {altBilgi}
         </div>
       </div>
-      {sag}
-    </div>
+      {sag && <div className="ml-auto flex flex-wrap items-center gap-2">{sag}</div>}
+    </section>
   )
 }
 
-/** ← / → gezinme — roster sırasında komşu öğrenciye. */
+/** ← / → gezinme — roster sırasında komşu öğrenciye (FİDAN ok tuşları). */
 export function OgrenciGezinme({ onOnceki, onSonraki }: {
   onOnceki: (() => void) | null
   onSonraki: (() => void) | null
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1.5">
       {([['chevronLeft', onOnceki, 'Önceki öğrenci'], ['chevronRight', onSonraki, 'Sonraki öğrenci']] as const).map(
         ([ikon, fn, etiket]) => (
           <button
@@ -664,7 +699,8 @@ export function OgrenciGezinme({ onOnceki, onSonraki }: {
             onClick={fn ?? undefined}
             disabled={!fn}
             aria-label={etiket}
-            className="grid size-8 cursor-pointer place-items-center rounded-lg text-slate-500 transition-colors hover:bg-sky-500/10 hover:text-slate-800 disabled:cursor-default disabled:opacity-30 dark:text-slate-400 dark:hover:text-slate-200"
+            className="grid size-[34px] cursor-pointer place-items-center rounded-[11px] border transition-colors hover:[color:var(--metin1)] hover:[border-color:var(--adacayi)] disabled:cursor-default disabled:opacity-30"
+            style={{ background: 'var(--v0)', borderColor: 'var(--cam-kenar)', color: 'var(--metin2)' }}
           >
             <Icon name={ikon} size={16} color="currentColor" />
           </button>
@@ -674,7 +710,9 @@ export function OgrenciGezinme({ onOnceki, onSonraki }: {
   )
 }
 
-/* ═══════════════ ÖĞRENCİ SEÇİCİ (karşılaştırma) ═══════════════ */
+/* ═══════════════ ÖĞRENCİ SEÇİCİ (karşılaştırma) ═══════════════
+   FİDAN çipleri (GOREV-038): avatar + ad; seçili dolu, kapasite dolunca kalan
+   çipler soluk/pasif. Tık hedefi ≥44px (min-h). */
 
 export function OgrenciSecici({ ogrenciler, secili, enFazla = 4, onDegis }: {
   ogrenciler: OgrenciSatiri[]
@@ -682,18 +720,46 @@ export function OgrenciSecici({ ogrenciler, secili, enFazla = 4, onDegis }: {
   enFazla?: number
   onDegis: (ids: string[]) => void
 }) {
+  const dolu = secili.length >= enFazla
   const cevir = (id: string): void => {
     if (secili.includes(id)) onDegis(secili.filter((x) => x !== id))
     else if (secili.length < enFazla) onDegis([...secili, id])
   }
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {ogrenciler.map((o) => (
-        <FiltreCipi key={o.studentId} aktif={secili.includes(o.studentId)} onClick={() => cevir(o.studentId)}>
-          {o.name ?? 'İsimsiz'}
-        </FiltreCipi>
-      ))}
-      <span className="ml-1 font-mono text-[10.5px] text-slate-400 dark:text-slate-500">
+      {ogrenciler.map((o) => {
+        const aktif = secili.includes(o.studentId)
+        const pasif = dolu && !aktif
+        return (
+          <button
+            key={o.studentId}
+            type="button"
+            aria-pressed={aktif}
+            disabled={pasif}
+            onClick={() => cevir(o.studentId)}
+            className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-[12.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+            style={{
+              background: aktif ? 'var(--v1)' : 'transparent',
+              borderColor: aktif ? 'var(--adacayi)' : 'var(--cam-kenar)',
+              color: aktif ? 'var(--vurgu)' : 'var(--metin2)',
+            }}
+          >
+            <span
+              className="grid size-6 shrink-0 place-items-center rounded-lg text-[9.5px] font-bold"
+              style={{
+                background: aktif ? 'var(--yaprak)' : 'var(--v2)',
+                color: aktif ? '#fff' : 'var(--vurgu)',
+                fontFamily: 'Outfit, sans-serif',
+              }}
+              aria-hidden
+            >
+              {basHarfler(o.name)}
+            </span>
+            {o.name ?? 'İsimsiz'}
+          </button>
+        )
+      })}
+      <span className="ml-1 font-mono text-[10.5px]" style={{ color: 'var(--metin3)' }}>
         {secili.length}/{enFazla}
       </span>
     </div>
@@ -719,39 +785,84 @@ export const OLCUTLER: Olcut[] = [
   { ad: 'XP', deger: (o) => o.xp, bicim: (n) => String(n ?? 0), iyiYon: 'yuksek' },
 ]
 
-export function KarsilastirmaIzgarasi({ ogrenciler, olcutler = OLCUTLER }: {
+/** İlk ad (çip/başlık için) — "Deniz Kaya" → "Deniz". */
+const ilkAd = (ad: string | null): string => (ad ?? 'İsimsiz').trim().split(/\s+/)[0] || 'İsimsiz'
+
+export function KarsilastirmaIzgarasi({ ogrenciler, olcutler = OLCUTLER, sinifOrtalama }: {
   ogrenciler: OgrenciSatiri[]
   olcutler?: Olcut[]
+  /** Verilirse "Sınıf ort." kesikli toprak sanal sütunu çizilir. Ortalama TÜM
+      roster'dan GERÇEK hesaplanır (uydurma yok); bir metrikte hiç değer yoksa
+      "veri yok" der. Boş dizi/undefined → sütun HİÇ çizilmez (null ≠ 0). */
+  sinifOrtalama?: OgrenciSatiri[]
 }) {
+  const ortVar = !!sinifOrtalama?.length
+  // Sınıf ortalaması metrik başına: roster'daki tüm geçerli değerlerin ortalaması.
+  const sinifDeg = (m: Olcut): number | null => {
+    if (!ortVar) return null
+    const vs = sinifOrtalama!.map((o) => m.deger(o)).filter((v): v is number => v !== null)
+    return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null
+  }
+  const kolonlar = `minmax(120px,180px) repeat(${ogrenciler.length}, minmax(84px,1fr))${ortVar ? ' minmax(84px,1fr)' : ''}`
+  const stickyStil = { background: 'var(--glass-solid-bg)' } as const
+
   return (
-    <div className="glass-solid overflow-x-auto rounded-2xl px-5 py-4">
+    <div className="glass-solid overflow-x-auto rounded-[20px] px-6 py-5 shadow-card">
       <PanelBaslik icon="gauge">Ölçüt Karşılaştırması</PanelBaslik>
-      <div
-        className="grid gap-x-3 gap-y-2"
-        style={{ gridTemplateColumns: `180px repeat(${ogrenciler.length}, minmax(90px, 1fr))` }}
-      >
-        <span className="sticky left-0 z-10" style={{ background: 'var(--glass-solid-bg)' }} />
+      <div className="grid items-center gap-x-3.5 gap-y-2" style={{ gridTemplateColumns: kolonlar, minWidth: 480 }}>
+        {/* Başlık satırı */}
+        <span className="sticky left-0 z-10" style={stickyStil} />
         {ogrenciler.map((o) => (
-          <span key={o.studentId} className="truncate text-center font-display text-[12px] font-semibold text-slate-700 dark:text-slate-200">
-            {o.name ?? 'İsimsiz'}
+          <span key={o.studentId} className="flex flex-col items-center gap-1 pb-1.5">
+            <span
+              className="grid size-8 place-items-center rounded-[10px] text-[11px] font-bold"
+              style={{ background: 'var(--v2)', color: 'var(--vurgu)', fontFamily: 'Outfit, sans-serif' }}
+              aria-hidden
+            >
+              {basHarfler(o.name)}
+            </span>
+            <span className="max-w-full truncate text-[12.5px] font-bold" style={{ color: 'var(--metin1)', fontFamily: 'Outfit, sans-serif' }}>
+              {ilkAd(o.name)}
+            </span>
           </span>
         ))}
+        {ortVar && (
+          <span className="flex flex-col items-center gap-1 pb-1.5">
+            <span
+              className="grid size-8 place-items-center rounded-[10px] border border-dashed text-[11px] font-bold"
+              style={{ background: 'var(--v1)', color: 'var(--toprak)', borderColor: 'var(--toprak)', fontFamily: 'Outfit, sans-serif' }}
+              aria-hidden
+            >
+              Σ
+            </span>
+            <span className="text-[12.5px] font-bold" style={{ color: 'var(--toprak)', fontFamily: 'Outfit, sans-serif' }}>
+              Sınıf ort.
+            </span>
+          </span>
+        )}
 
         {olcutler.map((m) => {
           const degerler = ogrenciler.map((o) => m.deger(o))
           const gecerli = degerler.filter((d): d is number => d !== null)
-          // Ölçek SATIR BAŞINA: yatay taramayı dürüst kılan şey bu.
-          const enBuyuk = gecerli.length ? Math.max(...gecerli) : 0
+          // Kazanan YALNIZ seçili öğrenciler arasında (sınıf ort. yarışmaz).
           const enIyi = gecerli.length
             ? (m.iyiYon === 'yuksek' ? Math.max(...gecerli) : Math.min(...gecerli))
             : null
+          const ortMean = sinifDeg(m)
+          const yuzdeMi = m.bicim(0.5).includes('%')
+          const ortRaw = ortMean == null ? null : yuzdeMi ? ortMean : Math.round(ortMean)
+          // Ölçek SATIR BAŞINA (yatay taramayı dürüst kılan kural); sınıf ort. da
+          // aynı ölçeğe girsin ki çubuğu taşmasın — ama kazanan seçimine karışmaz.
+          const enBuyuk = Math.max(0, ...gecerli, ortRaw ?? 0)
           return (
             <Fragment key={m.ad}>
+              <span className="col-span-full h-px" style={{ background: 'var(--cizgi)' }} />
               <span
-                className="sticky left-0 z-10 self-center truncate text-[12px] text-slate-500 dark:text-slate-400"
-                style={{ background: 'var(--glass-solid-bg)' }}
+                className="sticky left-0 z-10 self-center truncate pr-2 text-[12px]"
+                style={{ ...stickyStil, color: 'var(--metin2)' }}
               >
                 {m.ad}
+                {m.iyiYon === 'dusuk' && <span className="ml-1 text-[10px]" style={{ color: 'var(--metin3)' }}>· az iyi</span>}
               </span>
               {ogrenciler.map((o, i) => {
                 const d = degerler[i]
@@ -759,21 +870,31 @@ export function KarsilastirmaIzgarasi({ ogrenciler, olcutler = OLCUTLER }: {
                 return (
                   <span key={o.studentId} className="min-w-0">
                     <span
-                      className={cn(
-                        'flex items-center justify-center gap-1 font-mono text-[12.5px]',
-                        kazanan ? 'font-bold text-emerald-600 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-300',
-                      )}
+                      className="flex items-center justify-center gap-1 font-mono text-[12.5px]"
+                      style={{ color: kazanan ? 'var(--dogru)' : 'var(--metin2)', fontWeight: kazanan ? 700 : 400 }}
                     >
                       {m.bicim(d)}
                       {/* Asla yalnız renk — kazananın yanında ikon da var. */}
-                      {kazanan && <Icon name="check" size={12} color="currentColor" />}
+                      {kazanan && <Icon name="check" size={12} color="currentColor" strokeWidth={2.6} />}
                     </span>
                     {d !== null && enBuyuk > 0 && (
-                      <Meter oran={Math.max(0, d) / enBuyuk} yukseklik={4} className="mt-1" />
+                      <div className="mt-1.5"><Meter oran={Math.max(0, d) / enBuyuk} yukseklik={5} /></div>
                     )}
                   </span>
                 )
               })}
+              {ortVar && (
+                <span className="min-w-0">
+                  <span className="flex items-center justify-center font-mono text-[12.5px]" style={{ color: 'var(--toprak)' }}>
+                    {m.bicim(ortRaw)}
+                  </span>
+                  {ortRaw !== null && enBuyuk > 0 && (
+                    <div className="mt-1.5">
+                      <Meter oran={Math.max(0, ortRaw) / enBuyuk} yukseklik={5} renk="color-mix(in srgb, var(--toprak) 55%, transparent)" />
+                    </div>
+                  )}
+                </span>
+              )}
             </Fragment>
           )
         })}
@@ -782,24 +903,67 @@ export function KarsilastirmaIzgarasi({ ogrenciler, olcutler = OLCUTLER }: {
   )
 }
 
-/* ═══════════════ DERS KIRILIMI (karşılaştırma yardımcısı) ═══════════════ */
+/* ═══════════════ ETKİNLİK ÖZETİ (karşılaştırma yardımcısı) ═══════════════
+   GOREV-038 · DÜRÜSTLÜK NOTU: roster'da öğrenci başına GÜNLÜK seri YOK
+   (`OgrenciSatiri` yalnız pencere-agregatı tutar). Bu yüzden önizlemedeki
+   "son 14 gün nokta ızgarası" UYDURULMAZ; onun yerine her satır GERÇEK
+   alanları gösterir: son etkinliğin tazeliği (lastActive'den 4-ton çip),
+   çözülen soru, doğruluk (yoksa "veri yok"). Günlük seri ucu gelirse nokta
+   ızgarası eklenebilir (RAPOR'da BACKEND önerisi). */
+
+const GUN_MS_AKT = 86_400_000
+
+/** lastActive → { ton (4-ton tazelik), etiket }. Veri yoksa nötr. */
+function tazelik(lastActive: string | null): { ton: string; etiket: string } {
+  if (!lastActive) return { ton: 'var(--v0)', etiket: 'hiç' }
+  const t = new Date(lastActive)
+  if (Number.isNaN(+t)) return { ton: 'var(--v0)', etiket: '—' }
+  const gun = Math.floor((Date.now() - +t) / GUN_MS_AKT)
+  if (gun <= 0) return { ton: 'var(--v4)', etiket: 'bugün' }
+  if (gun === 1) return { ton: 'var(--v3)', etiket: 'dün' }
+  if (gun <= 3) return { ton: 'var(--v2)', etiket: `${gun} gün önce` }
+  if (gun <= 7) return { ton: 'var(--v1)', etiket: `${gun} gün önce` }
+  return { ton: 'var(--v0)', etiket: `${gun} gün önce` }
+}
 
 export function SonAktiflikSeridi({ ogrenciler }: { ogrenciler: OgrenciSatiri[] }) {
   return (
-    <div className="glass-solid rounded-2xl px-5 py-4">
-      <PanelBaslik icon="pulse">Etkinlik</PanelBaslik>
-      <ul className="space-y-2.5">
-        {ogrenciler.map((o) => (
-          <li key={o.studentId} className="flex items-center gap-3">
-            <span className="w-28 shrink-0 truncate text-[12px] text-slate-600 dark:text-slate-300">
-              {o.name ?? 'İsimsiz'}
-            </span>
-            <Sparkline veri={[o.solved, o.correct, o.trackedNodes, o.openMisconceptions]} genislik={72} yukseklik={20} />
-            <span className="ml-auto font-mono text-[10.5px] text-slate-400 dark:text-slate-500">
-              {o.lastActive ? new Date(o.lastActive).toLocaleDateString('tr-TR') : 'hiç'}
-            </span>
-          </li>
-        ))}
+    <div className="glass-solid rounded-[20px] px-6 py-5 shadow-card">
+      <PanelBaslik icon="pulse">Etkinlik Özeti</PanelBaslik>
+      <ul>
+        {ogrenciler.map((o, i) => {
+          const t = tazelik(o.lastActive)
+          return (
+            <li
+              key={o.studentId}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5"
+              style={i > 0 ? { borderTop: '1px solid var(--cizgi)' } : undefined}
+            >
+              <span
+                className="grid size-[30px] shrink-0 place-items-center rounded-[9px] text-[10px] font-bold"
+                style={{ background: 'var(--v2)', color: 'var(--vurgu)', fontFamily: 'Outfit, sans-serif' }}
+                aria-hidden
+              >
+                {basHarfler(o.name)}
+              </span>
+              <span className="min-w-[110px] flex-1 truncate text-[12.5px] font-semibold" style={{ color: 'var(--metin1)' }}>
+                {o.name ?? 'İsimsiz'}
+              </span>
+              {/* GERÇEK sayılar — sıfır çizilmez ilkesi: doğruluk yoksa "veri yok" */}
+              <span className="shrink-0 font-mono text-[11px]" style={{ color: 'var(--metin2)' }}>
+                {o.solved} soru
+              </span>
+              <span className="shrink-0 font-mono text-[11px]" style={{ color: 'var(--metin3)' }}>
+                {o.basariOrani === null ? 'doğruluk: veri yok' : `%${Math.round(o.basariOrani * 100)} doğru`}
+              </span>
+              {/* Tazelik: TEK gerçek recency göstergesi (4-ton), kelime + renk birlikte */}
+              <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 font-mono text-[10.5px]" style={{ color: 'var(--metin3)' }}>
+                <span className="inline-block size-2.5 rounded-[3px]" style={{ background: t.ton, border: '1px solid var(--cam-kenar)' }} aria-hidden />
+                {t.etiket}
+              </span>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )

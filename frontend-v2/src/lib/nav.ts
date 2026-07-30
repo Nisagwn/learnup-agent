@@ -10,15 +10,18 @@ export type NavOgesi = { to: string; label: string; icon: IconName; end?: boolea
  * kişisel bilişsel röntgen ekranları. Üç rolün sekmelerini birleştirmek 16 sekmelik
  * bir nav üretirdi; kapsamlı setler her rolü kendi işine odaklar.
  *
- * AI ve ÖSYM AYRI: "Çıkmış Sorular" yalnız çıkmışları listeler; adaptif AI pratiği
- * Genel Bakış/Plan/Koç üzerinden "Çöz" akışına gider. İkisi asla aynı listede karışmaz.
+ * ÇIKMIŞ SORULAR ARAYÜZDEN KALDIRILDI (2026-07-22 telif kararı — GOREV-015): ÖSYM çıkmışları
+ * kullanıcı yüzünde YAYINLANMAZ. Öğrenci pratiği yalnız adaptif AI: Genel Bakış/Plan/Koç → "Çöz".
+ * (Arsiv.tsx dosyası korunur — lisans gelirse raftan iner; sunucu ucu kapatma GOREV-016.)
  */
 export const NAV_OGRENCI: NavOgesi[] = [
   { to: '/', label: 'Genel Bakış', icon: 'today', end: true },
-  { to: '/harita', label: 'Analiz', icon: 'scan' },
+  // Konular: ders → konu seçerek çözme (0026). Adaptif akış (Genel Bakış → "Çöz") BİRİNCİL
+  // kalır; bu ekran öğrencinin kendi seçtiği konuya gitmesi için ikinci yoldur.
+  { to: '/konular', label: 'Konular', icon: 'book' },
+  { to: '/harita', label: 'Analizler', icon: 'scan' },
   { to: '/rota', label: 'Çalışma Planı', icon: 'route' },
   { to: '/kaptan', label: 'Koç', icon: 'anchor' },
-  { to: '/arsiv', label: 'Çıkmış Sorular', icon: 'seal' },
   { to: '/bahce', label: 'Bahçem', icon: 'sprout' },
   { to: '/ben', label: 'Profil', icon: 'chart' },
 ]
@@ -33,21 +36,26 @@ export const NAV_OGRETMEN: NavOgesi[] = [
 ]
 
 /**
- * Yönetim navı — YALNIZ Kule sekmeleri.
+ * Yönetim navı — üç grup: KİŞİLER · İÇERİK · SİSTEM.
  *
  * ⚠️ Profil sekmesi YOK: `/ben` öğrencinin kişisel ekranıdır (rozetler, lig,
- * günlük görevler, bahçe ekonomisi). Yöneticide bu verilerin hiçbiri yok;
- * sekme, boş bir öğrenci profiline götürüyordu.
+ * günlük görevler, bahçe ekonomisi). Yöneticide bu verilerin hiçbiri yok; sekme
+ * boş bir öğrenci profiline götürüyordu. Yöneticinin kendi hesabı /kule/ayarlar'da.
  *
- * ⚠️ Sınıf sekmeleri de YOK: admin `/teacher/*` uçlarından 403 alır (yüzeyler
- * kasten ayrı). Tıklanınca "yetkin yok" gösteren sekme koymak, çalışmayan bir
- * özelliği menüde tutmaktır.
+ * ⚠️ SINIF SEKMELERİ HÂLÂ BURADA DEĞİL — ama artık gerekçe değişti. Eskiden admin
+ * /teacher/* uçlarından 403 alıyordu; 0025'ten sonra girebiliyor, fakat KAPSAM
+ * SEÇEREK (?ogretmenId). Kapsamsız bir "/sinif" sekmesi yöneticiyi "önce sınıf seç"
+ * ekranına düşürürdü. Doğru giriş noktası Sınıflar ekranıdır; sınıf içi gezinme
+ * orada başlar ve VekilSerit ile sürer.
  */
 export const NAV_YONETIM: NavOgesi[] = [
-  { to: '/kule', label: 'Kule', icon: 'anchor', end: true },
+  { to: '/kule', label: 'Yönetim', icon: 'anchor', end: true },
   { to: '/kule/kullanicilar', label: 'Kullanıcılar', icon: 'waves' },
+  { to: '/kule/siniflar', label: 'Sınıflar', icon: 'sprout' },
   { to: '/kule/havuz', label: 'Soru Havuzu', icon: 'seal' },
   { to: '/kule/ozgunluk', label: 'Özgünlük', icon: 'shield' },
+  { to: '/kule/denetim', label: 'Denetim', icon: 'book' },
+  { to: '/kule/ayarlar', label: 'Ayarlar', icon: 'gauge' },
 ]
 
 export const NAV_ROL: Record<Rol, NavOgesi[]> = {
@@ -57,17 +65,20 @@ export const NAV_ROL: Record<Rol, NavOgesi[]> = {
 }
 
 /**
- * Nav ayracı indeksi. Yönetim navı tek gruba indiği için artık hiçbir rolde
- * ayraç çizilmiyor (-1). Sabit korunuyor: gruplar geri gelirse tek yerden açılır.
+ * Nav ayracı indeksi — ilgili indeksten ÖNCE ince bir çizgi çizilir.
+ *
+ * Yönetim navı 0025'te 4→7 sekmeye çıktı ve üç işe ayrıldı: KİŞİLER (Yönetim ·
+ * Kullanıcılar · Sınıflar) | İÇERİK (Soru Havuzu · Özgünlük) | SİSTEM (Denetim ·
+ * Ayarlar). Tek ayraç çizilebildiği için içerik grubunun başına konur — yedi sekmeyi
+ * ayraçsız bırakmak nav'ı okunmaz bir şerit yapardı.
  */
-export const NAV_AYRAC: Record<Rol, number> = { student: -1, teacher: -1, admin: -1 }
+export const NAV_AYRAC: Record<Rol, number> = { student: -1, teacher: -1, admin: 3 }
 
 const BASLIKLAR: Record<string, string> = {
   '/': 'Genel Bakış',
-  '/harita': 'Analiz — Bilişsel Röntgen',
+  '/harita': 'Analizler',
   '/rota': 'Çalışma Planı',
   '/kaptan': 'Koç',
-  '/arsiv': 'Çıkmış Sorular',
   '/bahce': 'Bahçem',
   '/odevler': 'Ödevler',
   '/ben': 'Profil',
@@ -78,10 +89,13 @@ const BASLIKLAR: Record<string, string> = {
   '/sinif/odev': 'Ödev Atölyesi',
   '/sinif/karsilastir': 'Öğrenci Karşılaştırma',
   // ── Yönetim ──
-  '/kule': 'Kule — Sistem Sağlığı',
+  '/kule': 'Yönetim — Sistem Sağlığı',
   '/kule/kullanicilar': 'Kullanıcılar',
+  '/kule/siniflar': 'Sınıflar',
   '/kule/havuz': 'Soru Havuzu',
-  '/kule/ozgunluk': 'Özgünlük Bariyeri',
+  '/kule/ozgunluk': 'Özgünlük Denetimi',
+  '/kule/denetim': 'Denetim Defteri',
+  '/kule/ayarlar': 'Ayarlar',
 }
 
 /** Dinamik segmentli rotaların (/sinif/ogrenci/:id) statik girdisi olamaz → önek eşleşmesi. */

@@ -11,6 +11,11 @@ import { itemModeli } from '../lib/katalog'
  * · Etkileşim: bitkiye tıkla → seç · zemine tıkla → yerleştirme modundaysa koordinat
  *   (0–100 yüzdesi — garden.x/y sözleşmesi) üst bileşene raporlanır.
  * Bu modül LAZY yüklenir (three yalnız /bahce chunk'ında).
+ *
+ * GOREV-024: malzeme/ortam renkleri FİDAN v1.2 paletine uyumlandı (gök/sis,
+ * ışıklar, su, çim/kumsal, seçim-yerleştirme halkaları, fide) — Gün Işığı
+ * aydınlık adaçayı orman, Gece Ormanı ay ışığı yeşili. Tür/dekor kimlik
+ * renkleri içeriktir, korundu. Geometri ve etkileşim DEĞİŞMEDİ.
  */
 
 export interface SahneBitkisi {
@@ -64,17 +69,17 @@ export default function Bahce3D({ koyu, bitkiler, seciliId, yerlesimModu, onBitk
       style={{ touchAction: 'none' }}
       gl={{ antialias: true, alpha: true }}
     >
-      <color attach="background" args={[koyu ? '#0B1520' : '#BFE0F5'] as any} />
-      <fog attach="fog" args={[koyu ? '#0B1520' : '#BFE0F5', 14, 30] as any} />
+      <color attach="background" args={[koyu ? '#0D1710' : '#D9E7DC'] as any} />
+      <fog attach="fog" args={[koyu ? '#0D1710' : '#D9E7DC', 14, 30] as any} />
 
-      {/* Işıklandırma — tema */}
-      <ambientLight intensity={koyu ? 0.35 : 0.7} color={koyu ? '#7DA5D8' : '#FFFFFF'} />
+      {/* Işıklandırma — tema (açık: bal/amber gün ışığı · koyu: yeşil ay ışığı) */}
+      <ambientLight intensity={koyu ? 0.35 : 0.7} color={koyu ? '#9DBFA6' : '#FFFFFF'} />
       <directionalLight
         position={koyu ? [-4, 6, -3] : [5, 8, 4]}
         intensity={koyu ? 0.7 : 1.15}
-        color={koyu ? '#9CC3F0' : '#FFF2D9'}
+        color={koyu ? '#AECFB6' : '#F9EBC8'}
       />
-      {koyu && <pointLight position={[0, 4, 0]} intensity={0.5} color="#38BDF8" distance={12} />}
+      {koyu && <pointLight position={[0, 4, 0]} intensity={0.5} color="#5CB781" distance={12} />}
 
       {koyu && <Stars radius={40} depth={20} count={900} factor={3} saturation={0} fade speed={0.6} />}
 
@@ -131,7 +136,7 @@ function Su({ koyu }: { koyu: boolean }) {
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.55, 0]}>
       <planeGeometry ref={geoRef} args={[40, 40, 28, 28]} />
       <meshStandardMaterial
-        color={koyu ? '#0E2A44' : '#2E9BD6'}
+        color={koyu ? '#12262C' : '#6FA8B5'}
         transparent
         opacity={0.92}
         roughness={0.35}
@@ -155,7 +160,7 @@ function Ada({ koyu, yerlesimModu, onZeminTikla }: {
       {/* Çim tepe — tıklanabilir yerleştirme yüzeyi */}
       <mesh position={[0, -0.05, 0]} onClick={tikla}>
         <cylinderGeometry args={[ADA_YARICAP, ADA_YARICAP * 0.94, 0.5, 40]} />
-        <meshStandardMaterial color={koyu ? '#1E4D33' : '#4CAF6D'} roughness={0.9} />
+        <meshStandardMaterial color={koyu ? '#26402F' : '#79B187'} roughness={0.9} />
       </mesh>
       {/* Toprak gövde */}
       <mesh position={[0, -0.75, 0]}>
@@ -165,13 +170,13 @@ function Ada({ koyu, yerlesimModu, onZeminTikla }: {
       {/* Kumsal halka */}
       <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[ADA_YARICAP * 0.88, ADA_YARICAP, 40]} />
-        <meshStandardMaterial color={koyu ? '#6B5B3E' : '#E8D5A8'} roughness={1} />
+        <meshStandardMaterial color={koyu ? '#57503B' : '#DEC99B'} roughness={1} />
       </mesh>
       {/* Yerleştirme modunda hedef halkası ipucu */}
       {yerlesimModu && (
         <mesh position={[0, 0.24, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[YERLESIM_YARICAP - 0.06, YERLESIM_YARICAP, 48]} />
-          <meshBasicMaterial color="#38BDF8" transparent opacity={0.5} />
+          <meshBasicMaterial color={koyu ? '#5CB781' : '#4FA56F'} transparent opacity={0.5} />
         </mesh>
       )}
     </group>
@@ -206,7 +211,7 @@ function Bitki({ itemId, x, z, olcek, secili, koyu, faz, onClick }: {
       {secili && (
         <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.5, 0.62, 32]} />
-          <meshBasicMaterial color="#38BDF8" transparent opacity={0.85} />
+          <meshBasicMaterial color={koyu ? '#5CB781' : '#4FA56F'} transparent opacity={0.85} />
         </mesh>
       )}
     </group>
@@ -222,11 +227,11 @@ function Fide() {
       </mesh>
       <mesh position={[0, 0.3, 0]}>
         <sphereGeometry args={[0.14, 8, 6]} />
-        <meshStandardMaterial color="#5BBF7A" roughness={0.8} />
+        <meshStandardMaterial color="#4FA56F" roughness={0.8} />
       </mesh>
       <mesh position={[0.1, 0.36, 0.04]} rotation={[0, 0, -0.5]}>
         <sphereGeometry args={[0.09, 8, 6]} />
-        <meshStandardMaterial color="#7ACD93" roughness={0.8} />
+        <meshStandardMaterial color="#84A98C" roughness={0.8} />
       </mesh>
     </group>
   )

@@ -1,19 +1,25 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
+
 import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '../lib/cn'
 import { Icon } from '../ui'
-import { Badge, Chip, GlowButton, SegmentGecis } from './ui'
-import { BosDurum, PanelBaslik, Sayi } from './cekirdek'
+import { BosDurum, Sayi } from './cekirdek'
+import { EYLEM_ADI } from '../lib/types.admin'
 import type {
-  AdminKullaniciDetayi, AdminKullaniciSatiri, DenetimSatiri, YonetimEylemi,
+  AdminKullaniciDetayi, AdminKullaniciSatiri, DenetimSatiri,
 } from '../lib/types.admin'
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   YÖNETİM — KULLANICI & DENETİM BİLEŞENLERİ
+   YÖNETİM — KULLANICI & DENETİM BİLEŞENLERİ  (FİDAN v1.2 inline desen)
 
    kule.tsx sistemin DURUMUNU çizer (havuz, eval, ajanlar); burası KİŞİLERİ ve
    onlar üzerinde yapılmış işlemleri. Ayrı dosya, aynı admin chunk'ı: öğrenci ve
    öğretmen bu koddan tek bayt indirmez.
+
+   ⚠️ STİL KAYNAĞI: bu bileşenlerin `ku-*` sınıfları Kullanicilar.tsx içindeki tek
+   <style> bloğunda tanımlıdır (onaylı önizleme: docs/design/onizleme/kullanicilar.html).
+   Bu bileşenler YALNIZ Kullanicilar ekranında render edilir — dialog'lar Radix Portal
+   ile body'ye taşınsa da <style> belge-global olduğu için sınıflar orada da geçerlidir.
 
    ⚠️ ORTAK KURAL: her yıkıcı eylem Radix Dialog onayından geçer ve sonucun
    denetim defterine yazılıp yazılmadığı KULLANICIYA SÖYLENİR. Sessizce izsiz
@@ -29,17 +35,35 @@ const ROL_ETIKET: Record<RolAdi, string> = {
 }
 
 /**
- * Rol rozeti — ASLA yalnız renk: her rozet kelimeyi de taşır.
- * (brass KULLANILMAZ: o ton ÖSYM mührünün kimliğine ayrılmış.)
+ * Rol rozeti — ASLA yalnız renk: her rozet kelimeyi de taşır. Onaysız öğretmen
+ * AYRI bir "onaysız" rozeti alır (önizleme deseni), tek amber rozete gömülmez.
+ * (kehribar/brass KULLANILMAZ: o ton ÖSYM mührünün kimliğine ayrılmış.)
  */
 export function RolRozeti({ rol, onaysiz }: { rol: RolAdi; onaysiz?: boolean }) {
-  if (rol === 'admin') return <Badge tone="teal">Yönetici</Badge>
+  if (rol === 'admin') return <span className="ku-rrozet ku-r-admin">yönetici</span>
   if (rol === 'teacher') {
-    return onaysiz
-      ? <Badge tone="amber">Öğretmen · onay bekliyor</Badge>
-      : <Badge tone="sky">Öğretmen</Badge>
+    return onaysiz ? (
+      <span className="ku-rozet-grup">
+        <span className="ku-rrozet ku-r-teacher">öğretmen</span>
+        <span className="ku-rrozet ku-r-onaysiz">onaysız</span>
+      </span>
+    ) : (
+      <span className="ku-rrozet ku-r-teacher">öğretmen</span>
+    )
   }
-  return <Badge tone="slate">Öğrenci</Badge>
+  return <span className="ku-rrozet ku-r-student">öğrenci</span>
+}
+
+/** Sınıf sütunu — role göre kod / öğrenci sayısı / başvuru işareti. */
+function sinifHucresi(k: AdminKullaniciSatiri): ReactNode {
+  if (k.role === 'teacher') {
+    // Onaysız öğretmenin henüz sınıfı yok → yalnız kod; onaylıda öğrenci sayısı da.
+    return k.isApproved && k.ogrenciSayisi != null
+      ? <>kod {k.classCode ?? '—'} · <Sayi value={k.ogrenciSayisi} /> öğrenci</>
+      : <>kod {k.classCode ?? '—'}</>
+  }
+  if (k.role === 'student' && k.basvuruDurumu === 'bekliyor') return <>— · başvuru bekliyor</>
+  return '—'
 }
 
 /* ── Kullanıcı tablosu ───────────────────────────────────────────────────── */
@@ -60,14 +84,14 @@ export function KullaniciTablosu({ satirlar, seciliId, onSec, onOnay }: {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] border-separate" style={{ borderSpacing: '0 3px' }}>
+    <div style={{ overflowX: 'auto' }}>
+      <table className="ku-utablo" style={{ minWidth: 560 }}>
         <thead>
-          <tr className="text-left font-display text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-            <th scope="col" className="px-3 py-1.5">Hesap</th>
-            <th scope="col" className="px-3 py-1.5">Rol</th>
-            <th scope="col" className="px-3 py-1.5 text-right">Sınıf</th>
-            <th scope="col" className="px-3 py-1.5 text-right">İşlem</th>
+          <tr>
+            <th scope="col">Hesap</th>
+            <th scope="col">Rol</th>
+            <th scope="col">Sınıf</th>
+            <th scope="col" aria-label="İşlem" />
           </tr>
         </thead>
         <tbody>
@@ -75,47 +99,25 @@ export function KullaniciTablosu({ satirlar, seciliId, onSec, onOnay }: {
             const secili = k.id === seciliId
             const onayBekliyor = k.role === 'teacher' && !k.isApproved
             return (
-              <tr
-                key={k.id}
-                className={cn(
-                  'group transition-colors',
-                  secili ? 'bg-sky-500/10' : 'hover:bg-sky-500/5',
-                )}
-              >
-                <td className="rounded-l-xl px-3 py-2">
+              <tr key={k.id} className={secili ? 'ku-secili' : undefined}>
+                <td>
                   {/* Tıklanabilir <button>, tıklanabilir <tr> DEĞİL: Tab+Enter doğal çalışsın. */}
-                  <button
-                    type="button"
-                    onClick={() => onSec(k.id)}
-                    className="cursor-pointer text-left"
-                  >
-                    <span className="block truncate text-[13px] font-medium text-slate-700 dark:text-slate-200">
-                      {k.name ?? 'İsimsiz hesap'}
-                    </span>
-                    <span className="block truncate font-mono text-[11px] text-slate-400 dark:text-slate-500">
-                      {k.email ?? '—'}
-                    </span>
+                  <button type="button" className="ad-btn" onClick={() => onSec(k.id)}>
+                    <b>{k.name ?? 'İsimsiz hesap'}</b>
+                    <span className="epost">{k.email ?? '—'}</span>
                   </button>
                 </td>
-                <td className="px-3 py-2">
-                  <RolRozeti rol={k.role} onaysiz={onayBekliyor} />
+                <td>
+                  <span className="ku-rozet-grup">
+                    <RolRozeti rol={k.role} onaysiz={onayBekliyor} />
+                    {/* Askı rozeti ROLDEN AYRI (0025): askı bir yetki seviyesi değil,
+                        erişimin tümden kesilmesidir. Rol rozetine gömmek ikisini karıştırırdı. */}
+                    {k.askidaMi && <span className="ku-rrozet ku-r-askida">askıda</span>}
+                  </span>
                 </td>
-                <td className="px-3 py-2 text-right">
-                  {k.role === 'teacher' ? (
-                    <span className="font-mono text-[12px] text-slate-500 dark:text-slate-400">
-                      {k.classCode ?? '—'}
-                      <span className="ml-2 text-slate-400 dark:text-slate-500">
-                        <Sayi value={k.ogrenciSayisi ?? 0} /> öğr.
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="font-mono text-[12px] text-slate-300 dark:text-slate-600">—</span>
-                  )}
-                </td>
-                <td className="rounded-r-xl px-3 py-2 text-right">
-                  {k.role === 'teacher' && (
-                    <OnayDugmesi kullanici={k} onOnay={onOnay} />
-                  )}
+                <td className="epost">{sinifHucresi(k)}</td>
+                <td style={{ textAlign: 'right' }}>
+                  {k.role === 'teacher' && <OnayDugmesi kullanici={k} onOnay={onOnay} />}
                 </td>
               </tr>
             )
@@ -131,7 +133,7 @@ export function KullaniciTablosu({ satirlar, seciliId, onSec, onOnay }: {
  *
  * ⚠️ ONAYI GERİ ALMAK YIKICIDIR ve bu yüzden diyalogdan geçer: onayı düşen
  * öğretmen bir sonraki istekte (en geç 60 sn) bütün sınıfını kaybeder. Onay
- * VERMEK yıkıcı değil — tek tık, diyalog yok.
+ * VERMEK yıkıcı değil — tek tık, diyalog yok (satır-içi "Onayla").
  */
 function OnayDugmesi({ kullanici, onOnay }: {
   kullanici: AdminKullaniciSatiri
@@ -141,53 +143,44 @@ function OnayDugmesi({ kullanici, onOnay }: {
 
   if (!kullanici.isApproved) {
     return (
-      <GlowButton
-        size="sm"
-        icon="check"
+      <button
+        type="button"
+        className="ku-mini-onay"
         disabled={mesgul}
-        onClick={() => {
-          setMesgul(true)
-          void onOnay(kullanici, true).finally(() => setMesgul(false))
-        }}
+        onClick={() => { setMesgul(true); void onOnay(kullanici, true).finally(() => setMesgul(false)) }}
       >
-        Onayla
-      </GlowButton>
+        {mesgul ? 'Onaylanıyor…' : 'Onayla'}
+      </button>
     )
   }
 
   return (
     <Dialog.Root>
       <Dialog.Trigger asChild>
-        <GlowButton size="sm" variant="ghost" className="!text-slate-400">Onayı kaldır</GlowButton>
+        <button type="button" className="ku-mini-kaldir">Onayı kaldır</button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[85] bg-ocean-950/50 backdrop-blur-sm" />
-        <Dialog.Content className="glass fixed left-1/2 top-1/2 z-[86] w-[min(92vw,400px)] -translate-x-1/2 -translate-y-1/2 rounded-3xl p-6 shadow-card">
-          <Dialog.Title className="font-display text-[16px] font-bold text-slate-800 dark:text-slate-100">
-            Onay kaldırılsın mı?
-          </Dialog.Title>
-          <Dialog.Description className="mt-2 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
+        <Dialog.Overlay className="ku-overlay" />
+        <Dialog.Content className="ku-modal">
+          <Dialog.Title>Onay kaldırılsın mı?</Dialog.Title>
+          <Dialog.Description className="aciklama">
             <strong>{kullanici.name ?? 'Bu öğretmen'}</strong> en geç 60 saniye içinde
             öğretmen panelinden çıkar: sınıf listesi, ısı haritası ve öğrenci röntgenleri
             erişilemez olur. Öğrenciler sınıfta kalır — bağ kopmaz, yalnız görüş kapanır.
           </Dialog.Description>
-          <div className="mt-5 flex justify-end gap-2">
+          <div className="dugmeler">
             <Dialog.Close asChild>
-              <GlowButton size="sm" variant="ghost">Vazgeç</GlowButton>
+              <button type="button" className="ku-btn ku-btn-soluk">Vazgeç</button>
             </Dialog.Close>
             <Dialog.Close asChild>
-              <GlowButton
-                size="sm"
-                variant="outline"
+              <button
+                type="button"
+                className="ku-btn ku-btn-tehlike"
                 disabled={mesgul}
-                className="!border-rose-500/40 !text-rose-600 dark:!text-rose-300"
-                onClick={() => {
-                  setMesgul(true)
-                  void onOnay(kullanici, false).finally(() => setMesgul(false))
-                }}
+                onClick={() => { setMesgul(true); void onOnay(kullanici, false).finally(() => setMesgul(false)) }}
               >
                 Onayı kaldır
-              </GlowButton>
+              </button>
             </Dialog.Close>
           </div>
         </Dialog.Content>
@@ -216,7 +209,7 @@ export function RolDegisDialog({ kullanici, kendisiMi, onKaydet }: {
 
   if (kendisiMi) {
     return (
-      <p className="rounded-xl bg-slate-500/5 px-3 py-2.5 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
+      <p className="ku-kilit-kutu">
         Kendi rolünü değiştiremezsin — sistemin son yöneticisini yanlışlıkla
         yetkisizleştirmek elle SQL gerektiren tek onarılamaz hatadır. Bunu başka
         bir yönetici yapmalı.
@@ -229,40 +222,41 @@ export function RolDegisDialog({ kullanici, kendisiMi, onKaydet }: {
   return (
     <Dialog.Root onOpenChange={(a) => { if (!a) setHedef(kullanici.role) }}>
       <Dialog.Trigger asChild>
-        <GlowButton size="sm" variant="outline" icon="shield">Rolü değiştir</GlowButton>
+        <button type="button" className="ku-btn ku-btn-soluk">Rolü değiştir</button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[85] bg-ocean-950/50 backdrop-blur-sm" />
-        <Dialog.Content className="glass fixed left-1/2 top-1/2 z-[86] w-[min(92vw,440px)] -translate-x-1/2 -translate-y-1/2 rounded-3xl p-6 shadow-card">
-          <Dialog.Title className="font-display text-[16px] font-bold text-slate-800 dark:text-slate-100">
-            Rol değiştir
-          </Dialog.Title>
-          <Dialog.Description className="mt-1.5 text-[13px] text-slate-500 dark:text-slate-400">
+        <Dialog.Overlay className="ku-overlay" />
+        <Dialog.Content className="ku-modal">
+          <Dialog.Title>Rol değiştir</Dialog.Title>
+          <Dialog.Description className="aciklama">
             <strong>{kullanici.name ?? kullanici.email ?? 'Bu hesap'}</strong> şu an{' '}
             {ROL_ETIKET[kullanici.role]}.
           </Dialog.Description>
 
-          <div className="mt-4">
-            <SegmentGecis<RolAdi>
-              secenekler={[['student', 'Öğrenci'], ['teacher', 'Öğretmen'], ['admin', 'Yönetici']]}
-              deger={hedef}
-              onDegis={setHedef}
-            />
+          <div className="ku-segment ku-segment-genis">
+            {(['student', 'teacher', 'admin'] as RolAdi[]).map((r) => (
+              <button
+                key={r}
+                type="button"
+                aria-pressed={hedef === r}
+                className={hedef === r ? 'ku-aktif' : undefined}
+                onClick={() => setHedef(r)}
+              >
+                {ROL_ETIKET[r]}
+              </button>
+            ))}
           </div>
 
-          {uyari && (
-            <p className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2.5 text-[12px] leading-relaxed text-amber-700 dark:text-amber-200">
-              {uyari}
-            </p>
-          )}
+          {uyari && <p className="uyari-kutu">{uyari}</p>}
 
-          <div className="mt-5 flex justify-end gap-2">
+          <div className="dugmeler">
             <Dialog.Close asChild>
-              <GlowButton size="sm" variant="ghost">Vazgeç</GlowButton>
+              <button type="button" className="ku-btn ku-btn-soluk">Vazgeç</button>
             </Dialog.Close>
             <Dialog.Close asChild>
-              <GlowButton
-                size="sm"
+              <button
+                type="button"
+                className="ku-btn ku-btn-birincil"
                 disabled={!degisti || mesgul}
                 onClick={() => {
                   if (!degisti) return
@@ -271,7 +265,7 @@ export function RolDegisDialog({ kullanici, kendisiMi, onKaydet }: {
                 }}
               >
                 {ROL_ETIKET[hedef]} yap
-              </GlowButton>
+              </button>
             </Dialog.Close>
           </div>
         </Dialog.Content>
@@ -296,11 +290,304 @@ function uyariMetni(k: AdminKullaniciDetayi['kullanici'], hedef: RolAdi): string
       'öğretmen panelini hemen kullanmaya başlar.'
   }
   if (hedef === 'admin') {
-    return 'Yönetici, havuz ve üretim hattının tamamını görür; öğretmen onaylayabilir, ' +
-      'rol değiştirebilir ve öğrenci taşıyabilir. Bu yetkiyi geri almak için başka ' +
+    return 'Yönetici hesap açar, rol değiştirir, hesap askıya alır, her sınıfa öğretmen adına ' +
+      'girip ödev atayabilir ve havuzdan soru düşürebilir. Bu yetkiyi geri almak için başka ' +
       'bir yöneticiye ihtiyaç duyulur.'
   }
   return null
+}
+
+/* ── Hesap yaşam döngüsü (0025) ──────────────────────────────────────────── */
+
+/**
+ * ASKI — hesabı durdurur, SİLMEZ.
+ *
+ * ⚠️ Kalıcı silme bilinçli olarak yok (kullanıcı kararı 2026-07-24): yanlış askı bir
+ * özür, yanlış silme onarılamaz bir kayıptır. Askı hiçbir sınıf/öğretmen bağını
+ * koparmaz; kaldırıldığı an kullanıcı bıraktığı yerden devam eder.
+ *
+ * ⚠️ GEREKÇE ZORUNLU. "Hesabım neden kapalı?" sorusunun cevabı defterde yazmıyorsa
+ * askı, keyfî bir kapatmadan ayırt edilemez.
+ */
+export function AskiDialog({ kullanici, kendisiMi, onKaydet }: {
+  kullanici: AdminKullaniciDetayi['kullanici']
+  kendisiMi: boolean
+  onKaydet: (askida: boolean, neden: string | null) => Promise<void>
+}) {
+  const [neden, setNeden] = useState('')
+  const [mesgul, setMesgul] = useState(false)
+  const askida = kullanici.askidaMi
+
+  if (kendisiMi) {
+    return (
+      <p className="ku-kilit-not">
+        Kendi hesabını askıya alamazsın — kendini dışarı kilitlemenin geri dönüşü elle SQL'dir.
+      </p>
+    )
+  }
+
+  return (
+    <Dialog.Root onOpenChange={(a) => { if (!a) setNeden('') }}>
+      <Dialog.Trigger asChild>
+        <button type="button" className={askida ? 'ku-btn ku-btn-soluk' : 'ku-btn ku-btn-tehlike'}>
+          {askida ? 'Askıyı kaldır' : 'Askıya al'}
+        </button>
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="ku-overlay" />
+        <Dialog.Content className="ku-modal">
+          <Dialog.Title>{askida ? 'Askıyı kaldır' : 'Hesabı askıya al'}</Dialog.Title>
+          <Dialog.Description className="aciklama">
+            {askida ? (
+              <><strong>{kullanici.name ?? 'Bu hesap'}</strong> yeniden giriş yapabilecek ve bıraktığı
+              yerden devam edecek.</>
+            ) : (
+              <><strong>{kullanici.name ?? 'Bu hesap'}</strong> giriş yapabilir ama hiçbir ekranı
+              açamaz. Verisi, sınıf bağı ve ilerlemesi olduğu gibi kalır.</>
+            )}
+          </Dialog.Description>
+
+          {!askida && (
+            <label className="ku-alan" style={{ display: 'block', marginTop: 14 }}>
+              <span className="etiket" style={{
+                display: 'block', fontSize: 10, fontWeight: 600, letterSpacing: '.1em',
+                textTransform: 'uppercase', color: 'var(--metin3)', marginBottom: 5,
+              }}>
+                Gerekçe (zorunlu)
+              </span>
+              <input
+                value={neden}
+                onChange={(e) => setNeden(e.target.value)}
+                maxLength={500}
+                placeholder="Örn. tekrarlanan kötüye kullanım bildirimi"
+                style={{
+                  width: '100%', fontFamily: 'Inter, sans-serif', fontSize: 13, color: 'var(--metin1)',
+                  background: 'var(--v0)', border: '1.5px solid var(--cam-kenar)', borderRadius: 11,
+                  padding: '10px 12px', minHeight: 44, outline: 'none',
+                }}
+              />
+            </label>
+          )}
+
+          {!askida && (
+            <p className="uyari-kutu">
+              Askı kalıcı silme DEĞİLDİR ve istediğin an kaldırılabilir. Gerekçe denetim defterine yazılır.
+            </p>
+          )}
+
+          <div className="dugmeler">
+            <Dialog.Close asChild>
+              <button type="button" className="ku-btn ku-btn-soluk">Vazgeç</button>
+            </Dialog.Close>
+            <Dialog.Close asChild>
+              <button
+                type="button"
+                className={askida ? 'ku-btn ku-btn-birincil' : 'ku-btn ku-btn-tehlike'}
+                disabled={mesgul || (!askida && !neden.trim())}
+                onClick={() => {
+                  if (!askida && !neden.trim()) return
+                  setMesgul(true)
+                  void onKaydet(!askida, askida ? null : neden.trim()).finally(() => setMesgul(false))
+                }}
+              >
+                {askida ? 'Askıyı kaldır' : 'Askıya al'}
+              </button>
+            </Dialog.Close>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
+/** Künye düzeltme — YETKİ alanları (rol/onay/sınıf) buradan YAZILMAZ, ayrı uçları var. */
+export function ProfilDuzeltDialog({ kullanici, onKaydet }: {
+  kullanici: AdminKullaniciDetayi['kullanici']
+  onKaydet: (yama: Record<string, string | null>) => Promise<void>
+}) {
+  const bosla = (): Record<string, string> => ({
+    name: kullanici.name ?? '',
+    school: kullanici.school ?? '',
+    grade: kullanici.grade ?? '',
+    student_class: kullanici.studentClass ?? '',
+  })
+  const [form, setForm] = useState(bosla)
+  const [mesgul, setMesgul] = useState(false)
+
+  const alanlar: Array<[keyof ReturnType<typeof bosla>, string]> = [
+    ['name', 'Ad'],
+    ['school', 'Okul'],
+    ['grade', 'Sınıf düzeyi'],
+    ['student_class', 'Şube'],
+  ]
+
+  return (
+    <Dialog.Root onOpenChange={(a) => { if (a) setForm(bosla()) }}>
+      <Dialog.Trigger asChild>
+        <button type="button" className="ku-btn ku-btn-soluk">Künyeyi düzelt</button>
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="ku-overlay" />
+        <Dialog.Content className="ku-modal">
+          <Dialog.Title>Künyeyi düzelt</Dialog.Title>
+          <Dialog.Description className="aciklama">
+            Yalnız kimlik bilgileri. Rol, onay ve sınıf bağı buradan değişmez — her birinin
+            kendi kapısı ve kendi korumaları var.
+          </Dialog.Description>
+
+          <div style={{ marginTop: 12 }}>
+            {alanlar.map(([alan, etiket]) => (
+              <label key={alan} style={{ display: 'block', marginTop: 10 }}>
+                <span style={{
+                  display: 'block', fontSize: 10, fontWeight: 600, letterSpacing: '.1em',
+                  textTransform: 'uppercase', color: 'var(--metin3)', marginBottom: 5,
+                }}>
+                  {etiket}
+                </span>
+                <input
+                  value={form[alan]}
+                  onChange={(e) => setForm((f) => ({ ...f, [alan]: e.target.value }))}
+                  maxLength={200}
+                  style={{
+                    width: '100%', fontFamily: 'Inter, sans-serif', fontSize: 13, color: 'var(--metin1)',
+                    background: 'var(--v0)', border: '1.5px solid var(--cam-kenar)', borderRadius: 11,
+                    padding: '10px 12px', minHeight: 44, outline: 'none',
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+
+          <div className="dugmeler">
+            <Dialog.Close asChild>
+              <button type="button" className="ku-btn ku-btn-soluk">Vazgeç</button>
+            </Dialog.Close>
+            <Dialog.Close asChild>
+              <button
+                type="button"
+                className="ku-btn ku-btn-birincil"
+                disabled={mesgul}
+                onClick={() => {
+                  setMesgul(true)
+                  // Boş string → null: "temizle" ile "dokunma" ayrımını sunucu yapar,
+                  // iki farklı "boş" değeri taşımayız.
+                  const yama = Object.fromEntries(
+                    Object.entries(form).map(([k, v]) => [k, v.trim() || null]),
+                  )
+                  void onKaydet(yama).finally(() => setMesgul(false))
+                }}
+              >
+                Kaydet
+              </button>
+            </Dialog.Close>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
+/** Davetle hesap açma — şifre YÖNETİCİ TARAFINDAN BELİRLENMEZ, davet bağlantısı gider. */
+export function HesapAcDialog({ onKaydet }: {
+  onKaydet: (veri: { email: string; name: string; rol: 'student' | 'teacher'; school: string | null }) => Promise<void>
+}) {
+  const bos = { email: '', name: '', rol: 'student' as 'student' | 'teacher', school: '' }
+  const [f, setF] = useState(bos)
+  const [mesgul, setMesgul] = useState(false)
+  const gecerli = f.email.includes('@') && f.name.trim().length > 0
+
+  const alan = (etiket: string, deger: string, yaz: (v: string) => void, tur = 'text'): ReactNode => (
+    <label style={{ display: 'block', marginTop: 10 }}>
+      <span style={{
+        display: 'block', fontSize: 10, fontWeight: 600, letterSpacing: '.1em',
+        textTransform: 'uppercase', color: 'var(--metin3)', marginBottom: 5,
+      }}>
+        {etiket}
+      </span>
+      <input
+        type={tur}
+        value={deger}
+        onChange={(e) => yaz(e.target.value)}
+        maxLength={200}
+        style={{
+          width: '100%', fontFamily: 'Inter, sans-serif', fontSize: 13, color: 'var(--metin1)',
+          background: 'var(--v0)', border: '1.5px solid var(--cam-kenar)', borderRadius: 11,
+          padding: '10px 12px', minHeight: 44, outline: 'none',
+        }}
+      />
+    </label>
+  )
+
+  return (
+    <Dialog.Root onOpenChange={(a) => { if (a) setF(bos) }}>
+      <Dialog.Trigger asChild>
+        <button type="button" className="ku-btn ku-btn-birincil">
+          <Icon name="check" size={14} color="currentColor" />
+          Hesap aç
+        </button>
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="ku-overlay" />
+        <Dialog.Content className="ku-modal">
+          <Dialog.Title>Hesap aç</Dialog.Title>
+          <Dialog.Description className="aciklama">
+            Kullanıcıya davet e-postası gider ve şifresini kendisi kurar. Yönetici hiçbir an
+            şifreyi görmez.
+          </Dialog.Description>
+
+          <div className="ku-segment ku-segment-genis">
+            {(['student', 'teacher'] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                aria-pressed={f.rol === r}
+                className={f.rol === r ? 'ku-aktif' : undefined}
+                onClick={() => setF((x) => ({ ...x, rol: r }))}
+              >
+                {r === 'student' ? 'Öğrenci' : 'Öğretmen'}
+              </button>
+            ))}
+          </div>
+
+          {alan('E-posta', f.email, (v) => setF((x) => ({ ...x, email: v })), 'email')}
+          {alan('Ad', f.name, (v) => setF((x) => ({ ...x, name: v })))}
+          {alan('Okul (isteğe bağlı)', f.school, (v) => setF((x) => ({ ...x, school: v })))}
+
+          {f.rol === 'teacher' && (
+            <p className="uyari-kutu">
+              Öğretmen hesabına sınıf kodu üretilir ve doğrudan onaylı açılır — davet kabul
+              edilir edilmez panele girebilir.
+            </p>
+          )}
+
+          <div className="dugmeler">
+            <Dialog.Close asChild>
+              <button type="button" className="ku-btn ku-btn-soluk">Vazgeç</button>
+            </Dialog.Close>
+            <Dialog.Close asChild>
+              <button
+                type="button"
+                className="ku-btn ku-btn-birincil"
+                disabled={!gecerli || mesgul}
+                onClick={() => {
+                  if (!gecerli) return
+                  setMesgul(true)
+                  void onKaydet({
+                    email: f.email.trim().toLowerCase(),
+                    name: f.name.trim(),
+                    rol: f.rol,
+                    school: f.school.trim() || null,
+                  }).finally(() => setMesgul(false))
+                }}
+              >
+                Davet gönder
+              </button>
+            </Dialog.Close>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
 }
 
 /* ── Sınıf ataması ───────────────────────────────────────────────────────── */
@@ -338,29 +625,26 @@ export function SinifAtaDialog({ kullanici, mevcutOgretmenId, ogretmenler, onKay
   return (
     <Dialog.Root onOpenChange={(a) => { if (!a) { setHedef(mevcutOgretmenId); setAra('') } }}>
       <Dialog.Trigger asChild>
-        <GlowButton size="sm" variant="outline" icon="waves">Sınıfı değiştir</GlowButton>
+        <button type="button" className="ku-btn ku-btn-soluk">Sınıfa ata</button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[85] bg-ocean-950/50 backdrop-blur-sm" />
-        <Dialog.Content className="glass fixed left-1/2 top-1/2 z-[86] flex max-h-[80vh] w-[min(92vw,460px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-3xl p-6 shadow-card">
-          <Dialog.Title className="font-display text-[16px] font-bold text-slate-800 dark:text-slate-100">
-            Sınıf ataması
-          </Dialog.Title>
-          <Dialog.Description className="mt-1.5 text-[13px] text-slate-500 dark:text-slate-400">
+        <Dialog.Overlay className="ku-overlay" />
+        <Dialog.Content className="ku-modal ku-genis">
+          <Dialog.Title>Sınıf ataması</Dialog.Title>
+          <Dialog.Description className="aciklama">
             <strong>{kullanici.name ?? 'Bu öğrenci'}</strong> hangi öğretmenin sınıfında olsun?
           </Dialog.Description>
 
-          <label className="mt-4 flex items-center gap-2 rounded-xl border border-slate-500/15 px-3 py-2 dark:border-sky-500/15">
-            <Icon name="search" size={14} color="currentColor" style={{ opacity: 0.5 }} />
+          <label className="ku-ara" style={{ marginTop: 16, marginBottom: 0, flex: 'none' }}>
+            <Icon name="search" size={14} color="currentColor" style={{ opacity: 0.55 }} />
             <input
               value={ara}
               onChange={(e) => setAra(e.target.value)}
               placeholder="Öğretmen adı, e-posta ya da sınıf kodu"
-              className="w-full bg-transparent text-[13px] text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-200"
             />
           </label>
 
-          <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="ku-secenek-liste">
             <SecenekSatiri
               secili={hedef === null}
               onSec={() => setHedef(null)}
@@ -378,19 +662,20 @@ export function SinifAtaDialog({ kullanici, mevcutOgretmenId, ogretmenler, onKay
               />
             ))}
             {!liste.length && (
-              <p className="px-2 py-6 text-center text-[12px] text-slate-400">
+              <p style={{ padding: '24px 8px', textAlign: 'center', fontSize: 12, color: 'var(--metin3)' }}>
                 Onaylı öğretmen bulunamadı.
               </p>
             )}
           </div>
 
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="dugmeler">
             <Dialog.Close asChild>
-              <GlowButton size="sm" variant="ghost">Vazgeç</GlowButton>
+              <button type="button" className="ku-btn ku-btn-soluk">Vazgeç</button>
             </Dialog.Close>
             <Dialog.Close asChild>
-              <GlowButton
-                size="sm"
+              <button
+                type="button"
+                className="ku-btn ku-btn-birincil"
                 disabled={!degisti || mesgul}
                 onClick={() => {
                   if (!degisti) return
@@ -399,7 +684,7 @@ export function SinifAtaDialog({ kullanici, mevcutOgretmenId, ogretmenler, onKay
                 }}
               >
                 Kaydet
-              </GlowButton>
+              </button>
             </Dialog.Close>
           </div>
         </Dialog.Content>
@@ -415,32 +700,25 @@ function SecenekSatiri({ secili, onSec, baslik, alt, isaret }: {
     <button
       type="button"
       onClick={onSec}
-      className={cn(
-        'flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-colors',
-        secili ? 'bg-sky-500/10' : 'hover:bg-sky-500/5',
-      )}
+      className={cn('ku-secenek', secili && 'ku-secili')}
     >
-      {/* Seçim asla YALNIZ renkle işaretlenmez — ikon da taşır. */}
-      <span className={cn('grid size-4 shrink-0 place-items-center', secili ? 'text-sky-500' : 'text-transparent')}>
+      {/* Seçim asla YALNIZ renkle işaretlenmez — ikon da taşır (görünürlük değişir, yer sabit). */}
+      <span className="tik" style={{ visibility: secili ? 'visible' : 'hidden' }}>
         <Icon name="check" size={14} color="currentColor" />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium text-slate-700 dark:text-slate-200">{baslik}</span>
-        <span className="block truncate font-mono text-[11px] text-slate-400 dark:text-slate-500">{alt}</span>
+      <span className="govde">
+        <span className="b">{baslik}</span>
+        <span className="a">{alt}</span>
       </span>
-      {isaret && <Chip tone="slate">{isaret}</Chip>}
+      {isaret && <span className="isaret">{isaret}</span>}
     </button>
   )
 }
 
 /* ── Denetim akışı ───────────────────────────────────────────────────────── */
 
-const EYLEM_METNI: Record<YonetimEylemi, string> = {
-  ogretmen_onay: 'öğretmen onayı',
-  rol_degis: 'rol değişimi',
-  sinif_ata: 'sınıf ataması',
-  gorev_yeniden: 'görev yeniden kuyruklandı',
-}
+/** Kanonik etiket listesi types.admin.ts'te (EYLEM_ADI) — burası onu kullanır. */
+const EYLEM_METNI = EYLEM_ADI
 
 export function DenetimAkisi({ kayitlar, defterYok }: {
   kayitlar: DenetimSatiri[]
@@ -450,57 +728,112 @@ export function DenetimAkisi({ kayitlar, defterYok }: {
   // liste çizmek, denetimsiz bir sistemi "temiz" göstermek olurdu.
   if (defterYok) {
     return (
-      <div className="glass-solid rounded-2xl px-5 py-5">
-        <PanelBaslik icon="shield">Denetim Defteri</PanelBaslik>
-        <p className="mt-2 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
-          Defter tablosu henüz yok — <span className="font-mono">0020_yonetim_denetim.sql</span>{' '}
+      <section className="ku-kart ku-panel-ic">
+        <div className="ku-panel-bas"><h3>Denetim Defteri</h3></div>
+        <p style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--metin2)' }}>
+          Defter tablosu henüz yok —{' '}
+          <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>0020_yonetim_denetim.sql</span>{' '}
           uygulanmamış. Bu, "hiç yönetim işlemi yapılmadı" demek <strong>değildir</strong>:
           yapılan işlemler kaydedilmiyor. Migration uygulanana kadar rol değişimleri ve
           sınıf atamaları izsiz kalıyor.
         </p>
-      </div>
+      </section>
     )
   }
 
   return (
-    <div className="glass-solid rounded-2xl px-5 py-5">
-      <PanelBaslik icon="shield">Denetim Defteri</PanelBaslik>
+    <section className="ku-kart ku-panel-ic">
+      <div className="ku-panel-bas">
+        <h3>Denetim Defteri</h3>
+        <span className="sag-mono" style={{ marginLeft: 'auto' }}>append-only</span>
+      </div>
       {!kayitlar.length ? (
-        <p className="mt-2 text-[12px] text-slate-400 dark:text-slate-500">
-          Henüz yönetim işlemi yapılmamış.
-        </p>
+        <p style={{ fontSize: 12, color: 'var(--metin3)' }}>Henüz yönetim işlemi yapılmamış.</p>
       ) : (
-        <ul className="mt-3 space-y-2.5">
+        <div>
           {kayitlar.map((d) => (
-            <li key={d.id} className="border-l-2 border-sky-500/25 pl-3">
-              <p className="text-[12.5px] leading-snug text-slate-600 dark:text-slate-300">
-                <strong className="font-medium">{d.adminAdi ?? 'Bir yönetici'}</strong>
-                {' — '}{EYLEM_METNI[d.eylem] ?? d.eylem}
-                {d.hedefAdi && <> · <span className="text-slate-500 dark:text-slate-400">{d.hedefAdi}</span></>}
-              </p>
-              <p className="mt-0.5 font-mono text-[10.5px] text-slate-400 dark:text-slate-500">
-                {new Date(d.createdAt).toLocaleString('tr-TR')}
+            <div key={d.id} className="ku-denetim-satir">
+              <span className="zaman">
+                {new Date(d.createdAt).toLocaleString('tr-TR', {
+                  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                })}
+              </span>
+              <span className="eylem">
+                <b>{EYLEM_METNI[d.eylem] ?? d.eylem}</b>
+                {d.hedefAdi && <> · {d.hedefAdi}</>}
                 {detayOzeti(d) && <> · {detayOzeti(d)}</>}
-              </p>
-            </li>
+                {' · '}{d.adminAdi ?? 'yönetici'}
+              </span>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
-    </div>
+    </section>
   )
 }
 
-/** Ham jsonb'yi okunur tek satıra indirir — yönetici ham anahtar okumasın. */
-function detayOzeti(d: DenetimSatiri): string | null {
+/**
+ * Ham jsonb'yi okunur tek satıra indirir — yönetici ham anahtar okumasın.
+ *
+ * Eylem başına serbest şema olduğu için tek tek ele alınır; tanımadığı eylemde
+ * `null` döner ve satır yalnız eylem adıyla çizilir (uydurma özet YOK).
+ */
+export function detayOzeti(d: DenetimSatiri): string | null {
   const x = d.detay ?? {}
-  if (d.eylem === 'rol_degis') {
-    const n = Number(x.serbestBirakilanOgrenci ?? 0)
-    return `${x.oncekiRol} → ${x.yeniRol}${n > 0 ? ` · ${n} öğrenci serbest bırakıldı` : ''}`
+  const s = (v: unknown): string | null => (typeof v === 'string' && v ? v : null)
+
+  switch (d.eylem) {
+    case 'rol_degis': {
+      const n = Number(x.serbestBirakilanOgrenci ?? 0)
+      return `${x.oncekiRol} → ${x.yeniRol}${n > 0 ? ` · ${n} öğrenci serbest bırakıldı` : ''}`
+    }
+    case 'ogretmen_onay':
+      return x.onayli === true ? 'onaylandı' : 'onay kaldırıldı'
+    case 'sinif_ata':
+      return x.yeniOgretmenId ? 'sınıfa atandı' : 'sınıftan çıkarıldı'
+    case 'gorev_yeniden':
+      return `${x.kind ?? 'görev'} · ${x.akisaItildi === true ? 'akışa itildi' : 'bekçiye bırakıldı'}`
+    case 'gorev_iptal':
+      return `${x.kind ?? 'görev'} · ${x.oncekiDurum ?? '—'} → FAILED`
+    case 'hesap_olustur':
+      return `${x.rol ?? ''} · ${s(x.email) ?? ''}`.trim() || null
+    case 'profil_duzelt': {
+      const alanlar = Object.keys((x.degisenler as Record<string, unknown>) ?? {})
+      return alanlar.length ? alanlar.join(', ') : null
+    }
+    case 'sifre_sifirla':
+      return s(x.email)
+    case 'hesap_askiya':
+      return s(x.neden) ?? 'gerekçe yazılmadı'
+    case 'hesap_geri_al':
+      return 'erişim geri verildi'
+    case 'basvuru_reddet':
+      return s(x.not)
+    case 'soru_dogrulama':
+      return `${x.yeni === true ? 'havuza alındı' : 'havuzdan düşürüldü'}${s(x.neden) ? ` · ${s(x.neden)}` : ''}`
+    case 'soru_karantina':
+      return `${x.karantina === true ? 'karantinaya alındı' : 'karantinadan çıkarıldı'}${s(x.neden) ? ` · ${s(x.neden)}` : ''}`
+    case 'soru_etiket': {
+      const alanlar = Object.keys((x.degisenler as Record<string, unknown>) ?? {})
+      return alanlar.length ? alanlar.join(', ') : null
+    }
+    case 'uretim_tetik':
+      return `${x.kazanimBaslik ?? 'kazanım'} · ${x.adet ?? '?'} soru${x.difficulty ? ` · ${x.difficulty}` : ''}`
+    case 'esik_degis':
+      // ⚠️ DÜŞÜRME AYRICA İŞARETLENİR: eşiği düşürmek kalite bariyerini gevşetir ve
+      // defterde bir artırımdan ayırt edilebilir olmalı.
+      return `${x.subject ?? '—'} · ${x.onceki ?? 'taban'} → ${x.yeni}${x.dusuruldu === true ? ' (düşürüldü)' : ''}`
+    case 'eval_tetik':
+      return 'ölçüm kuyruğa alındı'
+    case 'onbellek_dus':
+      return `panel ${x.panel ?? 0} · kimlik ${x.kimlik ?? 0} · sınıf ${x.sinif ?? 0} · redis ${x.redis ?? 0}`
+    case 'ogretmen_adina_odev':
+      return x.tur === 'hedefli_set'
+        ? `hedefli set · ${x.ogrenciAdi ?? 'öğrenci'} · ${x.soruAdedi ?? '?'} soru`
+        : `sınıf ödevi · ${x.baslik ?? ''} · ${x.soruAdedi ?? '?'} soru`
+    case 'ogretmen_adina_ogrenci':
+      return `${x.ogrenciAdi ?? 'öğrenci'} · ${x.islem === 'cikar' ? 'sınıftan çıkarıldı' : 'sınıfa eklendi'}`
+    default:
+      return null
   }
-  if (d.eylem === 'ogretmen_onay') return x.onayli === true ? 'onaylandı' : 'onay kaldırıldı'
-  if (d.eylem === 'sinif_ata') return x.yeniOgretmenId ? 'sınıfa atandı' : 'sınıftan çıkarıldı'
-  if (d.eylem === 'gorev_yeniden') {
-    return `${x.kind ?? 'görev'} · ${x.akisaItildi === true ? 'akışa itildi' : 'bekçiye bırakıldı'}`
-  }
-  return null
 }

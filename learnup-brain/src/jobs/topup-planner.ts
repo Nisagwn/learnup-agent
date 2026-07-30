@@ -60,6 +60,7 @@ export async function runNightlyForge(): Promise<void> {
         .select('id', { count: 'exact', head: true })
         .eq('kazanim_id', nodeId)
         .eq('verified', true)
+        .eq('karantina', false) // 0025: karantinaya alınan soru havuz derinliğine SAYILMAZ
         .eq('difficulty', difficulty)
       if ((count ?? 0) < MIN_POOL) thin.push({ nodeId, difficulty, have: count ?? 0 })
       if (thin.length >= MAX_CELLS * 3) break

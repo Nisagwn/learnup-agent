@@ -1,5 +1,23 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import { supabase } from '../clients/supabase.js'
+import { validateBody, validateParams, IdParam } from '../middleware/validate.js'
+
+const SubmitSchema = z.object({
+  assignmentId: z.string().uuid(),
+  answers: z.array(z.object({
+    questionId: z.string().uuid(),
+    selectedIndex: z.number().int().min(0),
+  })).default([]),
+})
+
+const TargetedSubmitSchema = z.object({
+  targetedAssignmentId: z.string().uuid(),
+  answers: z.array(z.object({
+    questionId: z.string().uuid(),
+    selectedIndex: z.number().int().min(0),
+  })).default([]),
+})
 
 /** Ödevler — otoriter (backend) puanlama. record-answer ÇAĞRILMAZ (çift sayım yok).
  *  (Edge: submit-assignment, submit-targeted-assignment)
@@ -99,11 +117,12 @@ assignmentsRouter.get('/', async (req, res, next) => {
 
 /** GET /api/v1/assignments/:id/questions — sınıf ödevinin soruları (cevapsız).
  *  Sahiplik: submit ile birebir aynı kural (öğretmenim ≠ ödevin öğretmeni → 403). */
-assignmentsRouter.get('/:id/questions', async (req, res, next) => {
+assignmentsRouter.get('/:id/questions', validateParams(IdParam), async (req, res, next) => {
   try {
     const userId = req.userId!
+    const { id } = ((req as unknown) as { validatedParams: z.infer<typeof IdParam> }).validatedParams
     const { data: assignment } = await supabase
-      .from('assignments').select('id, teacher_id, question_ids, title').eq('id', req.params.id).maybeSingle()
+      .from('assignments').select('id, teacher_id, question_ids, title').eq('id', id).maybeSingle()
     if (!assignment) {
       res.status(404).json({ error: 'Ödev bulunamadı.' })
       return
@@ -128,12 +147,13 @@ assignmentsRouter.get('/:id/questions', async (req, res, next) => {
 })
 
 /** GET /api/v1/assignments/targeted/:id/questions — hedefli setin soruları (cevapsız). */
-assignmentsRouter.get('/targeted/:id/questions', async (req, res, next) => {
+assignmentsRouter.get('/targeted/:id/questions', validateParams(IdParam), async (req, res, next) => {
   try {
     const userId = req.userId!
+    const { id } = ((req as unknown) as { validatedParams: z.infer<typeof IdParam> }).validatedParams
     const { data: ta } = await supabase
       .from('targeted_assignments').select('id, student_id, question_ids, title')
-      .eq('id', req.params.id).eq('student_id', userId).maybeSingle()
+      .eq('id', id).eq('student_id', userId).maybeSingle()
     if (!ta) {
       res.status(404).json({ error: 'Hedefli set bulunamadı.' })
       return
@@ -152,16 +172,11 @@ assignmentsRouter.get('/targeted/:id/questions', async (req, res, next) => {
 })
 
 // POST /api/assignments/submit — küratörlü ödev gönderimi.
-assignmentsRouter.post('/submit', async (req, res, next) => {
+assignmentsRouter.post('/submit', validateBody(SubmitSchema), async (req, res, next) => {
   try {
     const userId = req.userId!
-    const body = req.body ?? {}
-    const assignmentId = body?.assignmentId
-    const answers: Array<{ questionId: string; selectedIndex: number }> = Array.isArray(body?.answers) ? body.answers : []
-    if (!assignmentId) {
-      res.status(400).json({ error: 'assignmentId gerekli.' })
-      return
-    }
+    const { assignmentId, answers } =
+      ((req as unknown) as { validatedBody: z.infer<typeof SubmitSchema> }).validatedBody
 
     const { data: assignment, error: aErr } = await supabase
       .from('assignments')
@@ -240,16 +255,11 @@ assignmentsRouter.post('/submit', async (req, res, next) => {
 })
 
 // POST /api/assignments/targeted/submit — hedefli set gönderimi (targeted_assignments → completed).
-assignmentsRouter.post('/targeted/submit', async (req, res, next) => {
+assignmentsRouter.post('/targeted/submit', validateBody(TargetedSubmitSchema), async (req, res, next) => {
   try {
     const userId = req.userId!
-    const body = req.body ?? {}
-    const targetedAssignmentId = body?.targetedAssignmentId
-    const answers: Array<{ questionId: string; selectedIndex: number }> = Array.isArray(body?.answers) ? body.answers : []
-    if (!targetedAssignmentId) {
-      res.status(400).json({ error: 'targetedAssignmentId gerekli.' })
-      return
-    }
+    const { targetedAssignmentId, answers } =
+      ((req as unknown) as { validatedBody: z.infer<typeof TargetedSubmitSchema> }).validatedBody
 
     // SAHİPLİK: set BANA mı atanmış? (student_id, targeted_assignments'ta NOT NULL)
     // Bu filtre olmadan herhangi bir öğrenci, herhangi bir kurbanın setini sıfırlayıp

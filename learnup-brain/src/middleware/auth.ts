@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
-import { createRemoteJWKSet, jwtVerify } from 'jose'
+import { createRemoteJWKSet, jwtVerify, errors } from 'jose'
+import { logger } from '../utils/logger.js'
 import { env } from '../config/env.js'
 
 declare global {
@@ -37,7 +38,15 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
     req.userId = payload.sub
     next()
-  } catch {
+  } catch (err) {
+    // İstemciye detay sızdırmadan log'a ayrım yaz (debug/izleme).
+    let neden = 'unknown'
+    if (err instanceof errors.JOSEError) {
+      neden = err.code ?? err.constructor.name
+    } else if (err instanceof Error) {
+      neden = err.name
+    }
+    logger.debug({ neden, path: req.path }, 'JWT doğrulama reddedildi')
     res.status(401).json({ error: 'invalid_token' })
   }
 }

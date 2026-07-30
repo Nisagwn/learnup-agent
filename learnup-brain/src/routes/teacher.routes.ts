@@ -1,9 +1,12 @@
-import { Router } from 'express'
+import { Router, type Request } from 'express'
+import { z } from 'zod'
 import { supabase } from '../clients/supabase.js'
 import { fetchAll } from '../lib/pg.js'
 import { rontgenGovdesi } from '../lib/rontgen.js'
+import { denetimYaz, type DenetimEylemi } from '../lib/denetim.js'
 import { assertTeacherOwnsStudent, kimlikAl, kimligiUnut, sinifiUnut } from '../lib/yetki.js'
 import { HttpHatasi, bulunamadi, gecersizIstek } from '../lib/hata.js'
+import { validateQuery } from '../middleware/validate.js'
 import { havuzdanSec, sorulariMaterialize, uyariMetni, type HavuzKaynak } from '../lib/odev-derle.js'
 import type {
   HavuzListesiYaniti,
@@ -23,11 +26,21 @@ import type {
 } from '../types/panel.js'
 
 /**
- * ÖĞRETMEN PANELİ — salt-okunur uçlar.
+ * ÖĞRETMEN PANELİ.
  *
  * ⚠️ YETKİ SINIRI: servis SERVICE-ROLE anahtarı kullanır → RLS BAYPAS. Postgres kimseyi
- * korumuyor. Sınıf kapsamı `req.userId`'den (öğretmenin kendisi) türetilir; öğrenci
- * parametresi alan her uç `assertTeacherOwnsStudent`'tan GEÇMEK ZORUNDA.
+ * korumuyor. Sınıf kapsamı `req.kapsamOgretmenId`'den gelir; öğrenci parametresi alan
+ * her uç `assertTeacherOwnsStudent`'tan GEÇMEK ZORUNDA.
+ *
+ * ⚠️ VERİ SORGULARINDA `req.userId` KULLANILMAZ (0025). Kapsam artık "isteği yapan kişi"
+ * değil, "hangi öğretmenin gözüyle bakılıyor": öğretmende kendisi, YÖNETİCİDE ?ogretmenId
+ * ile seçilen öğretmen (middleware/requireRole.ts → requireOgretmenKapsami). Bir sorguda
+ * `req.userId`e dönmek, yöneticiye SESSİZCE BOŞ SINIF göstermek demektir — hata çıkmaz,
+ * panel "sınıf boş" der. Değişmez tek satırla denetlenir:
+ *     grep -n "req\.userId" src/routes/teacher.routes.ts
+ * → YALNIZ `vekilIzi` içindeki tek satır çıkmalı (yorumlar hariç). Orada kasten kullanılır:
+ *   denetim kaydı eylemi YAPAN yöneticiyi yazar, adına yazılan öğretmeni değil. İkisini
+ *   karıştırmak defteri "öğretmen kendi yaptı" diye okutur ve izin tüm anlamını yok eder.
  *
  * ⚠️ YANIT ÖNBELLEĞİ YOK. Buradaki her gövde TEK BİR SINIFIN kişisel verisidir; anahtarsız
  * bir modül önbelleği öğretmenler arası veri sızıntısıdır — 0014'ün kapatmak için yazıldığı
@@ -36,6 +49,48 @@ import type {
  * LLM ÇAĞIRMAZ → standardLimiter yeterli.
  */
 export const teacherRouter = Router()
+
+/**
+ * Sınıf kapsamı — bu dosyanın TEK kimlik kaynağı.
+ *
+ * `requireOgretmenKapsami` her isteği kapsamla işaretlemeden geçirmez; `!` bu yüzden
+ * güvenli. Yine de gövde savunmalı: middleware zinciri yanlış kurulursa istek sessizce
+ * kapsamsız çalışmasın, gürültüyle patlasın.
+ */
+function kapsam(req: Request): string {
+  const id = req.kapsamOgretmenId
+  if (!id) throw new HttpHatasi(500, 'kapsam_yok', 'Sınıf kapsamı belirlenemedi.')
+  return id
+}
+
+/** Yönetici bu isteği bir öğretmenin ADINA mı yapıyor? (denetim izi bu bayrağa bakar) */
+const vekilMi = (req: Request): boolean => req.adminVekili === true
+
+/**
+ * VEKİL İZİ — yönetici bir öğretmenin adına YAZDIĞINDA denetim defterine işler.
+ *
+ * ⚠️ Öğretmenin kendi yazması İZLENMEZ ve bu kasıtlı: öğretmenin kendi sınıfına ödev
+ * atması olağan iş akışıdır, defteri doldurup yönetim eylemlerini görünmez kılardı.
+ * İzlenmesi gereken, YETKİ SINIRININ AŞILDIĞI an: başkasının sınıfında yapılan yazma.
+ *
+ * Dönüş: vekil değilse `null` (yazılacak bir şey yok), vekilse `denetimYaz` sonucu.
+ * Yanıtlar bunu `denetimYazildi` alanıyla taşır — izsiz kalmış bir yetki kullanımını
+ * sessizce başarı göstermek, 0020'nin önlemek için var olduğu şeydir.
+ */
+async function vekilIzi(
+  req: Request,
+  eylem: Extract<DenetimEylemi, 'ogretmen_adina_odev' | 'ogretmen_adina_ogrenci'>,
+  detay: Record<string, unknown>,
+): Promise<boolean | null> {
+  if (!vekilMi(req)) return null
+  return denetimYaz({
+    adminId: req.userId!,
+    eylem,
+    hedefId: kapsam(req),
+    hedefTur: 'ogretmen',
+    detay,
+  })
+}
 
 const ISI_ZAYIF_ESIK = 0.4
 const ZAYIF_WRONG_RATE = 0.6
@@ -106,7 +161,7 @@ const sayiParam = (v: unknown, varsayilan: number, tavan: number): number => {
 // ─────────────────────────────────────────────────────────────────────────────
 teacherRouter.get('/ozet', async (req, res, next) => {
   try {
-    const teacherId = req.userId!
+    const teacherId = kapsam(req)
     const simdi = Date.now()
     const [kimlik, satirlar, profil] = await Promise.all([
       kimlikAl(teacherId),
@@ -202,7 +257,7 @@ teacherRouter.get('/ozet', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 teacherRouter.get('/sinif', async (req, res, next) => {
   try {
-    const teacherId = req.userId!
+    const teacherId = kapsam(req)
     const days = sayiParam(req.query.days, 30, 365)
     const limit = sayiParam(req.query.limit, 200, 500)
     const offset = Math.max(0, Number(req.query.offset) || 0)
@@ -256,7 +311,7 @@ type IsiSatiri = {
 
 teacherRouter.get('/sinif/isi-haritasi', async (req, res, next) => {
   try {
-    const teacherId = req.userId!
+    const teacherId = kapsam(req)
     const subject = req.query.subject ? String(req.query.subject) : null
     const minAttempts = sayiParam(req.query.minAttempts, 1, 100)
 
@@ -304,6 +359,105 @@ teacherRouter.get('/sinif/isi-haritasi', async (req, res, next) => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /teacher/sinif/isi-haritasi/ogrenciler — bir hücrenin (ders × ünite) zayıf
+// öğrenci KIRILIMI. Isı haritası hücresi weak_student_count'u SAYIYA çöktürür; bu uç
+// o sayıyı öğrenci satırlarına açar (drill-down; RPC 0023).
+//
+// ⚠️ TUTARLILIK DEĞİŞMEZİ: RPC, ısı haritası ucuyla AYNI roster (sinif_mevcudu), AYNI
+// p_min_attempts (aynı sayiParam default/cap) ve AYNI ISI_ZAYIF_ESIK ile çağrılır →
+// dönen `ogrenciler.length` o hücrenin `weakStudentCount` değerine EŞİTTİR.
+// ─────────────────────────────────────────────────────────────────────────────
+const IsiOgrenciKirilimiQuery = z.object({
+  subject: z.string().min(1),
+  unitPath: z.string().min(1),
+})
+
+type IsiOgrenciSatiri = {
+  user_id: string
+  ogrenci_ort: number
+  attempts: number
+  node_count: number
+}
+
+/** GET /api/v1/teacher/sinif/isi-haritasi/ogrenciler */
+type IsiOgrenciKirilimiYaniti = {
+  subject: string
+  unitPath: string
+  /** curriculum_nodes'tan çözülür; eşleşmezse null (uydurma başlık YOK). */
+  unitTitle: string | null
+  /** İstemci renk/eşik yorumunu buradan kurar — ısı haritasıyla TEK kaynak. */
+  esik: { zayif: number }
+  ogrenciler: Array<{
+    studentId: string
+    /** roster kaynağıyla (profiles.name) AYNI; yoksa null. */
+    ad: string | null
+    /** ogrenci_ort — çürüme uygulanmış ünite ortalaması, 4 ondalık. */
+    mastery: number
+    attempts: number
+    nodeCount: number
+  }>
+  olcumZamani: string
+}
+
+teacherRouter.get(
+  '/sinif/isi-haritasi/ogrenciler',
+  validateQuery(IsiOgrenciKirilimiQuery),
+  async (req, res, next) => {
+    try {
+      const teacherId = kapsam(req)
+      const { subject, unitPath } = ((req as unknown) as {
+        validatedQuery: z.infer<typeof IsiOgrenciKirilimiQuery>
+      }).validatedQuery
+      // Isı haritası ucuyla AYNI okuma (sayiParam default 1, tavan 100) — değişmez şart.
+      const minAttempts = sayiParam(req.query.minAttempts, 1, 100)
+
+      const { data, error } = await supabase.rpc('sinif_unite_zayif_ogrenciler', {
+        p_teacher_id: teacherId,
+        p_subject: subject,
+        p_unit_path: unitPath,
+        p_min_attempts: minAttempts,
+        p_zayif_esik: ISI_ZAYIF_ESIK,
+      })
+      if (error) throw new HttpHatasi(500, 'isi_kirilim_okunamadi', 'Ünite öğrenci kırılımı hesaplanamadı.')
+      const satirlar = (data ?? []) as IsiOgrenciSatiri[]
+
+      // Ünite başlığı + öğrenci adları: öğrenci başına DEĞİL, iki toplu sorgu.
+      const ids = satirlar.map((s) => s.user_id)
+      const [baslikSonuc, adSonuc] = await Promise.all([
+        supabase.from('curriculum_nodes').select('title').eq('path', unitPath).limit(1),
+        ids.length
+          ? supabase.from('profiles').select('id, name').in('id', ids)
+          : Promise.resolve({ data: [] as Array<{ id: string; name: string | null }> }),
+      ])
+      const unitTitle = ((baslikSonuc.data ?? [])[0]?.title as string | null) ?? null
+      const adlar = new Map<string, string | null>()
+      for (const p of (adSonuc.data ?? []) as Array<{ id: string; name: string | null }>) {
+        adlar.set(String(p.id), (p.name as string | null) ?? null)
+      }
+
+      const yanit: IsiOgrenciKirilimiYaniti = {
+        subject,
+        unitPath,
+        unitTitle,
+        esik: { zayif: ISI_ZAYIF_ESIK },
+        // RPC "en zayıf başta" döndürür — sıra KORUNUR (yeniden sıralama yok).
+        ogrenciler: satirlar.map((s) => ({
+          studentId: s.user_id,
+          ad: adlar.get(s.user_id) ?? null,
+          mastery: Number(s.ogrenci_ort.toFixed(4)),
+          attempts: Number(s.attempts),
+          nodeCount: s.node_count,
+        })),
+        olcumZamani: new Date().toISOString(),
+      }
+      res.json(yanit)
+    } catch (err) {
+      next(err)
+    }
+  },
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /teacher/sinif/zayif-kazanimlar — triyaj kuyruğu
 // ─────────────────────────────────────────────────────────────────────────────
 type ZayifSatiri = {
@@ -320,7 +474,7 @@ type ZayifSatiri = {
 
 teacherRouter.get('/sinif/zayif-kazanimlar', async (req, res, next) => {
   try {
-    const teacherId = req.userId!
+    const teacherId = kapsam(req)
     const limit = sayiParam(req.query.limit, 20, 100)
     const subject = req.query.subject ? String(req.query.subject) : null
 
@@ -344,7 +498,8 @@ teacherRouter.get('/sinif/zayif-kazanimlar', async (req, res, next) => {
           supabase.from('yks_questions').select('kazanim_id').in('kazanim_id', ids).eq('verified', true),
         ),
         fetchAll<{ kazanim_id: number }>(() =>
-          supabase.from('yks_ai_questions').select('kazanim_id').in('kazanim_id', ids).eq('verified', true),
+          supabase.from('yks_ai_questions').select('kazanim_id').in('kazanim_id', ids)
+            .eq('verified', true).eq('karantina', false), // 0025
         ),
       ])
       for (const r of osym) osymSayim.set(r.kazanim_id, (osymSayim.get(r.kazanim_id) ?? 0) + 1)
@@ -383,7 +538,7 @@ teacherRouter.get('/sinif/zayif-kazanimlar', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 teacherRouter.get('/ogrenci/:studentId', async (req, res, next) => {
   try {
-    const teacherId = req.userId!
+    const teacherId = kapsam(req)
     const studentId = String(req.params.studentId)
     const days = sayiParam(req.query.days, 30, 365)
 
@@ -468,7 +623,7 @@ teacherRouter.get('/ogrenci/:studentId', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 teacherRouter.get('/ogrenci/:studentId/rontgen', async (req, res, next) => {
   try {
-    const ogrenci = await assertTeacherOwnsStudent(req.userId!, String(req.params.studentId))
+    const ogrenci = await assertTeacherOwnsStudent(kapsam(req), String(req.params.studentId))
     const govde = await rontgenGovdesi(ogrenci.id, { teshisGoster: true })
     const yanit: OgretmenRontgenYaniti = {
       ...govde,
@@ -485,7 +640,7 @@ teacherRouter.get('/ogrenci/:studentId/rontgen', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 teacherRouter.get('/ogrenci/:studentId/loglar', async (req, res, next) => {
   try {
-    const ogrenci = await assertTeacherOwnsStudent(req.userId!, String(req.params.studentId))
+    const ogrenci = await assertTeacherOwnsStudent(kapsam(req), String(req.params.studentId))
     const days = sayiParam(req.query.days, 30, 365)
     const limit = sayiParam(req.query.limit, 200, 500)
     const offset = Math.max(0, Number(req.query.offset) || 0)
@@ -533,7 +688,7 @@ teacherRouter.get('/ogrenci/:studentId/loglar', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 teacherRouter.get('/odevler', async (req, res, next) => {
   try {
-    const teacherId = req.userId!
+    const teacherId = kapsam(req)
     const limit = sayiParam(req.query.limit, 50, 200)
     const offset = Math.max(0, Number(req.query.offset) || 0)
 
@@ -633,7 +788,7 @@ teacherRouter.get('/odevler', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 teacherRouter.post('/odev', async (req, res, next) => {
   try {
-    const teacherId = req.userId!
+    const teacherId = kapsam(req)
     const b = (req.body ?? {}) as Record<string, unknown>
     const istenen = Number(b.soruSayisi)
     if (!Number.isFinite(istenen) || istenen < 1 || istenen > 40) {
@@ -696,6 +851,15 @@ teacherRouter.post('/odev', async (req, res, next) => {
       .single()
     if (error) throw new HttpHatasi(500, 'odev_olusturulamadi', 'Ödev oluşturulamadı.')
 
+    const denetimYazildi = await vekilIzi(req, 'ogretmen_adina_odev', {
+      tur: 'sinif_odevi',
+      odevId: String(odev.id),
+      baslik,
+      soruAdedi: derleme.questionIds.length,
+      subject,
+      kaynak,
+    })
+
     const yanit: OdevOlusturYanit = {
       id: String(odev.id),
       questionIds: derleme.questionIds,
@@ -703,6 +867,7 @@ teacherRouter.post('/odev', async (req, res, next) => {
       bulunan: derleme.questionIds.length,
       kaynakDagilimi: derleme.kaynakDagilimi,
       uyari: uyariMetni(istenen, derleme.questionIds.length, derleme.atlanan),
+      denetimYazildi,
     }
     void kimlik
     res.status(201).json(yanit)
@@ -716,7 +881,7 @@ teacherRouter.post('/odev', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 teacherRouter.post('/hedefli-odev', async (req, res, next) => {
   try {
-    const teacherId = req.userId!
+    const teacherId = kapsam(req)
     const b = (req.body ?? {}) as Record<string, unknown>
     const studentId = String(b.studentId ?? '')
     const ogrenci = await assertTeacherOwnsStudent(teacherId, studentId)
@@ -807,6 +972,15 @@ teacherRouter.post('/hedefli-odev', async (req, res, next) => {
       .single()
     if (error) throw new HttpHatasi(500, 'set_olusturulamadi', 'Hedefli set oluşturulamadı.')
 
+    const denetimYazildi = await vekilIzi(req, 'ogretmen_adina_odev', {
+      tur: 'hedefli_set',
+      setId: String(ta.id),
+      studentId,
+      ogrenciAdi: ogrenci.name ?? null,
+      soruAdedi: derleme.questionIds.length,
+      kazanimSayisi: katkiVeren,
+    })
+
     const yanit: HedefliOdevYanit = {
       id: String(ta.id),
       studentId,
@@ -815,6 +989,7 @@ teacherRouter.post('/hedefli-odev', async (req, res, next) => {
       bulunan: derleme.questionIds.length,
       rationale,
       uyari: uyariMetni(istenen, derleme.questionIds.length, derleme.atlanan),
+      denetimYazildi,
     }
     res.status(201).json(yanit)
   } catch (err) {
@@ -830,7 +1005,7 @@ teacherRouter.post('/hedefli-odev', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 teacherRouter.post('/ogrenci', async (req, res, next) => {
   try {
-    const teacherId = req.userId!
+    const teacherId = kapsam(req)
     const email = String((req.body as { email?: unknown })?.email ?? '').trim().toLowerCase()
     if (!email || !email.includes('@')) {
       throw gecersizIstek('gecersiz_eposta', 'Geçerli bir e-posta adresi gerekli.')
@@ -887,9 +1062,17 @@ teacherRouter.post('/ogrenci', async (req, res, next) => {
     await kimligiUnut(aday.id)
     sinifiUnut(teacherId)
 
+    const denetimYazildi = await vekilIzi(req, 'ogretmen_adina_ogrenci', {
+      islem: 'ekle',
+      studentId: String(aday.id),
+      ogrenciAdi: aday.name ?? null,
+      email: aday.email ?? null,
+    })
+
     res.json({
       eklendi: true,
       student: { id: aday.id, name: aday.name ?? null, email: aday.email ?? null },
+      denetimYazildi,
     })
   } catch (err) {
     next(err)
@@ -904,7 +1087,7 @@ teacherRouter.post('/ogrenci', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 teacherRouter.delete('/ogrenci/:studentId', async (req, res, next) => {
   try {
-    const teacherId = req.userId!
+    const teacherId = kapsam(req)
     const ogrenci = await assertTeacherOwnsStudent(teacherId, String(req.params.studentId))
 
     const { error } = await supabase
@@ -916,7 +1099,14 @@ teacherRouter.delete('/ogrenci/:studentId', async (req, res, next) => {
 
     await kimligiUnut(ogrenci.id)
     sinifiUnut(teacherId)
-    res.json({ cikarildi: true, student: { id: ogrenci.id, name: ogrenci.name } })
+
+    const denetimYazildi = await vekilIzi(req, 'ogretmen_adina_ogrenci', {
+      islem: 'cikar',
+      studentId: ogrenci.id,
+      ogrenciAdi: ogrenci.name ?? null,
+    })
+
+    res.json({ cikarildi: true, student: { id: ogrenci.id, name: ogrenci.name }, denetimYazildi })
   } catch (err) {
     next(err)
   }
@@ -928,6 +1118,15 @@ teacherRouter.delete('/ogrenci/:studentId', async (req, res, next) => {
 teacherRouter.get('/soru-havuzu', async (req, res, next) => {
   try {
     const kaynak = String(req.query.kaynak ?? 'karisik')
+    // TELİF KARARI (2026-07-22): çıkmış ÖSYM havuzu öğretmen yüzeyinden kaldırıldı. Açık
+    // 'osym' isteği açık hatayla döner (sessiz daralma "filtre bozuk" sanılır); 'karisik'
+    // ve diğer her mod yalnız AI havuzunu listeler. Sayfalama tek tabloya indi.
+    if (kaynak === 'osym') {
+      throw gecersizIstek(
+        'cikmis_kaynak_kapali',
+        'Çıkmış ÖSYM soruları telif kararı gereği havuz listesinde sunulmuyor. Kaynak olarak AI havuzunu seçin.',
+      )
+    }
     const subject = req.query.subject ? String(req.query.subject) : null
     const kazanimId = req.query.kazanimId ? Number(req.query.kazanimId) : null
     const difficulty = req.query.difficulty ? String(req.query.difficulty) : null
@@ -935,53 +1134,23 @@ teacherRouter.get('/soru-havuzu', async (req, res, next) => {
     const limit = sayiParam(req.query.limit, 20, 100)
     const offset = Math.max(0, Number(req.query.offset) || 0)
 
-    /**
-     * ⚠️ SAYFALAMA İKİ TABLO ÜSTÜNDE.
-     * Eski hâl her iki tabloya AYNI offset'i uyguluyordu; "karışık" modda 2. sayfa
-     * iki listenin de 2. sayfasını getiriyor, aradaki kayıtlar atlanıyordu.
-     * Doğrusu: ÖSYM tükenene kadar ondan, sonra AI'dan devam (sıralı birleşim).
-     */
-    const osymSayim = kaynak === 'ai' ? 0 : await havuzSayimi('yks_questions', { subject, kazanimId, ara })
-    const aiSayim =
-      kaynak === 'osym' ? 0 : await havuzSayimi('yks_ai_questions', { subject, kazanimId, difficulty, ara })
-    const total = osymSayim + aiSayim
+    const total = await havuzSayimi({ subject, kazanimId, difficulty, ara })
 
     const sorular: HavuzSorusu[] = []
-
-    if (kaynak !== 'ai' && offset < osymSayim) {
-      let q = supabase
-        .from('yks_questions')
-        .select('id, subject, topic, kazanim_id, question_text, difficulty, quality, exam_label, exam_year')
-        .eq('verified', true)
-        .eq('source_type', 'osym_cikmis')
-      if (subject) q = q.eq('subject', subject)
-      if (kazanimId) q = q.eq('kazanim_id', kazanimId)
-      if (ara) q = q.ilike('question_text', `%${ara}%`)
-      const { data } = await q
-        .order('exam_year', { ascending: false })
-        .order('id', { ascending: true })   // deterministik: tie-break olmadan sayfalar kayar
-        .range(offset, offset + limit - 1)
-      for (const r of (data ?? []) as Array<Record<string, unknown>>) {
-        sorular.push(havuzSatiri(r, 'osym'))
-      }
-    }
-
-    if (kaynak !== 'osym' && sorular.length < limit) {
-      // ÖSYM'den kaç satır tüketildiyse AI offset'i o kadar geriden başlar.
-      const aiOffset = Math.max(0, offset - osymSayim)
+    if (offset < total) {
       let q = supabase
         .from('yks_ai_questions')
         .select('id, subject, topic, kazanim_id, question_text, difficulty, quality')
         .eq('verified', true)
+        .eq('karantina', false) // 0025: öğretmen karantinadaki soruyu göremez/seçemez
       if (subject) q = q.eq('subject', subject)
       if (kazanimId) q = q.eq('kazanim_id', kazanimId)
       if (difficulty) q = q.eq('difficulty', difficulty)
       if (ara) q = q.ilike('question_text', `%${ara}%`)
-      const kalan = limit - sorular.length
       const { data } = await q
         .order('created_at', { ascending: false })
-        .order('id', { ascending: true })
-        .range(aiOffset, aiOffset + kalan - 1)
+        .order('id', { ascending: true })   // deterministik: tie-break olmadan sayfalar kayar
+        .range(offset, offset + limit - 1)
       for (const r of (data ?? []) as Array<Record<string, unknown>>) {
         sorular.push(havuzSatiri(r, 'ai'))
       }
@@ -1009,15 +1178,17 @@ function havuzSatiri(r: Record<string, unknown>, kaynak: 'osym' | 'ai'): HavuzSo
   }
 }
 
+/** AI havuzu sayımı — çıkmış tablo (yks_questions) telif kararıyla havuz yüzeyinden çıktı. */
 async function havuzSayimi(
-  tablo: 'yks_questions' | 'yks_ai_questions',
   f: { subject: string | null; kazanimId: number | null; difficulty?: string | null; ara: string | null },
 ): Promise<number> {
-  let q = supabase.from(tablo).select('id', { count: 'exact', head: true }).eq('verified', true)
-  if (tablo === 'yks_questions') q = q.eq('source_type', 'osym_cikmis')
+  // ⚠️ SAYIM FİLTRESİ LİSTE FİLTRESİYLE AYNI OLMAK ZORUNDA (karantina dahil):
+  // ayrışırlarsa sayfalama yalan söyler — "42 soru" der, 39 gösterir.
+  let q = supabase.from('yks_ai_questions').select('id', { count: 'exact', head: true })
+    .eq('verified', true).eq('karantina', false)
   if (f.subject) q = q.eq('subject', f.subject)
   if (f.kazanimId) q = q.eq('kazanim_id', f.kazanimId)
-  if (f.difficulty && tablo === 'yks_ai_questions') q = q.eq('difficulty', f.difficulty)
+  if (f.difficulty) q = q.eq('difficulty', f.difficulty)
   if (f.ara) q = q.ilike('question_text', `%${f.ara}%`)
   const { count } = await q
   return count ?? 0

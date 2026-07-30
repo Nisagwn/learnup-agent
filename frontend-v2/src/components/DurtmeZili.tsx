@@ -5,7 +5,9 @@ import { useAsync } from '../lib/useAsync'
 import { apiGet, apiPost } from '../lib/api.js'
 import type { Nudge } from '../lib/types'
 import { Icon } from '../ui'
-import { gunEtiketi } from './rontgen'
+// GOREV-034: gunEtiketi artık lib/format'tan — './rontgen' importu, salt tarih etiketi için
+// recharts'lı modülü (→ 383 kB vendor-charts) eager kabuk grafiğine sokuyordu.
+import { gunEtiketi } from '../lib/format'
 
 /** Dürtme zili — Koç'un proaktif mesaj defteri (nudges).
     Menü AÇILINCA görüldü işaretlenir (PENDING→SENT) → rozet söner. */

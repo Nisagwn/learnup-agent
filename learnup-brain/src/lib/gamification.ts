@@ -1,5 +1,73 @@
-// Oyunlaştırma + SRS + görev + rozet + lig — saf mantık.
-// (Edge `_shared/logic.ts` birebir portu; Deno bağımlılığı yok, framework-bağımsız.)
+// ─── TİPLER ─────────────────────────────────────────────────────────────────
+
+export interface Streak {
+  count: number
+  longest: number
+  lastActiveDate: string | null
+  freezesAvailable: number
+  freezeUsedDates: string[]
+}
+
+export interface League {
+  tier: string
+  weekId: string | null
+  weeklyXP: number
+}
+
+export interface Quest {
+  id: string
+  templateId: string
+  type: string
+  emoji: string
+  title: string
+  subject: string | null
+  target: number
+  progress: number
+  rewardXP: number
+  claimed: boolean
+}
+
+export interface DailyQuests {
+  date: string | null
+  quests: Quest[]
+}
+
+export interface SubjectStats {
+  solved?: number
+  correct?: number
+  xp?: number
+}
+
+export interface Gamification {
+  xp: number
+  totalSolved: number
+  correctAnswers: number
+  coins: number
+  subjects: Record<string, SubjectStats>
+  streak: Streak
+  league: League
+  dailyQuests: DailyQuests
+}
+
+export interface AnswerEvent {
+  isCorrect: boolean
+  isSkipped: boolean
+  attemptNumber: number
+  subject: string
+}
+
+export interface BadgeSnapshot {
+  streakDays?: number
+  totalSolved?: number
+  level?: number
+  masteryScores?: Record<string, { score?: number }>
+}
+
+export interface LeagueEntry {
+  uid: string
+  weekly_xp?: number
+  weeklyXP?: number
+}
 
 // ─── XP ─────────────────────────────────────────────────────────────────────
 export const XP = { CORRECT: 10, FIRST_TRY_BONUS: 5, WRONG: 2, SKIP: 0 }
@@ -40,11 +108,19 @@ const STREAK_MILESTONES = [7, 30, 100]
 const MAX_FREEZES = 2
 const FREEZE_EARN_EVERY = 7
 
-export function applyStreak(streak: any, today: string) {
-  const s = {
+interface StreakResult {
+  streak: Streak
+  milestone: number | null
+  freezeUsed: boolean
+  freezeEarned: boolean
+  continued: boolean
+}
+
+export function applyStreak(streak: Partial<Streak> | null, today: string): StreakResult {
+  const s: Streak = {
     count: Number(streak?.count) || 0,
     longest: Number(streak?.longest) || 0,
-    lastActiveDate: streak?.lastActiveDate || null,
+    lastActiveDate: streak?.lastActiveDate ?? null,
     freezesAvailable: Number(streak?.freezesAvailable) || 0,
     freezeUsedDates: Array.isArray(streak?.freezeUsedDates) ? streak.freezeUsedDates : [],
   }
@@ -77,9 +153,25 @@ export const SRS_INTERVALS_DAYS = [0, 1, 3, 7, 16, 35]
 const MAX_BOX = SRS_INTERVALS_DAYS.length - 1
 const DAY_MS = 86400000
 
-export function applySrsAnswer(prevCard: any, { isCorrect, now }: { isCorrect: boolean; now: number }) {
+export interface SrsCard {
+  box: number
+  consecutive_correct?: number
+  consecutiveCorrect?: number
+  total_attempts?: number
+  totalAttempts?: number
+}
+
+export interface SrsResult {
+  box: number
+  consecutiveCorrect: number
+  totalAttempts: number
+  nextReviewAtMs: number
+  lastReviewedAtMs: number
+}
+
+export function applySrsAnswer(prevCard: Partial<SrsCard> | null, { isCorrect, now }: { isCorrect: boolean; now: number }): SrsResult {
   const prev = prevCard || {}
-  const prevBox = Number.isInteger(prev.box) ? prev.box : 0
+  const prevBox = Number.isInteger(prev.box) ? (prev.box as number) : 0
   const prevConsec = Number(prev.consecutive_correct ?? prev.consecutiveCorrect) || 0
   const totalAttempts = (Number(prev.total_attempts ?? prev.totalAttempts) || 0) + 1
   let box: number, consecutiveCorrect: number
@@ -90,21 +182,31 @@ export function applySrsAnswer(prevCard: any, { isCorrect, now }: { isCorrect: b
 }
 
 // ─── GÜNLÜK GÖREVLER ──────────────────────────────────────────────────────────
-const QUEST_TEMPLATES = [
-  { id: 'solve', type: 'solve_count', emoji: '📝', title: (t: number) => `${t} soru çöz`, targets: [5, 10, 15], rewardXP: 20 },
-  { id: 'correct', type: 'correct_count', emoji: '✅', title: (t: number) => `${t} soruyu doğru yanıtla`, targets: [3, 5, 8], rewardXP: 30 },
-  { id: 'first_try', type: 'first_try_correct', emoji: '🎯', title: (t: number) => `${t} soruyu hatasız çöz`, targets: [2, 3, 5], rewardXP: 40 },
-  { id: 'subject', type: 'subject_solve', emoji: '📚', title: (t: number, s: string) => `${s} dersinde ${t} soru çöz`, targets: [4, 6, 8], rewardXP: 35, needsSubject: true },
+interface QuestTemplate {
+  id: string
+  type: string
+  emoji: string
+  title: (t: number, s?: string | null) => string
+  targets: number[]
+  rewardXP: number
+  needsSubject?: boolean
+}
+
+const QUEST_TEMPLATES: QuestTemplate[] = [
+  { id: 'solve', type: 'solve_count', emoji: '📝', title: (t, _s) => `${t} soru çöz`, targets: [5, 10, 15], rewardXP: 20 },
+  { id: 'correct', type: 'correct_count', emoji: '✅', title: (t, _s) => `${t} soruyu doğru yanıtla`, targets: [3, 5, 8], rewardXP: 30 },
+  { id: 'first_try', type: 'first_try_correct', emoji: '🎯', title: (t, _s) => `${t} soruyu hatasız çöz`, targets: [2, 3, 5], rewardXP: 40 },
+  { id: 'subject', type: 'subject_solve', emoji: '📚', title: (t, s) => `${s} dersinde ${t} soru çöz`, targets: [4, 6, 8], rewardXP: 35, needsSubject: true },
   { id: 'streak', type: 'keep_streak', emoji: '🔥', title: () => 'Bugün çalışarak serini koru', targets: [1], rewardXP: 15 },
 ]
 const QUEST_SUBJECTS = ['Matematik', 'Fizik', 'Kimya', 'Biyoloji', 'Edebiyat', 'Coğrafya']
-const pick = (arr: any[]) => arr[Math.floor(Math.random() * arr.length)]
+const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]
 
-export function generateDailyQuests(dateIso: string) {
+export function generateDailyQuests(dateIso: string): DailyQuests {
   const pool = [...QUEST_TEMPLATES]
-  const chosen: any[] = []
+  const chosen: QuestTemplate[] = []
   while (chosen.length < 3 && pool.length > 0) chosen.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0])
-  const quests = chosen.map((tpl, i) => {
+  const quests: Quest[] = chosen.map((tpl, i) => {
     const target = pick(tpl.targets)
     const subject = tpl.needsSubject ? pick(QUEST_SUBJECTS) : null
     return { id: `${dateIso}-${tpl.id}-${i}`, templateId: tpl.id, type: tpl.type, emoji: tpl.emoji,
@@ -113,12 +215,12 @@ export function generateDailyQuests(dateIso: string) {
   return { date: dateIso, quests }
 }
 
-export function applyAnswerToQuests(dailyQuests: any, answer: any) {
+export function applyAnswerToQuests(dailyQuests: DailyQuests | null, answer: AnswerEvent): { dailyQuests: DailyQuests | null; completedNow: string[] } {
   if (!dailyQuests?.quests) return { dailyQuests, completedNow: [] }
   const { isCorrect, isSkipped, attemptNumber, subject } = answer
   const solved = !isSkipped
   const completedNow: string[] = []
-  const quests = dailyQuests.quests.map((q: any) => {
+  const quests = dailyQuests.quests.map((q) => {
     if (q.progress >= q.target) return q
     let inc = 0
     switch (q.type) {
@@ -139,21 +241,21 @@ export function applyAnswerToQuests(dailyQuests: any, answer: any) {
 
 // ─── ROZETLER ─────────────────────────────────────────────────────────────────
 const BADGE_CATALOG = [
-  { id: 'streak_3', check: (s: any) => (s.streakDays || 0) >= 3 },
-  { id: 'streak_7', check: (s: any) => (s.streakDays || 0) >= 7 },
-  { id: 'streak_30', check: (s: any) => (s.streakDays || 0) >= 30 },
-  { id: 'streak_100', check: (s: any) => (s.streakDays || 0) >= 100 },
-  { id: 'solved_25', check: (s: any) => (s.totalSolved || 0) >= 25 },
-  { id: 'solved_100', check: (s: any) => (s.totalSolved || 0) >= 100 },
-  { id: 'solved_500', check: (s: any) => (s.totalSolved || 0) >= 500 },
-  { id: 'level_3', check: (s: any) => (s.level || 1) >= 3 },
-  { id: 'level_5', check: (s: any) => (s.level || 1) >= 5 },
-  { id: 'level_8', check: (s: any) => (s.level || 1) >= 8 },
-  { id: 'mastery_80', check: (s: any) => Object.values(s.masteryScores || {}).some((m: any) => (m?.score || 0) >= 80) },
-  { id: 'mastery_100', check: (s: any) => Object.values(s.masteryScores || {}).some((m: any) => (m?.score || 0) >= 100) },
+  { id: 'streak_3', check: (s: BadgeSnapshot) => (s.streakDays || 0) >= 3 },
+  { id: 'streak_7', check: (s: BadgeSnapshot) => (s.streakDays || 0) >= 7 },
+  { id: 'streak_30', check: (s: BadgeSnapshot) => (s.streakDays || 0) >= 30 },
+  { id: 'streak_100', check: (s: BadgeSnapshot) => (s.streakDays || 0) >= 100 },
+  { id: 'solved_25', check: (s: BadgeSnapshot) => (s.totalSolved || 0) >= 25 },
+  { id: 'solved_100', check: (s: BadgeSnapshot) => (s.totalSolved || 0) >= 100 },
+  { id: 'solved_500', check: (s: BadgeSnapshot) => (s.totalSolved || 0) >= 500 },
+  { id: 'level_3', check: (s: BadgeSnapshot) => (s.level || 1) >= 3 },
+  { id: 'level_5', check: (s: BadgeSnapshot) => (s.level || 1) >= 5 },
+  { id: 'level_8', check: (s: BadgeSnapshot) => (s.level || 1) >= 8 },
+  { id: 'mastery_80', check: (s: BadgeSnapshot) => Object.values(s.masteryScores || {}).some((m) => (m?.score || 0) >= 80) },
+  { id: 'mastery_100', check: (s: BadgeSnapshot) => Object.values(s.masteryScores || {}).some((m) => (m?.score || 0) >= 100) },
 ]
-export function evaluateBadges(snapshot: any): string[] {
-  return BADGE_CATALOG.filter((b) => { try { return !!b.check(snapshot); } catch { return false; } }).map((b) => b.id)
+export function evaluateBadges(snapshot: BadgeSnapshot): string[] {
+  return BADGE_CATALOG.filter((b) => { try { return !!b.check(snapshot); } catch { return false } }).map((b) => b.id)
 }
 
 // ─── LİG ──────────────────────────────────────────────────────────────────────
@@ -162,7 +264,7 @@ const PROMOTE_COUNT = 7, RELEGATE_COUNT = 5
 const tierIndex = (t: string) => { const i = TIERS.indexOf(t); return i < 0 ? 0 : i }
 export const promoteTier = (t: string) => TIERS[Math.min(TIERS.length - 1, tierIndex(t) + 1)]
 export const relegateTier = (t: string) => TIERS[Math.max(0, tierIndex(t) - 1)]
-export function resolveTierWeek(entries: any[], tier: string) {
+export function resolveTierWeek(entries: LeagueEntry[], tier: string) {
   const sorted = [...entries].sort((a, b) => (b.weekly_xp ?? b.weeklyXP ?? 0) - (a.weekly_xp ?? a.weeklyXP ?? 0))
   return sorted.map((e, idx) => {
     let outcome = 'stay', newTier = tier
@@ -180,7 +282,7 @@ export function levelFromCorrect(correct: number): number {
   return lvl
 }
 
-export function freshGamification() {
+export function freshGamification(): Gamification {
   return {
     xp: 0, totalSolved: 0, correctAnswers: 0, coins: 0, subjects: {},
     streak: { count: 0, longest: 0, lastActiveDate: null, freezesAvailable: 0, freezeUsedDates: [] },
@@ -189,22 +291,23 @@ export function freshGamification() {
   }
 }
 
-export function ensureGamification(raw: any, today: string, weekId: string) {
+export function ensureGamification(raw: unknown, today: string, weekId: string): Gamification {
   const base = freshGamification()
-  const g: any = { ...base, ...(raw || {}) }
-  g.streak = { ...base.streak, ...(raw && raw.streak) }
-  g.league = { ...base.league, ...(raw && raw.league) }
-  g.subjects = (raw && raw.subjects) || {}
+  const g = { ...base, ...(raw as Record<string, unknown> || {}) } as Gamification
+  const rawObj = (raw as Record<string, unknown>) || {}
+  g.streak = { ...base.streak, ...(rawObj.streak as Partial<Streak> || {}) }
+  g.league = { ...base.league, ...(rawObj.league as Partial<League> || {}) }
+  g.subjects = (rawObj.subjects as Record<string, SubjectStats>) || {}
   if (!g.dailyQuests || g.dailyQuests.date !== today) g.dailyQuests = generateDailyQuests(today)
   if (g.league.weekId !== weekId) g.league = { tier: g.league.tier || 'bronze', weekId, weeklyXP: 0 }
   return g
 }
 
-export function displayName(userData: any): string {
+export function displayName(userData: { name?: string; full_name?: string; email?: string } | null): string {
   return (userData && (userData.name || userData.full_name)) ||
     (userData && userData.email ? userData.email.split('@')[0] : null) || 'Öğrenci'
 }
 
-export function isStudent(userData: any): boolean {
+export function isStudent(userData: { role?: string } | null): boolean {
   return (userData && userData.role ? userData.role : 'student') === 'student'
 }

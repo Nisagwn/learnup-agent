@@ -2,10 +2,11 @@ import type { ReactNode } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { rolBul, ROL_ADI, type Rol } from '../lib/rol'
-import { GlowButton, Skeleton } from './ui'
+import { Skeleton } from './ui'
 import { Reveal } from './fx'
-import { Lighthouse } from './Lighthouse'
 import { SinifSaglayici } from '../lib/sinif'
+import { kapsamOku } from '../lib/sinif-kapsam'
+import { VekilSerit } from './VekilSerit'
 
 /** Ortak sayfa sarmalayıcı — Harita.tsx:281 ile birebir. */
 export function Sayfa({ children }: { children: ReactNode }) {
@@ -34,6 +35,21 @@ export function PanoIskeleti({ sutun = 2 }: { sutun?: 1 | 2 }) {
   )
 }
 
+/* Yetki reddi stilleri — FİDAN değişkenli, OdevAtolyesi boş-durum diliyle uyumlu (rg- öneki
+   çakışmayı önler). Renkler iki temada da --cam/--metin/--v0'dan döner; sabit renk yok. */
+const RG_STIL = `
+  .rg-kart { background: var(--cam); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--cam-kenar); border-radius: 24px; box-shadow: var(--golge); }
+  .rg-h2 { font-family: Outfit, sans-serif; font-weight: 700; font-size: 20px; color: var(--metin1); }
+  .rg-alt { font-size: 13px; line-height: 1.65; color: var(--metin3); }
+  .rg-alt strong { color: var(--metin2); font-weight: 600; }
+  .rg-btn { font-family: Inter, sans-serif; font-weight: 600; font-size: 12.5px; border-radius: 12px;
+    cursor: pointer; min-height: 44px; padding: 0 18px; display: inline-flex; align-items: center; gap: 7px;
+    background: var(--v0); color: var(--metin2); border: 1px solid var(--cam-kenar);
+    transition: filter .2s, background .2s, color .2s, border-color .2s; }
+  .rg-btn:hover { color: var(--metin1); border-color: var(--adacayi); }
+`
+
 /**
  * Yetki reddi — SESSİZ REDIRECT DEĞİL.
  *
@@ -45,19 +61,27 @@ export function YetkiYok({ rol }: { rol: Rol }) {
   const nav = useNavigate()
   return (
     <Sayfa>
+      <style>{RG_STIL}</style>
       <Reveal delay={0.05}>
-        <div className="glass mx-auto mt-10 max-w-lg rounded-3xl px-8 py-10 text-center">
-          <div className="mx-auto w-fit"><Lighthouse size={84} /></div>
-          <h2 className="mt-4 font-display text-xl font-bold text-slate-800 dark:text-slate-100">
-            Bu güverte sana kapalı
-          </h2>
-          <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
+        <div className="rg-kart mx-auto mt-10 max-w-lg px-8 py-10 text-center">
+          {/* FİDAN filiz — OdevAtolyesi boş-durum görseliyle aynı dil (--vurgu/--adacayi/--yaprak) */}
+          <svg width="72" height="72" viewBox="0 0 24 24" fill="none" aria-hidden className="mx-auto">
+            <path d="M12 21V9" stroke="var(--vurgu)" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M12 12C12 8 9 5 4 5c0 5 3 8 8 8" fill="var(--adacayi)" />
+            <path d="M12 9c0-3.5 2.5-6 7-6 0 4.5-2.5 7-7 7" fill="var(--yaprak)" />
+          </svg>
+          <h2 className="rg-h2 mt-4">Bu sayfaya erişimin yok</h2>
+          <p className="rg-alt mx-auto mt-2 max-w-sm">
             Bu alan öğretmen ve yönetici hesapları için. Hesabın <strong>{ROL_ADI[rol]}</strong> olarak
             görünüyor. Yanlış olduğunu düşünüyorsan okul yöneticinle görüş.
           </p>
-          <GlowButton className="mt-6" icon="arrowRight" onClick={() => nav('/')}>
+          <button type="button" className="rg-btn mx-auto mt-6" onClick={() => nav('/')}>
             Genel Bakış'a dön
-          </GlowButton>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8"
+                strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
         </div>
       </Reveal>
     </Sayfa>
@@ -83,5 +107,54 @@ export function RolGecidi({ izin, saglayici }: { izin: Rol[]; saglayici?: 'sinif
   if (!izin.includes(rol)) return <YetkiYok rol={rol} />
 
   const govde = <Outlet />
-  return saglayici === 'sinif' ? <SinifSaglayici>{govde}</SinifSaglayici> : govde
+  if (saglayici !== 'sinif') return govde
+
+  /**
+   * VEKİL KAPSAM (0025) — yönetici sınıf yüzeyine ancak bir öğretmen SEÇEREK girer.
+   *
+   * ⚠️ Kapsamsız yönetici burada durdurulur, ekran açılmaz. Sunucu zaten 403
+   * `ogretmen_secilmedi` döner ama istemcide de kesmek şart: aksi hâlde yönetici
+   * beş panel dolusu hata toast'u görür ve "uygulama bozuk" sanır. Sebebi ve
+   * çözümü tek ekranda söylenir.
+   */
+  const vekil = rol === 'admin'
+  if (vekil && !kapsamOku()) return <KapsamSecilmedi />
+
+  return (
+    <SinifSaglayici>
+      {vekil && <VekilSerit />}
+      {govde}
+    </SinifSaglayici>
+  )
+}
+
+/** Yönetici sınıf yüzeyine kapsamsız geldi — yol gösterir, boş ekran göstermez. */
+function KapsamSecilmedi() {
+  const nav = useNavigate()
+  return (
+    <Sayfa>
+      <style>{RG_STIL}</style>
+      <Reveal delay={0.05}>
+        <div className="rg-kart mx-auto mt-10 max-w-lg px-8 py-10 text-center">
+          <svg width="72" height="72" viewBox="0 0 24 24" fill="none" aria-hidden className="mx-auto">
+            <path d="M12 21V9" stroke="var(--vurgu)" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M12 12C12 8 9 5 4 5c0 5 3 8 8 8" fill="var(--adacayi)" />
+            <path d="M12 9c0-3.5 2.5-6 7-6 0 4.5-2.5 7-7 7" fill="var(--yaprak)" />
+          </svg>
+          <h2 className="rg-h2 mt-4">Önce bir sınıf seç</h2>
+          <p className="rg-alt mx-auto mt-2 max-w-sm">
+            Yöneticinin kendi sınıfı yoktur; sınıf ekranlarına <strong>hangi öğretmenin</strong> gözüyle
+            baktığını seçerek girilir. Yaptığın yazma işlemleri o öğretmenin adına denetim defterine işlenir.
+          </p>
+          <button type="button" className="rg-btn mx-auto mt-6" onClick={() => nav('/kule/siniflar')}>
+            Sınıflar'a git
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8"
+                strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+      </Reveal>
+    </Sayfa>
+  )
 }

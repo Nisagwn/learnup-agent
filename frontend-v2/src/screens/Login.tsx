@@ -1,69 +1,98 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
-import { m } from 'framer-motion'
+import { lazy, Suspense, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
 import { cn } from '../lib/cn'
 import { Icon } from '../ui'
-import { MotionRoot } from '../components/fx'
-import { GlowButton } from '../components/ui'
-import { Lighthouse } from '../components/Lighthouse'
 
-// 3D kahraman sahne — lazy (three yalnız bu zincirde); WebGL yoksa SVG sahne kalır
-const Login3D = lazy(() => import('../components/Login3D'))
+// Küre arkaplanı (Vanta GLOBE'un R3F portu) — LAZY: Login App.tsx'te statik import edilir,
+// tembel olmasa three ana bundle'a düşerdi. Bu ekran hem tanıtım hem giriş kapısı.
+const KureArkaplan = lazy(() => import('../components/KureArkaplan'))
 
-function webglVarMi(): boolean {
-  try {
-    const c = document.createElement('canvas')
-    return !!(c.getContext('webgl2') || c.getContext('webgl'))
-  } catch { return false }
+/**
+ * Giriş kapısı — Supabase Auth. Onaylı önizleme `docs/design/onizleme/giris.html` (2026-07-22) portu.
+ * Sahne: `KureArkaplan` (Vanta GLOBE'un R3F portu) — eski three.js `Login3D` bu ekrandan çıkarıldı.
+ * Kayıt: Ad Soyad + e-posta + şifre + ROL SEÇİMİ (+ öğrencide OPSİYONEL sınıf kodu).
+ * Sınıf DÜZEYİ sorulmaz (YKS'ye özel); okul alanı yok.
+ *
+ * ⚠️ AÇIK ÖĞRETMEN KAYDI (kullanıcı kararı 2026-07-24 — 2026-07-23'ün başvuru akışı KALKTI):
+ * "Öğretmenim" seçen hesap ANINDA öğretmen açılır. Yönetici onayı, başvuru bayrağı ve
+ * `POST /ogretmen-basvuru` çağrısı bu ekrandan tümden çıkarıldı. Rolü DB trigger'ı
+ * `handle_new_user` (migration 0024) `raw_user_meta_data.role`dan okur; öğretmene aynı
+ * anda çakışmasız `class_code` + `is_approved=true` verir.
+ *
+ * ⚠️ Buradaki `role` bir DİLEKTİR, sözleşme değil: alan istemci-yazılabilir ve garanti
+ * DB'dedir. Beyaz liste student|teacher — 'admin' bu kapıdan GEÇMEZ (0024/0016 çizgisi).
+ * Öğretmen kaydının herkese açık olması bilinçli üründür; gerekçe ve kalan sınırlar
+ * migration 0024'ün başlığında yazılı.
+ */
+
+/**
+ * Supabase hata mesajını (yaygın olarak İngilizce) samimi Türkçe cümleye çevirir.
+ * Yaygın kodlar eşlenir; bilinmeyen → NÖTR fallback (ham İngilizce gösterilmez, kod/sınıf
+ * varlığı sızdırılmaz). "message-önce" düzeni korunur: kaynak yine err.message, yalnız yerelleşir.
+ */
+function supabaseHataTR(err: unknown): string {
+  const m = ((err as { message?: string })?.message ?? '').toLowerCase()
+  if (m.includes('invalid login credentials')) return 'E-posta ya da şifre hatalı. Kontrol edip tekrar dene.'
+  if (m.includes('email not confirmed')) return 'E-postanı henüz onaylamadın — gelen kutundaki bağlantıya tıkla.'
+  if (m.includes('already registered') || m.includes('already been registered') || m.includes('user already')) return 'Bu e-posta zaten kayıtlı. Giriş yapmayı dene.'
+  if (m.includes('password should be at least') || m.includes('weak password')) return 'Şifre en az 6 karakter olmalı.'
+  if (m.includes('unable to validate email') || m.includes('invalid format') || m.includes('invalid email')) return 'E-posta adresi geçersiz görünüyor.'
+  if (m.includes('for security purposes') || m.includes('rate limit') || m.includes('too many') || m.includes('email rate')) return 'Çok sık denedin — birkaç saniye sonra tekrar dene.'
+  if (m.includes('failed to fetch') || m.includes('network') || m.includes('load failed')) return 'Bağlantı kurulamadı — internetini kontrol edip tekrar dene.'
+  return 'Bilgileri kontrol edip tekrar dene.'
 }
 
-/** Giriş kapısı — Supabase Auth. Eski frontend ile aynı kullanıcılar geçerli.
-    Sahne: katmanlı deniz (SVG, animasyonlu) + cam form kartı. 3D yükseltme Faz 15'te. */
 export default function Login() {
   const { signIn, signUp } = useAuth()
-  const { theme } = useTheme()
-  const uclu = useMemo(() =>
-    webglVarMi() && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches, [])
-  const [mode, setMode] = useState<'in' | 'up'>('in')
-  const [rol, setRol] = useState<'student' | 'teacher'>('student')
+  const { theme, toggle } = useTheme()
+  // Tanıtım CTA'sı "Ücretsiz başla" → /giris?sekme=kayit KAYIT sekmesiyle açılır (GOREV-032).
+  // Yalnız BAŞLANGIÇ modu: parametre yok/başka değer → mevcut davranış (giriş sekmesi);
+  // sekme değiştirme ve auth mantığı değişmedi.
+  const [params] = useSearchParams()
+  const [mode, setMode] = useState<'in' | 'up'>(params.get('sekme') === 'kayit' ? 'up' : 'in')
   const [ad, setAd] = useState('')
   const [email, setEmail] = useState('')
   const [sifre, setSifre] = useState('')
-  const [sinif, setSinif] = useState('')       // öğrenci: kaçıncı sınıf
-  const [sinifKodu, setSinifKodu] = useState('') // öğrenci: katılmak istediği sınıf (opsiyonel)
-  const [okul, setOkul] = useState('')          // öğretmen: kurum
+  const [sinifKodu, setSinifKodu] = useState('')
+  // Kayıt rolü — DB'ye dilek olarak gider; beyaz liste student|teacher (0024).
+  const [rol, setRol] = useState<'student' | 'teacher'>('student')
+  // YKS alanı — YALNIZ öğrencide anlamlı (0026). Ders listesini bu belirler: TYT dersleri
+  // herkeste, AYT dersleri yalnız o alanda. Boş bırakılabilir; seçilmezse öğrenci yalnız
+  // TYT derslerini görür ve alanını sonradan profilinden seçer.
+  const [alan, setAlan] = useState<'sayisal' | 'sozel' | 'esit_agirlik' | ''>('')
   const [gizli, setGizli] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [hata, setHata] = useState<string | null>(null)
 
   const gonder = async (e: React.FormEvent) => {
     e.preventDefault()
     if (busy) return
     setBusy(true)
+    setHata(null)
     try {
       if (mode === 'in') {
         const { error } = await signIn(email.trim(), sifre)
         if (error) throw error
       } else {
-        // Bu alanlar auth.users.raw_user_meta_data'ya gider; profiles satırını
-        // handle_new_user() trigger'ı buradan kurar. 'admin' beyaz listede YOK.
+        // auth.users.raw_user_meta_data → handle_new_user() (0024) profiles satırını kurar.
+        // Rol buradan TAŞINIR: 'teacher' seçilirse hesap ANINDA öğretmen açılır (onay yok,
+        // sınıf kodu trigger'da üretilir). Sınıf kodu alanı YALNIZ öğrencide anlamlı —
+        // öğretmene kendi kodu verilir, birininkine katılmaz. Öğrenci katılımı ilk girişte
+        // /sinif/katil'de yapılır (e-posta onayı öncesi yetkili çağrı atılamaz).
         const ek: Record<string, string> = { role: rol }
-        if (rol === 'student') {
-          if (sinif) ek.grade = sinif
-          // Katılım burada YAPILMAZ, yalnız taşınır: e-posta onayı öncesi oturum
-          // yok, yetkili çağrı atılamaz. İlk girişte /sinif/katil'e gönderilir.
-          if (sinifKodu.trim()) ek.class_code = sinifKodu.trim().toUpperCase()
-        } else if (okul.trim()) {
-          ek.school = okul.trim()
-        }
+        if (rol === 'student' && sinifKodu.trim()) ek.class_code = sinifKodu.trim().toUpperCase()
+        // Alan yalnız öğrencide taşınır; trigger (0026) öğretmen/yönetici satırında zaten NULL'lar.
+        if (rol === 'student' && alan) ek.alan = alan
 
         const { error } = await signUp(email.trim(), sifre, ad.trim(), ek)
         if (error) throw error
         toast.success('Hesap oluşturuldu', {
           description:
             rol === 'teacher'
-              ? 'E-postanı onayladıktan sonra giriş yap — sınıf kodun otomatik oluşturulacak.'
+              ? 'E-postanı onayladıktan sonra giriş yap — öğretmen panelin hazır olacak. Sınıf kodunu Sınıf Panosu\'nda bulacaksın.'
               : sinifKodu.trim()
                 ? 'E-postanı onayladıktan sonra giriş yap — sınıfına otomatik katılacaksın.'
                 : 'E-postana gelen bağlantıyı onayladıktan sonra giriş yapabilirsin.',
@@ -71,176 +100,123 @@ export default function Login() {
         setMode('in')
       }
     } catch (err: unknown) {
-      toast.error(mode === 'in' ? 'Giriş yapılamadı' : 'Kayıt tamamlanamadı', {
-        description: (err as Error)?.message || 'Bilgileri kontrol edip tekrar dene.',
-      })
+      // Supabase mesajı → samimi Türkçe (yaygın kodlar eşlenir; bilinmeyen → nötr fallback,
+      // ham İngilizce gösterilmez; kod/sınıf varlığı sızdırılmaz).
+      setHata(supabaseHataTR(err))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <MotionRoot>
-      <div className="relative grid min-h-screen place-items-center overflow-hidden bg-gradient-to-b from-sky-100 via-shore-50 to-sky-200/60 px-5 py-10 dark:from-[#071B30] dark:via-ocean-900 dark:to-[#04101C]">
-        {uclu ? (
-          <Suspense fallback={<DenizSahnesi />}>
-            <Login3D koyu={theme === 'dark'} />
-          </Suspense>
-        ) : (
-          <DenizSahnesi />
-        )}
+    <div className="relative min-h-screen overflow-hidden" style={{ color: 'var(--metin1)' }}>
+      <style>{`
+        .lg-girdi { background: var(--ic); border: 1.5px solid var(--cizgi); color: var(--metin1); }
+        .lg-girdi:focus { border-color: var(--yaprak); box-shadow: 0 0 0 3px color-mix(in srgb, var(--yaprak) 18%, transparent); }
+        .lg-girdi::placeholder { color: var(--metin3); }
+        .lg-btn { background: var(--cta); color: #fff; }
+        .lg-btn:hover:not(:disabled) { box-shadow: var(--parilti); transform: translateY(-1px); }
+        .lg-btn:active:not(:disabled) { transform: scale(0.98); }
+        .lg-btn:disabled { opacity: 0.6; cursor: default; }
+        .lg-sekme { color: var(--metin2); }
+        .lg-sekme.lg-aktif { background: var(--cam); color: var(--metin1); box-shadow: 0 2px 8px rgba(24,49,33,0.08); }
+        .lg-cikis { border: 1px solid var(--cam-kenar); background: var(--cam); color: var(--metin2); }
+        @media (prefers-reduced-motion: no-preference) {
+          .lg-kart { opacity: 0; transform: translateY(16px); animation: lg-belir 0.5s ease-out 0.1s forwards; }
+          @keyframes lg-belir { to { opacity: 1; transform: none; } }
+        }
+      `}</style>
 
-        <m.div
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, ease: [0.21, 0.65, 0.32, 1] }}
-          className="relative w-full max-w-95"
-        >
-          {/* Marka */}
-          <div className="mb-7 text-center">
-            <div className="mx-auto mb-3.5 grid size-16 place-items-center rounded-[20px] bg-gradient-to-br from-sky-600 to-cyan-500 shadow-glow-sky">
-              <Icon name="anchor" size={30} color="#FFFFFF" strokeWidth={1.6} />
-            </div>
-            <div className="bg-gradient-to-r from-sky-700 to-cyan-600 bg-clip-text font-display text-[27px] font-bold tracking-tight text-transparent dark:from-sky-400 dark:to-cyan-300">
+      {/* Tanıtım + giriş fonu — Vanta GLOBE küresi (yüklenene dek düz zemin) */}
+      <Suspense fallback={<div aria-hidden className="pointer-events-none fixed inset-0 z-0" style={{ background: '#87c591' }} />}>
+        <KureArkaplan className="z-0" />
+      </Suspense>
+
+      {/* Tema geçişi — Login kabuğun dışında, kendi düğmesi */}
+      <button
+        type="button"
+        onClick={toggle}
+        title={theme === 'light' ? 'Koyu tema' : 'Açık tema'}
+        className="lg-cikis fixed right-4 top-4 z-10 grid size-10 cursor-pointer place-items-center rounded-xl backdrop-blur-md transition-colors"
+      >
+        <Icon name={theme === 'light' ? 'moon' : 'sun'} size={17} color="currentColor" />
+      </button>
+
+      <div className="relative z-[1] flex min-h-screen items-center gap-10 px-[clamp(16px,5vw,72px)] py-10">
+        {/* ── Form ── */}
+        <div className="w-[min(430px,100%)]">
+          <form onSubmit={gonder} className="lg-kart glass rounded-3xl p-[30px] shadow-card">
+            {/* Marka */}
+            <span className="mb-5 flex items-center gap-2.5 font-display text-[21px] font-extrabold" style={{ color: 'var(--metin1)' }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                <path d="M12 21V9" stroke="var(--vurgu)" strokeWidth="2.2" strokeLinecap="round" />
+                <path d="M12 12C12 8 9 5 4 5c0 5 3 8 8 8" fill="var(--adacayi)" />
+                <path d="M12 9c0-3.5 2.5-6 7-6 0 4.5-2.5 7-7 7" fill="var(--yaprak)" />
+              </svg>
               LearnUp
-            </div>
-            <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">
-              YKS yolculuğunda Koç seninle
-            </p>
-          </div>
+            </span>
 
-          {/* Kart */}
-          <form onSubmit={gonder} className="glass rounded-3xl p-6 shadow-card">
-            {/* Sekmeler — kayan cam zemin */}
-            <div className="mb-5 flex gap-1 rounded-xl bg-shore-100/80 p-1 dark:bg-ocean-950/60">
+            {/* Sekmeler */}
+            <div className="mb-5 flex gap-1 rounded-xl p-1" style={{ background: 'var(--ic)' }} role="tablist">
               {(['in', 'up'] as const).map((mo) => (
                 <button
                   key={mo}
                   type="button"
-                  onClick={() => setMode(mo)}
+                  role="tab"
+                  aria-selected={mode === mo}
+                  onClick={() => { setMode(mo); setHata(null) }}
                   className={cn(
-                    'relative flex-1 cursor-pointer rounded-[9px] py-2 font-display text-[13.5px] font-bold transition-colors',
-                    mode === mo
-                      ? 'text-slate-800 dark:text-slate-100'
-                      : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300',
+                    'lg-sekme flex-1 cursor-pointer rounded-[9px] py-2.5 font-sans text-[14px] font-semibold transition-all',
+                    mode === mo && 'lg-aktif',
                   )}
                 >
-                  {mode === mo && (
-                    <m.span
-                      layoutId="login-sekme"
-                      className="absolute inset-0 rounded-[9px] bg-white shadow-sm dark:bg-ocean-800"
-                      transition={{ type: 'spring', stiffness: 460, damping: 38 }}
-                    />
-                  )}
-                  <span className="relative">{mo === 'in' ? 'Giriş Yap' : 'Kaydol'}</span>
+                  {mo === 'in' ? 'Giriş yap' : 'Hesap oluştur'}
                 </button>
               ))}
             </div>
 
+            {/* Rol seçimi — kayıt formunun İLK kararı: altındaki alanları o belirler. */}
             {mode === 'up' && (
-              <>
-                {/* ROL — kayıt akışının belirleyici adımı: öğretmene sınıf kodu
-                    üretilir, öğrenciye sınıfa katılma alanı açılır. */}
-                <div className="mb-4">
-                  <span className="mb-1.5 block font-display text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    Hesap türü
-                  </span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([
-                      ['student', 'Öğrenci', 'sprout', 'Ders çalışır, ödev alır'],
-                      ['teacher', 'Öğretmen', 'waves', 'Sınıf kurar, ödev gönderir'],
-                    ] as const).map(([deger, etiket, ikon, aciklama]) => (
-                      <button
-                        key={deger}
-                        type="button"
-                        aria-pressed={rol === deger}
-                        onClick={() => setRol(deger)}
-                        className={cn(
-                          'cursor-pointer rounded-xl border px-3 py-2.5 text-left transition-all duration-200',
-                          rol === deger
-                            ? 'border-sky-500/50 bg-sky-500/10 shadow-glow-sky'
-                            : 'border-slate-500/20 hover:border-sky-500/30 dark:border-sky-500/15',
-                        )}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <Icon
-                            name={ikon}
-                            size={15}
-                            color="currentColor"
-                            style={{ opacity: rol === deger ? 1 : 0.5 }}
-                          />
-                          <span
-                            className={cn(
-                              'font-display text-[13px] font-bold',
-                              rol === deger
-                                ? 'text-sky-700 dark:text-sky-300'
-                                : 'text-slate-500 dark:text-slate-400',
-                            )}
-                          >
-                            {etiket}
-                          </span>
-                        </span>
-                        <span className="mt-0.5 block text-[10.5px] leading-snug text-slate-400 dark:text-slate-500">
-                          {aciklama}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+              <div className="mb-3.5">
+                <span className="mb-1.5 block text-[13px] font-semibold" style={{ color: 'var(--metin2)' }}>
+                  Nasıl kaydolacaksın?
+                </span>
+                <div className="flex gap-1 rounded-xl p-1" style={{ background: 'var(--ic)' }} role="radiogroup" aria-label="Hesap türü">
+                  {([
+                    { v: 'student', etiket: 'Öğrenciyim', ikon: 'sprout' },
+                    { v: 'teacher', etiket: 'Öğretmenim', ikon: 'book' },
+                  ] as const).map((s) => (
+                    <button
+                      key={s.v}
+                      type="button"
+                      role="radio"
+                      aria-checked={rol === s.v}
+                      onClick={() => setRol(s.v)}
+                      className={cn(
+                        'lg-sekme flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] py-2.5 font-sans text-[13.5px] font-semibold transition-all',
+                        rol === s.v && 'lg-aktif',
+                      )}
+                    >
+                      <Icon name={s.ikon} size={15} color="currentColor" />
+                      {s.etiket}
+                    </button>
+                  ))}
                 </div>
-
-                <Alan label="Ad" value={ad} onChange={setAd} placeholder="Adın" autoComplete="name" />
-
-                {rol === 'student' ? (
-                  <>
-                    <div className="mb-3.5">
-                      <span className="mb-1.5 block font-display text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        Sınıf
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {['9', '10', '11', '12', 'Mezun'].map((s) => (
-                          <button
-                            key={s}
-                            type="button"
-                            aria-pressed={sinif === s}
-                            onClick={() => setSinif(sinif === s ? '' : s)}
-                            className={cn(
-                              'cursor-pointer rounded-lg border px-3 py-1.5 font-display text-[12.5px] font-semibold transition-colors',
-                              sinif === s
-                                ? 'border-sky-600/40 bg-sky-500/10 text-sky-700 dark:border-sky-400/30 dark:text-sky-300'
-                                : 'border-slate-500/20 text-slate-400 hover:text-slate-600 dark:border-sky-500/15 dark:hover:text-slate-300',
-                            )}
-                          >
-                            {s}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <Alan
-                      label="Sınıf kodu (varsa)"
-                      value={sinifKodu}
-                      onChange={(v) => setSinifKodu(v.toUpperCase())}
-                      placeholder="Öğretmeninin verdiği kod"
-                    />
-                    <p className="-mt-2 mb-3.5 text-[10.5px] leading-relaxed text-slate-400 dark:text-slate-500">
-                      Şimdi girmezsen sorun değil — Profil ekranından istediğin zaman katılabilirsin.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <Alan
-                      label="Okul / kurum (opsiyonel)"
-                      value={okul}
-                      onChange={setOkul}
-                      placeholder="Örn. Atatürk Anadolu Lisesi"
-                    />
-                    <p className="-mt-2 mb-3.5 text-[10.5px] leading-relaxed text-slate-400 dark:text-slate-500">
-                      Kaydolduğunda sana 6 haneli bir sınıf kodu üretilir; öğrencilerin o kodla katılır.
-                    </p>
-                  </>
+                {rol === 'teacher' && (
+                  <p className="mt-2 rounded-xl px-3.5 py-2.5 text-[11.5px] leading-relaxed" style={{ background: 'color-mix(in srgb, var(--yaprak) 9%, transparent)', color: 'var(--metin2)' }}>
+                    Öğretmen panelin <strong style={{ color: 'var(--metin1)' }}>hemen</strong> açılır — onay beklemezsin.
+                    Sınıf kodun otomatik üretilir; öğrencilerin o kodla sınıfına katılır.
+                  </p>
                 )}
-              </>
+              </div>
             )}
+
+            {mode === 'up' && (
+              <Alan label="Ad Soyad" value={ad} onChange={setAd} placeholder="Adın Soyadın" autoComplete="name" />
+            )}
+
             <Alan label="E-posta" type="email" value={email} onChange={setEmail} placeholder="ornek@eposta.com" autoComplete="email" />
+
             <Alan
               label="Şifre"
               type={gizli ? 'password' : 'text'}
@@ -253,84 +229,161 @@ export default function Login() {
                   type="button"
                   onClick={() => setGizli((g) => !g)}
                   title={gizli ? 'Şifreyi göster' : 'Şifreyi gizle'}
-                  className="grid size-8 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:text-slate-600 dark:hover:text-slate-200"
+                  className="grid size-9 cursor-pointer place-items-center rounded-lg transition-colors"
+                  style={{ color: 'var(--metin3)' }}
                 >
                   <Icon name={gizli ? 'eye' : 'eyeOff'} size={17} color="currentColor" />
                 </button>
               }
             />
 
-            <GlowButton full size="lg" disabled={busy} className="mt-1.5">
-              {busy ? 'Bekle…' : mode === 'in' ? 'Güverteye çık' : 'Yolculuğa başla'}
-            </GlowButton>
+            {/* YKS alanı — YALNIZ öğrencide. Ders listesini bu belirler (0026): TYT dersleri
+                herkeste görünür, AYT dersleri yalnız seçilen alanda. Zorunlu DEĞİL: alanına
+                henüz karar vermemiş 9. sınıf öğrencisini kayıt ekranında karar vermeye
+                zorlamak, yanlış seçip sonra şaşırmasına yol açardı. */}
+            {mode === 'up' && rol === 'student' && (
+              <div className="mb-3.5">
+                <span className="mb-1.5 block text-[13px] font-semibold" style={{ color: 'var(--metin2)' }}>
+                  Alanın (istersen sonra seç)
+                </span>
+                <div className="flex gap-1 rounded-xl p-1" style={{ background: 'var(--ic)' }} role="radiogroup" aria-label="YKS alanı">
+                  {([
+                    { v: 'sayisal', etiket: 'Sayısal' },
+                    { v: 'esit_agirlik', etiket: 'Eşit Ağırlık' },
+                    { v: 'sozel', etiket: 'Sözel' },
+                  ] as const).map((s) => (
+                    <button
+                      key={s.v}
+                      type="button"
+                      role="radio"
+                      aria-checked={alan === s.v}
+                      // Aynı seçeneğe tekrar basmak seçimi KALDIRIR: alan zorunlu değil ve
+                      // yanlışlıkla seçen öğrencinin geri dönebilmesi gerekir.
+                      onClick={() => setAlan((a) => (a === s.v ? '' : s.v))}
+                      className={cn(
+                        'lg-sekme flex flex-1 cursor-pointer items-center justify-center rounded-[9px] py-2.5 font-sans text-[13px] font-semibold transition-all',
+                        alan === s.v && 'lg-aktif',
+                      )}
+                    >
+                      {s.etiket}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--metin3)' }}>
+                  TYT dersleri herkeste görünür. Alanını seçersen AYT dersleri de eklenir.
+                </p>
+              </div>
+            )}
+
+            {/* Sınıf kodu YALNIZ öğrencide: öğretmen bir sınıfa katılmaz, kendi kodunu alır. */}
+            {mode === 'up' && rol === 'student' && (
+              <>
+                <Alan
+                  label="Sınıf kodu (varsa)"
+                  value={sinifKodu}
+                  onChange={(v) => setSinifKodu(v.toUpperCase())}
+                  placeholder="Öğretmeninin verdiği kod"
+                  required={false}
+                />
+                <p className="-mt-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--metin3)' }}>
+                  Öğretmenin verdiyse gir — seni sınıfına bağlar. Boş bırakabilirsin; sonra Profil'den de katılabilirsin.
+                </p>
+              </>
+            )}
+
+            {mode === 'in' && (
+              <div className="mt-3 text-right text-[13px]">
+                <span style={{ color: 'var(--metin3)' }}>Hesabın güvende</span>
+              </div>
+            )}
+
+            {hata && (
+              <div
+                role="alert"
+                className="mt-3.5 flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-[13px] font-medium"
+                style={{ background: 'color-mix(in srgb, var(--yanlis) 10%, transparent)', color: 'var(--yanlis)' }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 8v5M12 16.5h.01" strokeLinecap="round" />
+                </svg>
+                {hata}
+              </div>
+            )}
+
+            <button type="submit" disabled={busy} className="lg-btn mt-[18px] w-full cursor-pointer rounded-xl py-3.5 font-sans text-[15px] font-semibold transition-[box-shadow,transform]">
+              {busy ? 'Bekle…' : mode === 'in' ? 'Giriş yap' : 'Hesap oluştur'}
+            </button>
+
+            <p className="mt-4 text-center text-[13.5px]" style={{ color: 'var(--metin2)' }}>
+              {mode === 'in' ? (
+                <>Hesabın yok mu?{' '}
+                  <button type="button" onClick={() => { setMode('up'); setHata(null) }} className="cursor-pointer font-semibold" style={{ color: 'var(--vurgu)' }}>
+                    Hemen oluştur
+                  </button>
+                </>
+              ) : (
+                <>Zaten hesabın var mı?{' '}
+                  <button type="button" onClick={() => { setMode('in'); setHata(null) }} className="cursor-pointer font-semibold" style={{ color: 'var(--vurgu)' }}>
+                    Giriş yap
+                  </button>
+                </>
+              )}
+            </p>
           </form>
 
-          <p className="mt-4 text-center text-[11.5px] text-slate-400 dark:text-slate-500">
+          <p className="mt-4 text-center text-[11.5px]" style={{ color: 'var(--metin3)' }}>
             Öğretmenin verdiği hesapla da giriş yapabilirsin.
           </p>
-        </m.div>
+        </div>
+
+        {/* ── Slogan (yalnız geniş ekran) ──
+            İÇERİK SÖZLEŞMESİ (Tanitim.tsx:7-11 ile AYNI): "ÖSYM formatına en yakın" yalnız
+            BİÇİM iddiasıdır (şık düzeni · çeldirici mantığı · soru dili). Çıkmış soru YAYINI
+            vaadi YOK (telif kararı 2026-07-22) ve resmî bağ/onay iması taşımaz. Bahçe/fidan
+            metaforu buradan kaldırıldı (kullanıcı kararı 2026-07-24). */}
+        <div className="hidden flex-1 lg:block">
+          <h2 className="font-display text-[clamp(30px,3.6vw,44px)] font-extrabold leading-[1.2] tracking-tight" style={{ color: 'var(--metin1)' }}>
+            ÖSYM formatına<br /><span style={{ color: 'var(--vurgu)' }}>en yakın sorular.</span>
+          </h2>
+          <p className="mt-3.5 max-w-[440px] text-[16.5px]" style={{ color: 'var(--metin2)' }}>
+            Şık düzeni, çeldirici mantığı ve zorluk dengesi gerçek sınav standardında kurulur;
+            her soru havuza girmeden çift kontrolden geçer. Üstelik hepsi senin zayıf
+            konularına göre önüne gelir.
+          </p>
+        </div>
       </div>
-    </MotionRoot>
+    </div>
   )
 }
 
-function Alan({ label, value, onChange, type = 'text', placeholder, autoComplete, sonEk }: {
+/**
+ * Form alanı.
+ *
+ * ⚠️ `required` VARSAYILAN true ama AÇILABİLİR olmalı: eskiden koşulsuz basılıyordu ve
+ * "Sınıf kodu (varsa)" alanı — etiketi de alt metni de opsiyonel dediği hâlde — tarayıcı
+ * tarafından ZORUNLU tutuluyordu. Kod girmeyen öğrenci kaydolamıyordu.
+ */
+function Alan({ label, value, onChange, type = 'text', placeholder, autoComplete, sonEk, required = true }: {
   label: string; value: string; onChange: (v: string) => void
   type?: string; placeholder?: string; autoComplete?: string; sonEk?: React.ReactNode
+  required?: boolean
 }) {
   return (
     <label className="mb-3.5 block">
-      <span className="mb-1.5 block font-display text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</span>
-      <div className="flex items-center gap-1 rounded-xl border border-slate-500/20 bg-white/70 pr-1.5 transition-colors focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/20 dark:border-sky-500/15 dark:bg-ocean-950/50 dark:focus-within:border-sky-400">
+      <span className="mb-1.5 block text-[13px] font-semibold" style={{ color: 'var(--metin2)' }}>{label}</span>
+      <div className="relative flex items-center">
         <input
           type={type}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           autoComplete={autoComplete}
-          required
-          className="w-full bg-transparent px-3.5 py-2.5 text-[14.5px] text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100 dark:placeholder:text-slate-600"
+          required={required}
+          className="lg-girdi w-full rounded-xl px-3.5 py-3 text-[14.5px] outline-none transition-[border-color,box-shadow]"
         />
-        {sonEk}
+        {sonEk && <span className="absolute right-1.5">{sonEk}</span>}
       </div>
     </label>
-  )
-}
-
-/** Katmanlı deniz sahnesi — fener + akan dalgalar + koyu temada yıldızlar. */
-function DenizSahnesi() {
-  return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      {/* Yıldızlar — yalnız koyu temada görünür */}
-      <svg className="absolute inset-x-0 top-0 hidden h-64 w-full dark:block" viewBox="0 0 800 200" preserveAspectRatio="xMidYMin slice">
-        {[[60, 40, 1.2], [150, 90, 0.9], [260, 30, 1.4], [370, 70, 1], [470, 45, 0.8], [560, 100, 1.2], [660, 35, 1], [740, 80, 1.3], [210, 140, 0.9], [630, 150, 0.8]].map(([x, y, r], i) => (
-          <circle key={i} cx={x} cy={y} r={r} fill="#CFE0F5">
-            <animate attributeName="opacity" values="0.25;0.9;0.25" dur={`${2.4 + (i % 4) * 0.7}s`} repeatCount="indefinite" />
-          </circle>
-        ))}
-      </svg>
-
-      {/* Fener — sol altta, sahneye demirli */}
-      <div className="absolute bottom-[9%] left-[6%] hidden opacity-80 md:block">
-        <Lighthouse size={92} />
-      </div>
-
-      {/* Akan dalga katmanları — alt kıyı */}
-      <svg className="absolute inset-x-0 bottom-0 h-40 w-full" viewBox="0 0 900 160" preserveAspectRatio="none">
-        {[
-          { y: 60, dur: 11, cls: 'fill-sky-500/10 dark:fill-sky-400/10' },
-          { y: 92, dur: 15, cls: 'fill-sky-600/10 dark:fill-sky-500/10' },
-          { y: 122, dur: 19, cls: 'fill-cyan-500/15 dark:fill-cyan-400/10' },
-        ].map((w, i) => (
-          <path key={i} className={w.cls}
-            d={`M0 ${w.y} q 75 -22 150 0 t 150 0 t 150 0 t 150 0 t 150 0 t 150 0 V160 H0 Z`}>
-            <animate attributeName="d" dur={`${w.dur}s`} repeatCount="indefinite"
-              values={`M0 ${w.y} q 75 -22 150 0 t 150 0 t 150 0 t 150 0 t 150 0 t 150 0 V160 H0 Z;
-                       M0 ${w.y} q 75 22 150 0 t 150 0 t 150 0 t 150 0 t 150 0 t 150 0 V160 H0 Z;
-                       M0 ${w.y} q 75 -22 150 0 t 150 0 t 150 0 t 150 0 t 150 0 t 150 0 V160 H0 Z`} />
-          </path>
-        ))}
-      </svg>
-    </div>
   )
 }

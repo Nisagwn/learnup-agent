@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FİDAN Önizleme — Özgünlük Bariyeri (Yönetici)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+:root{
+  --zemin1:#F4F7F4; --zemin2:#E8EFE9; --cam:rgba(255,255,255,.78); --cam-cizgi:rgba(46,79,58,.08);
+  --cam-koyu:rgba(255,255,255,.92); --m1:#183121; --m2:#4A5D4E; --m3:#7C8F80;
+  --cta:#1E4620; --cta-metin:#F2F7F3; --vurgu:#2A5A3B; --adacayi:#84A98C; --yaprak:#4FA56F; --toprak:#D4A373;
+  --v0:#EFF3EF; --v1:#DCE9DE; --v2:#BBD3C0; --v3:#9BBEA3; --v4:#6FA57F;
+  --dogru:#3E8E5A; --yanlis:#C25959; --uyari:#C98A3D; --bilgi:#0E8FA3;
+  --golge:0 8px 28px rgba(24,49,33,.07); --gunes-lekesi:radial-gradient(circle, rgba(244,215,150,.28) 0%, transparent 70%);
+}
+html.gece{
+  --zemin1:#0C120E; --zemin2:#101A13; --cam:rgba(16,26,19,.72); --cam-cizgi:rgba(148,180,155,.12);
+  --cam-koyu:rgba(20,32,24,.9); --m1:#E5EFE7; --m2:#A7BCAC; --m3:#75887B;
+  --cta:#2E6B47; --cta-metin:#EAF4EC; --vurgu:#7FBF95; --adacayi:#5E7D66; --yaprak:#4FA56F; --toprak:#B98F66;
+  --v0:#16211A; --v1:#1C2B21; --v2:#26402F; --v3:#33573F; --v4:#458257;
+  --dogru:#5FBF83; --yanlis:#D98A8A; --uyari:#D9A968; --bilgi:#5BC8D9;
+  --golge:0 8px 28px rgba(0,0,0,.35); --gunes-lekesi:radial-gradient(circle, rgba(163,190,140,.07) 0%, transparent 70%);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--m1);background:linear-gradient(160deg,var(--zemin1) 0%,var(--zemin2) 100%);min-height:100vh;transition:background .4s,color .4s;overflow-x:hidden}
+h1,h2,h3,h4{font-family:'Outfit',sans-serif}
+.mono{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--m3);font-weight:500}
+.band{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:9px 22px;background:var(--cam-koyu);backdrop-filter:blur(16px);border-bottom:1px solid var(--cam-cizgi)}
+.band .mono{color:var(--vurgu)}
+.tema-dugme{font-family:'Inter';font-size:12.5px;font-weight:600;color:var(--m2);background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:12px;padding:7px 14px;cursor:pointer;transition:.2s}
+.tema-dugme:hover{color:var(--m1);border-color:var(--adacayi)}
+.ustbar{display:flex;align-items:center;gap:26px;max-width:1320px;margin:0 auto;padding:16px 28px 0;opacity:.92}
+.logo{font-family:'Outfit';font-weight:800;font-size:17px}.logo span{color:var(--yaprak)}
+.sekmeler{display:flex;gap:4px;font-size:13px;font-weight:500;color:var(--m3);flex-wrap:wrap}
+.sekmeler a{padding:7px 13px;border-radius:12px;text-decoration:none;color:inherit}
+.sekmeler a.aktif{color:var(--vurgu);background:var(--v1);font-weight:600;position:relative}
+.sekmeler a.aktif::after{content:'';position:absolute;left:50%;bottom:2px;transform:translateX(-50%);width:14px;height:2.5px;border-radius:2px;background:var(--yaprak)}
+.rol-cip{margin-left:auto;font-size:11px;font-weight:700;color:var(--toprak);background:color-mix(in srgb,var(--toprak) 15%,transparent);padding:5px 12px;border-radius:12px}
+.sahne{max-width:1320px;margin:0 auto;padding:22px 28px 80px;position:relative}
+.leke{position:fixed;border-radius:50%;pointer-events:none;z-index:0}.leke.a{width:520px;height:520px;top:-120px;right:-80px;background:var(--gunes-lekesi)}
+.kart{position:relative;z-index:2;background:var(--cam);backdrop-filter:blur(16px);border:1px solid var(--cam-cizgi);border-radius:20px;box-shadow:var(--golge);animation:giris .5s cubic-bezier(.2,.7,.3,1) both;transition:background .4s}
+@keyframes giris{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.g1{animation-delay:0s}.g2{animation-delay:.06s}.g3{animation-delay:.12s}.g4{animation-delay:.18s}
+.baslik{padding:16px 22px}.baslik h1{font-size:20px}.baslik .alt{font-size:12.5px;color:var(--m3);margin-top:4px;line-height:1.5;max-width:560px}
+.durum{float:right;font-family:'JetBrains Mono';font-size:10.5px;color:var(--m3)}
+/* hero — büyük kopya sayısı */
+.hero{margin-top:16px;padding:28px 26px;text-align:center;border:1.5px solid var(--adacayi)}
+.hero .buyuk{font-family:'Outfit';font-size:56px;font-weight:800;line-height:1;color:var(--m1)}
+.hero .etiket{margin-top:8px;font-family:'Outfit';font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--m3)}
+.hero .aciklama{margin:10px auto 0;max-width:520px;font-size:12.5px;line-height:1.6;color:var(--m2)}
+.izgara{display:grid;grid-template-columns:1.9fr 1fr;gap:14px;margin-top:14px;align-items:start}
+@media(max-width:1020px){.izgara{grid-template-columns:1fr}}
+.kolon{display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel-ic{padding:18px 22px}
+.panel-bas{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+.panel-bas h3{font-size:14px}
+/* eşik tablosu */
+.etablo{width:100%;border-collapse:collapse;font-size:12px}
+.etablo th{text-align:left;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--m3);font-weight:500;padding:7px 10px;border-bottom:1px solid var(--cam-cizgi)}
+.etablo td{padding:9px 10px;border-bottom:1px solid var(--cam-cizgi);color:var(--m2)}
+.etablo tr:last-child td{border-bottom:none}
+.etablo .ders{font-weight:600;color:var(--m1)}
+.etablo .esik{font-family:'JetBrains Mono';color:var(--vurgu);font-weight:600}
+.etablo .taban{font-family:'JetBrains Mono';color:var(--m3)}
+.etablo .n{font-family:'JetBrains Mono';color:var(--m2)}
+.p90-satir{margin-top:12px;padding-top:10px;border-top:1px dashed var(--cam-cizgi);display:flex;justify-content:space-between;font-size:11.5px;color:var(--m3)}
+.p90-satir b{font-family:'JetBrains Mono';color:var(--toprak)}
+/* sınır / dürüst boşluk */
+.sinir{border-color:color-mix(in srgb,var(--uyari) 25%,transparent)!important}
+.sinir p{font-size:12px;line-height:1.6;color:var(--m2);margin-top:8px}
+.sinir b{color:var(--m1)}
+.olcumyok-kutu{margin-top:12px;padding:12px;text-align:center;border:1.5px dashed var(--adacayi);border-radius:12px;font-family:'JetBrains Mono';font-size:11px;color:var(--m3)}
+/* yöntem */
+.yontem li{font-size:12px;line-height:1.6;color:var(--m2);margin-bottom:9px;padding-left:16px;position:relative;list-style:none}
+.yontem li::before{content:'▸';position:absolute;left:0;color:var(--adacayi)}
+.yontem b{color:var(--m1);font-weight:600}
+.yontem code{font-family:'JetBrains Mono';font-size:11px;background:var(--v1);padding:1px 5px;border-radius:5px;color:var(--vurgu)}
+.notlar{margin-top:36px;padding:26px 30px;background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:20px;position:relative;z-index:2}
+.notlar h3{font-size:14px;margin-bottom:14px;color:var(--m2)}
+.notlar ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.notlar li{font-size:12.5px;color:var(--m2);line-height:1.6;padding-left:18px;position:relative}
+.notlar li::before{content:'🌿';position:absolute;left:0;font-size:10px;top:2px}
+.notlar b{color:var(--m1);font-weight:600}
+.notlar code{font-family:'JetBrains Mono';font-size:11px;background:var(--v1);padding:1.5px 6px;border-radius:6px;color:var(--vurgu)}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="band"><span class="mono">FİDAN ÖNİZLEME · ÖZGÜNLÜK BARİYERİ (YÖNETİCİ) · V1</span><button class="tema-dugme" id="temaDugme">☾ Gece Ormanı'na geç</button></div>
+<div class="leke a"></div>
+<nav class="ustbar">
+  <span class="logo">Learn<span>Up</span></span>
+  <div class="sekmeler"><a href="#">Yönetim</a><a href="#">Kullanıcılar</a><a href="#">Soru Havuzu</a><a class="aktif" href="#">Özgünlük</a></div>
+  <span class="rol-cip">YÖNETİCİ</span>
+</nav>
+<main class="sahne">
+  <section class="kart g1 baslik">
+    <span class="durum">ölçüm 22.07.2026</span>
+    <h1>Özgünlük Bariyeri</h1>
+    <p class="alt">"Sorularımız özgün" iddiası, eşiğin nereden geldiği görünmeden anlamsızdır. Bu sayfa hem ölçümü hem yöntemi gösterir.</p>
+  </section>
+
+  <section class="kart g2 hero">
+    <div class="buyuk">0</div>
+    <div class="etiket">Eşiği aşan kopya</div>
+    <p class="aciklama">Havuzdaki 1 245 AI sorusunun hiçbiri kendi dersindeki eşiği aşmadı. En yakın komşu p90 değeri 0,214.</p>
+  </section>
+
+  <div class="izgara">
+    <section class="kart g3 panel-ic">
+      <div class="panel-bas"><h3>Ders Bazlı Eşikler</h3></div>
+      <table class="etablo">
+        <thead><tr><th>Ders</th><th>Eşik</th><th>Taban</th><th>Havuz</th></tr></thead>
+        <tbody>
+          <tr><td class="ders">Matematik</td><td class="esik">0,52</td><td class="taban">0,48</td><td class="n">331</td></tr>
+          <tr><td class="ders">Fizik</td><td class="esik">0,49</td><td class="taban">0,48</td><td class="n">198</td></tr>
+          <tr><td class="ders">Kimya</td><td class="esik">0,50</td><td class="taban">0,48</td><td class="n">176</td></tr>
+          <tr><td class="ders">Türkçe</td><td class="taban">0,48</td><td class="taban">0,48</td><td class="n">293</td></tr>
+          <tr><td class="ders">Tarih</td><td class="taban">0,48</td><td class="taban">0,48</td><td class="n">203</td></tr>
+        </tbody>
+      </table>
+      <div class="p90-satir"><span>Havuz geneli en-yakın-komşu p90</span><b>0,214</b></div>
+    </section>
+
+    <div class="kolon">
+      <section class="kart g3 panel-ic sinir">
+        <div class="panel-bas"><h3>⚠ Bariyerin Sınırı</h3></div>
+        <p>Bu sayfa havuza <b>girmiş</b> soruları ölçer. Bariyerde kaç adayın elendiği burada <b>görünmez</b>: elenen aday üretim döngüsünde bellekte eleniyor ve hiçbir yere yazılmıyor.</p>
+        <p>Eleme sayısını hayatta kalanlardan türetmek uydurma olurdu; bu yüzden aşağıdaki alan boş bırakıldı.</p>
+        <div class="olcumyok-kutu">bariyerde elenen aday: ölçülmüyor</div>
+      </section>
+
+      <section class="kart g4 panel-ic">
+        <div class="panel-bas"><h3>Yöntem</h3></div>
+        <ul class="yontem">
+          <li><b>5 karakterlik</b> shingle kümeleri — kelime değil karakter, çünkü Türkçe sondan eklemeli bir dil.</li>
+          <li>Sayılar <code>#</code> ile maskelenir: aynı soru farklı sayılarla yeniden yazılırsa yine yakalanır.</li>
+          <li>Kalıp ifadeler ("aşağıdakilerden hangisi" vb.) temizlenir — yoksa her soru birbirine benzer çıkardı.</li>
+          <li>Taban eşik <b>0,48</b>; kendi ölçümü olan derste o dersin eşiği kullanılır.</li>
+          <li>Eşiği aşan aday <b>onarılmaz</b>, doğrudan elenir.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+
+  <div class="notlar">
+    <h3>Tasarım notları — Özgünlük Bariyeri (uygulama kartına girecek)</h3>
+    <ul>
+      <li><b>Tek uç, GERÇEK veri</b> (mock yok): <code>/admin/ozgunluk</code> — snapshot (nnKopya, nnP90, tarih), ders eşikleri + havuz adedi, taban eşik, shingle boyutu.</li>
+      <li><b>"ÖLÇÜM YOK" ≠ "0 KOPYA" (imza dürüstlük):</b> eval hiç koşmadıysa hero "Ölçüm yok" der ve "bu kopya yok DEMEK DEĞİLDİR, ölçülmedi demektir" açıklaması gelir. 0 kopya ile ölçülmemiş ASLA aynı gösterilmez.</li>
+      <li><b>DÜRÜST BOŞLUK korunur:</b> "Bariyerin Sınırı" — elenen aday sayısı ölçülmüyor (bellekte eleniyor); hayatta kalanlardan türetmek uydurma olurdu → alan boş, <code>OlcumYok</code>. (Üretim hunisi dürüst-boşluğunun ikizi.)</li>
+      <li><b>Yöntem şeffaf:</b> shingle/maskeleme/kalıp-temizleme/taban-eşik/onarılmaz-eleme — "özgün" iddiasının nasıl ölçüldüğü açıkça anlatılır (savunulabilirlik).</li>
+      <li><b>Ders eşiği ölçümden türer:</b> kendi ölçümü olan ders kendi eşiğini kullanır, yoksa taban 0,48 (vurgu = ders eşiği, soluk = taban).</li>
+      <li><b>Hareket-azalt:</b> kart girişleri <code>prefers-reduced-motion</code>'da durur; anlatı sayfası, tek ışık vurgusu hero kopya sayısı.</li>
+    </ul>
+  </div>
+</main>
+<script>
+const dugme=document.getElementById('temaDugme');
+dugme.addEventListener('click',()=>{const g=document.documentElement.classList.toggle('gece');dugme.textContent=g?'☀ Gün Işığı\'na dön':'☾ Gece Ormanı\'na geç';});
+</script>
+</body>
+</html>

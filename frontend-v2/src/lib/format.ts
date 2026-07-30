@@ -8,11 +8,6 @@ export function selam(): string {
   return 'İyi akşamlar'
 }
 
-export function vardiya(): string {
-  const h = new Date().getHours()
-  return h < 6 || h >= 19 ? 'Gece vardiyası' : h < 12 ? 'Sabah vardiyası' : 'Gündüz vardiyası'
-}
-
 /** 2340 → "2.340" (tr binlik). */
 export function sayi(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return '0'
@@ -49,4 +44,14 @@ export function zorlukSeviye(d: string | number | null | undefined): number {
 const AYLAR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
 export function tarihKisa(d = new Date()): string {
   return `${d.getDate()} ${AYLAR[d.getMonth()]}`
+}
+
+/** '2026-07-19' → '19 Tem'. Tarih-dışı etiketler (ör. ders adı) olduğu gibi döner.
+    (GOREV-034: components/rontgen.tsx'ten AYNEN taşındı — DurtmeZili'nin bu yardımcı için
+    recharts'lı rontgen modülünü eager çekmesi 383 kB vendor-charts'ı ilk boyaya sokuyordu.) */
+const AY_KISA = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara']
+export const gunEtiketi = (iso: string): string => {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso
+  const d = new Date(iso.slice(0, 10) + 'T12:00:00')
+  return `${d.getDate()} ${AY_KISA[d.getMonth()]}`
 }

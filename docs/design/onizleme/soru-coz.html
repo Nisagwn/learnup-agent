@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="tr" data-tema="gun">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FİDAN Önizleme — Soru Çöz (v1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --grad-a:#F4F7F4; --grad-b:#E8EFE9;
+  --cam:rgba(255,255,255,.78); --cam-kenar:rgba(46,79,58,.08);
+  --mat:#FBFDFB; --ic:#EDF2ED; --cizgi:rgba(34,76,56,.06);
+  --metin1:#183121; --metin2:#4A5D4E; --metin3:#7C8F80;
+  --cta:#1E4620; --vurgu:#2A5A3B; --adacayi:#84A98C; --yaprak:#4FA56F; --toprak:#D4A373;
+  --dogru:#2E8B57; --yanlis:#D9534F; --kehribar:#B8863B;
+  --golge:0 8px 32px rgba(24,49,33,.04); --parilti:0 0 20px rgba(79,165,111,.25);
+}
+[data-tema="gece"]{
+  --grad-a:#0C120E; --grad-b:#101A13;
+  --cam:rgba(16,26,19,.72); --cam-kenar:rgba(167,199,172,.08);
+  --mat:#121C15; --ic:#18251B; --cizgi:rgba(200,230,205,.05);
+  --metin1:#E6EFE7; --metin2:#A9BCA9; --metin3:#74887A;
+  --cta:#2E6B47; --vurgu:#7FC79C; --adacayi:#8FB49A; --yaprak:#5CB781; --toprak:#D4A373;
+  --dogru:#58C08A; --yanlis:#E37A72; --kehribar:#D9B267;
+  --golge:0 10px 36px rgba(0,0,0,.5); --parilti:0 0 20px rgba(92,183,129,.28);
+}
+*{box-sizing:border-box;margin:0}
+html{color-scheme:light} [data-tema="gece"]{color-scheme:dark}
+body{font-family:Inter,system-ui,sans-serif;color:var(--metin1);font-size:15.5px;line-height:1.6;
+  min-height:100vh;background:linear-gradient(160deg,var(--grad-a),var(--grad-b)) fixed}
+/* Odak modunda ambiyans SAKİN: yaprak yok, tek silik güneş lekesi */
+.gunes{position:fixed;pointer-events:none;z-index:0;border-radius:50%;filter:blur(70px);
+  width:640px;height:420px;top:-160px;left:50%;transform:translateX(-50%);background:rgba(132,169,140,.14)}
+/* Üst ince şerit */
+.serit{position:sticky;top:0;z-index:10;height:56px;display:flex;align-items:center;
+  background:var(--cam);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--cizgi)}
+.serit-ic{max-width:860px;margin:0 auto;padding:0 clamp(16px,3vw,32px);width:100%;display:flex;align-items:center;gap:14px}
+.cik{width:36px;height:36px;border-radius:12px;border:1px solid var(--cam-kenar);background:transparent;color:var(--metin2);cursor:pointer;display:grid;place-items:center;font-size:15px}
+.cik:hover{background:var(--ic)}
+.ilerleme-kap{flex:1;display:flex;align-items:center;gap:10px}
+.ilerleme-metin{font-family:'JetBrains Mono';font-size:12px;color:var(--metin2);white-space:nowrap}
+.ilerleme{flex:1;height:7px;border-radius:12px;background:var(--ic);overflow:hidden}
+.ilerleme i{display:block;height:100%;width:60%;border-radius:12px;background:linear-gradient(90deg,var(--adacayi),var(--yaprak));transition:width .4s ease}
+.sure{font-family:'JetBrains Mono';font-size:13px;font-weight:500;color:var(--metin2);
+  padding:6px 12px;border-radius:12px;background:var(--ic)}
+/* İçerik */
+.sayfa{max-width:860px;margin:0 auto;padding:30px clamp(16px,3vw,32px) 90px;position:relative;z-index:1;display:flex;flex-direction:column;gap:44px}
+.gorunum-etiket{font-family:'JetBrains Mono';font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--metin3);border-bottom:1px dashed var(--cam-kenar);padding-bottom:6px}
+.kart{background:var(--cam);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--cam-kenar);border-radius:20px;padding:26px;box-shadow:var(--golge)}
+@media (prefers-reduced-motion:no-preference){
+  .canlan{opacity:0;transform:translateY(14px);animation:belir .45s ease-out forwards}
+  @keyframes belir{to{opacity:1;transform:none}}
+}
+.kazanim-cip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:12px;font-size:12.5px;font-weight:600;
+  background:color-mix(in srgb,#B45309 12%,transparent);color:#B45309}
+[data-tema="gece"] .kazanim-cip{background:color-mix(in srgb,#F5A524 14%,transparent);color:#F5A524}
+.soru-metin{font-size:16.5px;line-height:1.75;margin:14px 0 20px}
+.soru-metin .formul{font-family:'JetBrains Mono';background:var(--ic);padding:2px 8px;border-radius:8px;font-size:14.5px}
+/* Şıklar */
+.sik{display:flex;align-items:center;gap:14px;width:100%;text-align:left;cursor:pointer;
+  padding:14px 16px;border-radius:12px;border:1.5px solid var(--cam-kenar);background:transparent;
+  font-family:Inter;font-size:15px;color:var(--metin1);transition:border-color .15s,background .15s,transform .15s}
+.sik + .sik{margin-top:10px}
+.sik:hover{border-color:color-mix(in srgb,var(--vurgu) 40%,transparent);background:var(--ic)}
+.sik .harf{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;
+  font-family:Outfit;font-weight:700;font-size:14px;background:var(--ic);color:var(--metin2)}
+.sik.dogru{border-color:var(--dogru);background:color-mix(in srgb,var(--dogru) 8%,transparent)}
+.sik.dogru .harf{background:var(--dogru);color:#fff}
+.sik.yanlis{border-color:var(--yanlis);background:color-mix(in srgb,var(--yanlis) 7%,transparent)}
+.sik.yanlis .harf{background:var(--yanlis);color:#fff}
+.sik .durum-yazi{margin-left:auto;font-size:12.5px;font-weight:700}
+.sik.dogru .durum-yazi{color:var(--dogru)}
+.sik.yanlis .durum-yazi{color:var(--yanlis)}
+@media (prefers-reduced-motion:no-preference){
+  .sik.dogru{animation:onay .35s ease}
+  @keyframes onay{0%{transform:scale(1)}40%{transform:scale(1.015)}100%{transform:scale(1)}}
+}
+/* Açıklama kutusu */
+.aciklama-kutu{margin-top:16px;padding:16px 18px;border-radius:12px;background:var(--ic);
+  border-left:3px solid var(--yaprak);font-size:14.5px;color:var(--metin2)}
+.aciklama-kutu b{color:var(--metin1)}
+/* Alt eylem barı */
+.alt-bar{display:flex;justify-content:space-between;align-items:center;margin-top:20px;gap:10px;flex-wrap:wrap}
+.btn{border:none;cursor:pointer;border-radius:12px;padding:12px 22px;font-family:Inter;font-weight:600;font-size:14.5px;display:inline-flex;align-items:center;gap:8px;transition:box-shadow .2s,background .15s,transform .15s}
+.btn:active{transform:scale(.97)}
+.btn.birincil{background:var(--cta);color:#fff}
+.btn.birincil:hover{box-shadow:var(--parilti);transform:translateY(-1px)}
+.btn.dis{background:transparent;color:var(--vurgu);border:1px solid color-mix(in srgb,var(--vurgu) 35%,transparent)}
+.btn.dis:hover{background:var(--ic)}
+.kisayol{font-family:'JetBrains Mono';font-size:11px;color:var(--metin3)}
+/* ÖSYM varyantı */
+.osym{border:1.5px solid color-mix(in srgb,var(--kehribar) 45%,transparent)}
+.muhur{display:inline-flex;align-items:center;gap:8px;padding:5px 13px;border-radius:12px;
+  font-family:'JetBrains Mono';font-size:11px;letter-spacing:.08em;font-weight:500;
+  background:color-mix(in srgb,var(--kehribar) 14%,transparent);color:var(--kehribar);
+  border:1px solid color-mix(in srgb,var(--kehribar) 35%,transparent)}
+/* Sonuç ekranı */
+.sonuc{text-align:center;position:relative;overflow:hidden}
+.sonuc-halka{position:relative;width:150px;height:150px;margin:14px auto}
+.sonuc-halka .merkez{position:absolute;inset:0;display:grid;place-items:center}
+.sonuc-halka b{font-family:Outfit;font-weight:800;font-size:30px;display:block;line-height:1}
+.sonuc-halka span{font-size:11.5px;color:var(--metin3)}
+#sonucHalka{transition:stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)}
+.odul-satir{display:flex;justify-content:center;gap:12px;margin:14px 0 4px;flex-wrap:wrap}
+.odul{display:inline-flex;align-items:center;gap:7px;padding:7px 15px;border-radius:12px;font-weight:700;font-size:14px;
+  background:color-mix(in srgb,var(--toprak) 18%,transparent);color:color-mix(in srgb,var(--toprak) 75%,var(--metin1))}
+.dokum{max-width:420px;margin:18px auto 0;text-align:left}
+.dokum-satir{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--cizgi);font-size:14px}
+.dokum-satir:first-child{border-top:none}
+.rozet{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600}
+.rozet.dogru{background:color-mix(in srgb,var(--dogru) 14%,transparent);color:var(--dogru)}
+.rozet.uyari{background:color-mix(in srgb,#C77E2E 14%,transparent);color:#C77E2E}
+/* konfeti yaprakları — sonuç kartı içinde */
+.konfeti{position:absolute;top:-10px;pointer-events:none;opacity:.7}
+@media (prefers-reduced-motion:no-preference){
+  .konfeti{animation:dus linear infinite}
+  @keyframes dus{0%{transform:translateY(-20px) rotate(0)}100%{transform:translateY(420px) rotate(300deg)}}
+}
+.notlar{border:1px dashed var(--cam-kenar);border-radius:16px;padding:16px 20px;color:var(--metin2);font-size:13.5px;background:color-mix(in srgb,var(--cam) 60%,transparent)}
+.notlar summary{cursor:pointer;font-weight:600;color:var(--metin1)}
+.notlar li{margin:6px 0 0 18px}
+.band{position:fixed;bottom:14px;left:14px;z-index:20;background:var(--metin1);color:var(--grad-a);font-family:'JetBrains Mono';font-size:10.5px;letter-spacing:.08em;padding:6px 12px;border-radius:12px;opacity:.85}
+</style>
+</head>
+<body>
+<span class="band">FİDAN ÖNİZLEME · SORU ÇÖZ · v1</span>
+<div class="gunes"></div>
+
+<div class="serit"><div class="serit-ic">
+  <button class="cik" title="Testten çık" aria-label="Çık">✕</button>
+  <div class="ilerleme-kap">
+    <span class="ilerleme-metin">SORU 6/10</span>
+    <div class="ilerleme" role="progressbar" aria-valuenow="6" aria-valuemax="10"><i></i></div>
+  </div>
+  <span class="sure" aria-label="Kalan süre">⏱ 12:45</span>
+  <button class="cik" id="temaBtn" title="Koyu tema" aria-label="Tema değiştir">☾</button>
+</div></div>
+
+<main class="sayfa">
+
+  <!-- GÖRÜNÜM A: pratik — anlık geri bildirim -->
+  <div>
+    <p class="gorunum-etiket">Görünüm A — Pratik modu · cevap verildi (anlık geri bildirim)</p>
+    <section class="kart canlan" style="margin-top:14px">
+      <span class="kazanim-cip">MAT · Türev — Zincir Kuralı</span>
+      <p class="soru-metin"><span class="formul">f(x) = sin(3x²)</span> fonksiyonunun türevi aşağıdakilerden hangisidir?</p>
+      <button class="sik"><span class="harf">A</span> <span class="formul">cos(3x²)</span></button>
+      <button class="sik dogru"><span class="harf">B</span> <span class="formul">6x·cos(3x²)</span> <span class="durum-yazi">✓ Doğru</span></button>
+      <button class="sik"><span class="harf">C</span> <span class="formul">6x·sin(3x²)</span></button>
+      <button class="sik"><span class="harf">D</span> <span class="formul">3x²·cos(3x²)</span></button>
+      <div class="aciklama-kutu">
+        <b>Neden?</b> Zincir kuralı: dış fonksiyonun türevi × için türevi.
+        <span class="formul">sin(u)′ = cos(u)·u′</span> ve <span class="formul">u = 3x² → u′ = 6x</span>.
+        İç türevi unutmak bu kazanımın en sık tuzağı — bugün onu kırdın 🌱
+      </div>
+      <div class="alt-bar">
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn dis">🔖 İşaretle</button>
+          <span class="kisayol">A–D: şık · Enter: onayla</span>
+        </div>
+        <button class="btn birincil">Sonraki Soru →</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- GÖRÜNÜM B: ÖSYM çıkmış — kehribar kimlik, 5 şık -->
+  <div>
+    <p class="gorunum-etiket">Görünüm B — ÖSYM çıkmış soru · çözülüyor (5 şık, kehribar kimlik)</p>
+    <section class="kart osym canlan" style="margin-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span class="muhur">◆ ÖSYM ÇIKMIŞ SORU · 2023 AYT</span>
+        <span class="kazanim-cip">MAT · Limit</span>
+      </div>
+      <p class="soru-metin">Gerçek sayılarda tanımlı <span class="formul">f(x) = (x² − 4) / (x − 2)</span> fonksiyonu için
+      <span class="formul">lim(x→2) f(x)</span> değeri kaçtır?</p>
+      <button class="sik"><span class="harf">A</span> 0</button>
+      <button class="sik"><span class="harf">B</span> 2</button>
+      <button class="sik"><span class="harf">C</span> 4</button>
+      <button class="sik"><span class="harf">D</span> 6</button>
+      <button class="sik"><span class="harf">E</span> Limit yoktur</button>
+      <div class="alt-bar">
+        <button class="btn dis">🔖 İşaretle</button>
+        <button class="btn birincil">Cevapla</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- GÖRÜNÜM C: sonuç ekranı -->
+  <div>
+    <p class="gorunum-etiket">Görünüm C — Test sonucu · kutlama</p>
+    <section class="kart sonuc canlan" style="margin-top:14px">
+      <svg class="konfeti" style="left:12%;width:16px;animation-duration:5s" viewBox="0 0 24 24"><path d="M12 2C7 7 5 12 12 22 19 12 17 7 12 2Z" fill="#84A98C"/></svg>
+      <svg class="konfeti" style="left:30%;width:12px;animation-duration:6.5s;animation-delay:1s" viewBox="0 0 24 24"><path d="M12 2C7 7 5 12 12 22 19 12 17 7 12 2Z" fill="#D4A373"/></svg>
+      <svg class="konfeti" style="left:68%;width:14px;animation-duration:5.5s;animation-delay:.5s" viewBox="0 0 24 24"><path d="M12 2C7 7 5 12 12 22 19 12 17 7 12 2Z" fill="#4FA56F"/></svg>
+      <svg class="konfeti" style="left:86%;width:11px;animation-duration:7s;animation-delay:1.6s" viewBox="0 0 24 24"><path d="M12 2C7 7 5 12 12 22 19 12 17 7 12 2Z" fill="#84A98C"/></svg>
+
+      <h2 style="font-family:Outfit;font-weight:800;font-size:22px">Test bitti — güzel iş 🌿</h2>
+      <p style="color:var(--metin2);font-size:14px;margin-top:4px">Mikro test · Türev & Limit · 10 soru</p>
+
+      <div class="sonuc-halka">
+        <svg width="150" height="150" viewBox="0 0 150 150">
+          <defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="var(--adacayi)"/><stop offset="1" stop-color="var(--yaprak)"/>
+          </linearGradient></defs>
+          <circle cx="75" cy="75" r="64" fill="none" stroke="var(--ic)" stroke-width="10"/>
+          <circle id="sonucHalka" cx="75" cy="75" r="64" fill="none" stroke="url(#sg)" stroke-width="10"
+                  stroke-linecap="round" stroke-dasharray="402.1" stroke-dashoffset="402.1" transform="rotate(-90 75 75)"/>
+        </svg>
+        <div class="merkez"><div><b>8/10</b><span>doğru</span></div></div>
+      </div>
+
+      <div class="odul-satir">
+        <span class="odul">⚡ +120 XP</span>
+        <span class="odul">🪙 +15 coin</span>
+        <span class="odul">🌱 Seri 13. güne uzadı</span>
+      </div>
+
+      <div class="dokum">
+        <div class="dokum-satir"><span>Türev — Zincir Kuralı</span><span class="rozet dogru">4/5 doğru</span></div>
+        <div class="dokum-satir"><span>Limit — Belirsizlik</span><span class="rozet uyari">2/3 — tekrar önerilir</span></div>
+        <div class="dokum-satir"><span>Paragraf — Ana Düşünce</span><span class="rozet dogru">2/2 doğru</span></div>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:22px;flex-wrap:wrap">
+        <button class="btn birincil">Analizin hazır →</button>
+        <button class="btn dis">Bugüne dön</button>
+      </div>
+    </section>
+  </div>
+
+  <details class="notlar">
+    <summary>Tasarım notları (inceleme için)</summary>
+    <ul>
+      <li><b>Odak modu disiplini:</b> nav yok; ambiyans SAKİN — süzülen yaprak yok, tek silik güneş
+        lekesi (dikkat dağılmasın). Tema, uygulamanın temasını izler (☾ ile dene).</li>
+      <li><b>Tek birincil eylem / görünüm:</b> A'da "Sonraki Soru", B'de "Cevapla", C'de "Analizin hazır".</li>
+      <li><b>Anlık geri bildirim yalnız pratik modunda</b> (A) — testte (B) sona kadar sessiz; açıklama
+        kutusu tuzak-kırma diliyle motive eder, teşhis dili yok.</li>
+      <li><b>Kehribar yalnız ÖSYM</b> (B): mühür + ince çerçeve — sayfadaki tek kehribar.</li>
+      <li><b>Sonuç (C):</b> halka dolarak canlanır; yaprak konfetisi kart içinde, hareket-azalt kapatır;
+        kazanım dökümünde kelimeli rozetler ("tekrar önerilir" → tıklayınca o kazanımdan tekrar).</li>
+      <li><b>Kodda ayrıca:</b> KaTeX gerçek formül render'ı (burada mono yer tutucu); klavye kısayolları
+        (A–E, Enter, ←→); çıkışta onay diyaloğu; süre ÖSYM temposunda uyarı rengine döner.</li>
+    </ul>
+  </details>
+</main>
+
+<script>
+  const btn=document.getElementById('temaBtn'),html=document.documentElement;
+  btn.addEventListener('click',()=>{const g=html.dataset.tema==='gun';html.dataset.tema=g?'gece':'gun';btn.textContent=g?'☀':'☾';});
+  const azalt=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  addEventListener('load',()=>{const h=document.getElementById('sonucHalka');
+    if(azalt){h.style.transition='none';h.style.strokeDashoffset='80.4';return}
+    requestAnimationFrame(()=>h.style.strokeDashoffset='80.4');});
+</script>
+</body>
+</html>

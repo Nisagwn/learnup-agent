@@ -16,9 +16,10 @@ import {
   ZORLUK_TARIFI,
   MEKANIZMALAR,
 } from '../persona/osym.charter.js'
-import { siklariDuzenle, celdiriciKusatmasi, sikUzunlukSizintisi } from '../utils/shufflers.js'
+import { siklariDuzenle, celdiriciKusatmasi, sikUzunlukSizintisi, sayisalNormalize } from '../utils/shufflers.js'
 import { matematigiDuzelt, soruLatexBozuk } from '../utils/latex.js'
 import { shingleKumesi, kumeBenzerligi, ozgunlukEsigi, kokBenzerligi } from '../utils/benzerlik.js'
+import { esikleriTazele } from './ozgunluk-esik.js'
 import { mapLimit } from '../utils/concurrency.js'
 import { logger } from '../utils/logger.js'
 
@@ -105,6 +106,30 @@ export type TaggedQuestion = {
    *  Tek işi: kod kapısına denetlenebilir iz — plansız zor adayı elenir. */
   tasarim?: string
 }
+
+/**
+ * YAZIM YOLU NORMALİZASYONU (GOREV-031) — depolanan metindeki tire ailesi / kesir-bölü /
+ * fullwidth-Arabic rakam karakterlerini ASCII'ye indirger (soru kökü + 5 şık + çözüm).
+ *
+ * ⚠️ NEDEN AYRI ADIM (matematigiDuzelt'e eklenmedi): latex.ts kasten YALNIZ delimiter çevirisi
+ * yapar ("kanıtlanabilir güvenli iş"); tire→ASCII sayısal-tipografik bir dönüşümdür, o dosyanın
+ * sözleşmesine girmez. Kapı tarafı zaten `sayiya` içinde normalize ediyor; bu adım DB'ye YAZILAN
+ * metni de temizler → KaTeX/ekran tutarlılığı (çözümdeki em/en-dash) + gelecekteki okumalar
+ * (öğretmen ödev derleme, benzerlik) tek biçim görür, `sayiya`ya bağımlı kalmaz.
+ * Şık düzeninden ÖNCE gelir ki `siklariDuzenle` normalize edilmiş değerleri sıralasın.
+ */
+const sayisalNormSoru = <T extends TaggedQuestion>(q: T): T => ({
+  ...q,
+  soru: sayisalNormalize(q.soru),
+  siklar: {
+    A: sayisalNormalize(q.siklar.A),
+    B: sayisalNormalize(q.siklar.B),
+    C: sayisalNormalize(q.siklar.C),
+    D: sayisalNormalize(q.siklar.D),
+    E: sayisalNormalize(q.siklar.E),
+  },
+  cozum: sayisalNormalize(q.cozum),
+})
 
 /**
  * [COZUM] için asgari uzunluk. "Cevap C'dir." (12 krk) çözüm DEĞİLDİR ama parser'ı geçerdi.
@@ -320,20 +345,46 @@ export async function generateQuestions(a: {
   // istiyorduk. Kendi elimizle "çözüm null'dır / boş geçilir" diye örnek veriyorduk.
   // Alan yoksa satırı hiç yazma; çözümün NASIL yazılacağını charter tarif eder (ZORLUK
   // MERDİVENİ'nin yanındaki ÇÖZÜM KURALI) — çünkü burada gösterecek örneğimiz yok.
+  // ⚠️ ÖRNEKLER ÇIKTI SÖZLEŞMESİYLE AYNI BİÇİMDE BASILIR — `Şıklar: {json}` YAZMA, GERİ EKLEME.
+  // Eski hâli şıkları tek satır JSON basıyordu (`Şıklar: {"A":…,"B":…}`) ve model BUNU kopyalıyordu:
+  // istem bir yandan "[A] … [E] etiketlerini kullan" derken, öte yandan 4 örnekte şıkların JSON
+  // olarak yazıldığını GÖSTERİYORDU. Model gösterileni taklit etti — zaten ona "biçimi örneklerden
+  // al" diyoruz. ÖLÇÜLDÜ (2026-07-24): ayrışmayan 54 çıktının 30'u `Şıklar:` biçimindeydi, yalnız
+  // 10'u doğru etiketi kullanmıştı; 32 TAM ve geçerli soru bloğu bu yüzden çöpe gitti. Arıza
+  // modelin beceriksizliği gibi görünüyordu ("0 aday döndürdü") ama kaynağı BİZDİK.
+  // Etiketli basmak çift kazanç: örnek hem ÖSYM stilini hem hedef biçimi aynı anda öğretir.
+  // (Prompt'taki bu etiketler ayrıştırıcıyı KİRLETMEZ — parseTagged yalnız modelin ÇIKTISINA koşar.)
   const style = a.exemplars
     .map((e, i) => {
-      const satirlar = [
-        `[ÖRNEK ${i + 1}] ${e.question_text}`,
-        `Şıklar: ${JSON.stringify(e.options)}`,
-        `Doğru: ${e.correct_option}`,
-      ]
+      // Başlık etiketin DIŞINDA: `[ÖRNEK n] <soru>` yazmak modele soruyu [SORU]'suz yazdırıyordu
+      // (ölçüldü — aşağıdaki yoruma bak). Numara ayrı satırda, blok sözleşmeyle birebir aynı.
+      //
+      // ⚠️ ZORLUK ETİKETİ BAŞLIKTA — silme. Elimizde 1695 çıkmış sorunun TAMAMI zorluk etiketli
+      // (etiketleme bitti) ve 0017 sonrası retrieveExemplars istenen zorluğu TUTAN örneği öne
+      // sıralıyor; yani doğru örnekler zaten geliyordu ama zorluk bilgisi prompt'a HİÇ basılmıyordu.
+      // Model 4 gerçek "orta" sorusu görüp onları zorluğu belirsiz şablon sanıyordu. Etiket, o
+      // örnekleri "senin hedef yapın bu" diye görünür kılar. `difficulty` yoksa satır yazılmaz —
+      // uydurma etiket basmak, kaçındığımız çelişki sınıfının ta kendisi olurdu.
+      const zorlukEtiketi = (e.difficulty ?? '').trim().toLowerCase()
+      const baslik = ZORLUKLAR.has(zorlukEtiketi)
+        ? `— örnek ${i + 1} · zorluk: ${zorlukEtiketi} —`
+        : `— örnek ${i + 1} —`
+      const satirlar = [baslik, `[SORU] ${e.question_text}`]
+      for (const l of ['A', 'B', 'C', 'D', 'E'] as const) {
+        const sik = e.options?.[l]
+        if (sik) satirlar.push(`[${l}] ${sik}`)
+      }
+      satirlar.push(`[DOGRU] ${e.correct_option}`)
       const cozum = (e.solution ?? '').trim()
-      if (cozum && cozum !== 'null') satirlar.push(`Çözüm: ${cozum}`)
+      if (cozum && cozum !== 'null') satirlar.push(`[COZUM] ${cozum}`)
       return satirlar.join('\n')
     })
     .join('\n\n')
 
-  const res = await routedChat('generate', {
+  // ZORLUK-FARKINDA YÖNLENDİRME (rol seçimi): kolay/orta [TASARIM] planı GEREKTİRMEZ (o kapı yalnız
+  // zor) → 'generateFree' (Gemini-önce, paralı-yedek; hacmin ~%72'si çoğunlukla $0). zor → 'generate'
+  // (v4-pro: kabul-başına en ucuz VE tek [TASARIM] yazan). difficulty router'a girmez; seçim tek yer burası.
+  const res = await routedChat(a.difficulty === 'zor' ? 'generate' : 'generateFree', {
     temperature: TEMP.CREATIVE, // tüm sağlayıcılar OpenAI-uyumlu → sıcaklık geçilir
     // max_tokens = DÜŞÜNME + METİN toplamı. Zincir başı deepseek-v4-pro ve DÜŞÜNÜYOR (ölçüldü:
     // reasoning_tokens>0). OpenRouter reasoning'i `content`ten ayırdığı için metin boşalmaz, ama
@@ -355,10 +406,23 @@ export async function generateQuestions(a: {
           // sayı doğrusu ve ondalık gösterim soruları geliyor. Başlıkta "koşullu olasılık
           // örnekleri" yazsaydı model sayı doğrusunu koşullu olasılık sanırdı — başlık YALAN
           // olurdu. İki bölümün işi ayrı: ÖRNEK = biçim, BAĞLAM = içerik. Bunu açıkça söylüyoruz.
-          `### STİL ÖRNEKLERİ — YALNIZ BİÇİM İÇİN (${a.subject}, çıkmış ÖSYM soruları)\n` +
-          `Bunlar ÖSYM'nin dilini, soru kurgusunu ve çeldirici mantığını göstermek içindir.\n` +
+          // ⚠️ "YALNIZ BİÇİM" DEME — charter (ORTAK_KURALLAR) "örneklerin dilini, kurgusunu ve
+          // ZORLUĞUNU taklit et" diyor; burada "yalnız biçimi al" demek, zorluk sinyalini system
+          // mesajında verip user mesajında SİLMEKTİ. Bugünkü dördüncü aynı-sınıf çelişki: istem
+          // kendi sözleşmesiyle yarışıyordu. Yasak KONU/VERİ kopyalamaya aittir (örnek vektörle
+          // seçilir, konusu farklı olabilir) — YAPI ve ZORLUK ise tam olarak öğrenilmesi istenen şey.
+          `### STİL ÖRNEKLERİ — BİÇİM, YAPI VE ZORLUK İÇİN (${a.subject}, çıkmış ÖSYM soruları)\n` +
+          `Bunlar ÖSYM'nin dilini, soru kurgusunu, çeldirici mantığını ve ZORLUK DOKUSUNU gösterir.\n` +
+          `Başlığında "zorluk: ${a.difficulty}" yazan örnekler senin HEDEF YAPINDIR: şıklarının\n` +
+          `birbirine göre nasıl konumlandığına, öğrenciyi kaç ayrı yargıya zorladığına bak.\n` +
           `⚠️ KONULARI senin yazacağın sorunun konusundan FARKLI olabilir. Konuyu, veriyi veya\n` +
-          `kavramı BURADAN ALMA — yalnız BİÇİMİ örnek al.\n${style}\n\n` +
+          `kavramı BURADAN ALMA — kopyalanacak şey YAPI, alınmayacak şey İÇERİK.\n` +
+          // ⚠️ EKSİK SATIRLARI AÇIKÇA SÖYLE — model örnekte GÖRMEDİĞİ etiketi yazmıyor (ölçüldü).
+          // Arşivdeki çıkmış soruların çözümü yok (1000/1000 solution=null) ve kazanım/zorluk
+          // alanları da yok; örnek bu üç satırı gösteremiyor. Söylenmezse eksiklik İZİN sanılıyor.
+          `⚠️ Örneklerde [COZUM], [KAZANIM] ve [ZORLUK] satırları YOKTUR — çünkü arşivdeki çıkmış\n` +
+          `soruların çözümü elimizde yok. Bu bir İZİN DEĞİL, EKSİKLİKTİR: senin çıktında bu üç satır\n` +
+          `ZORUNLUDUR ve [COZUM] boş/tek cümle olamaz.\n${style}\n\n` +
           `### BİLGİ BAĞLAMI — SORUNUN İÇERİĞİ YALNIZ BURADAN (kazanım ${a.kazanim})\n${grounding}\n\n` +
           // HAVUZ KÖKLERİ — klasik/tekrar caydırıcısı. Kod kapısı yalnız birebir kopyayı
           // yakalayabilir (ölçüldü: kalıp paylaşımı ÖSYM-normali, eşik onu yakalamaz);
@@ -385,7 +449,10 @@ export async function generateQuestions(a: {
   // soyamaz → şık "sayısal değil" görünür → artan sıra Fisher–Yates'e düşer ve çeldirici
   // kuşatması kapısı o soruda hiç çalışmaz. İkisi de SESSİZ arıza olurdu.
   const icerik = res.choices[0]?.message.content ?? ''
-  const adaylar = parseTagged(icerik).map(matematigiDuzelt).map(siklariDuzenle)
+  // Sıra: matematik (delimiter) → sayısal normalize (tire/kesir/rakam) → şık düzeni.
+  // Normalize şık düzeninden ÖNCE ki `siklariDuzenle` ASCII '-' taşıyan değerleri sıralasın
+  // (GOREV-031: en-dash'li şık artık `sayiya` ile ayrışır → kuşatma kapısı gerçekten çalışır).
+  const adaylar = parseTagged(icerik).map(matematigiDuzelt).map(sayisalNormSoru).map(siklariDuzenle)
 
   // ⚠️ SIFIR ADAY = TEŞHİS EDİLEBİLİR OLMALI. Eskiden burada hiçbir iz kalmıyordu: üst katman
   // yalnız "üretim SIFIR aday döndürdü" diyordu ve ARIZANIN CİNSİ ayırt edilemiyordu. Üç ayrı
@@ -564,7 +631,10 @@ async function repairQuestion(
     `[SORU] ${q.soru}\n` +
     (['A', 'B', 'C', 'D', 'E'] as const).map((l) => `[${l}] ${q.siklar[l]}`).join('\n') +
     `\n[DOGRU] ${q.dogru}`
-  const res = await routedChat('generate', {
+  // ⚠️ ROL 'repair' — 'generate' DEĞİL. Onarım paralı v4-pro'ya gidiyordu ve her LaTeX/çeldirici/
+  // uzunluk düzeltmesi tam bir pro faturası ödüyordu; üstelik logda üretimden ayırt edilemiyordu.
+  // Onarım MEKANİK bir iştir (eleştiri neyin yanlış olduğunu açıkça söyler) → ücretsiz-önce zincir.
+  const res = await routedChat('repair', {
     temperature: TEMP.DERIVE,
     max_tokens: 4000,
     messages: [
@@ -581,7 +651,27 @@ async function repairQuestion(
   // onarım sırasında `\(...\)` biçimine kayan bir formül normalize edilmeden öğrenciye ulaşırdı.
   // Sıra üretimdekiyle AYNI (önce matematik, sonra şık düzeni) — gerekçesi generateQuestions'ta.
   const onarilan = parseTagged(res.choices[0]?.message.content ?? '')[0]
-  return onarilan ? siklariDuzenle(matematigiDuzelt(onarilan)) : q
+  return onarilan ? siklariDuzenle(sayisalNormSoru(matematigiDuzelt(onarilan))) : q
+}
+
+/**
+ * RET SEBEBİ — hangi ölçüt düştü? Ölçülemeyen kapı ayarlanamaz.
+ *
+ * ⚠️ Bu bilgi HİÇ KAYDEDİLMİYORDU: `denetle` kabul etmediği adayı sessizce `null` döndürüyordu.
+ * Sonuç: "hakem çok mu eliyor?" sorusu bir gün boyunca TAHMİNLE tartışıldı — 118 kabul sayılabildi
+ * ama kaç ret olduğu ve NEDEN olduğu kayıtlarda yoktu. Oysa karar buna bağlı: hakem fazla katıysa
+ * boşa üretim ödüyoruz (üretim faturanın %92'si), değilse tıkanma üretim tarafındadır.
+ * `isAccepted` ile aynı ölçütleri aynı sırada döker — biri değişirse ikisi birlikte değişmeli.
+ */
+const retSebepleri = (v: Verdict): string[] => {
+  const s: string[] = []
+  if (v.verdict !== 'ACCEPT') s.push(`verdict=${v.verdict}`)
+  if (!v.matchesMarked) s.push('matchesMarked') // hakem başka şıkkı doğru buldu
+  if (!v.singleCorrect) s.push('singleCorrect') // birden fazla / hiç doğru şık
+  if (!v.curriculumBound) s.push('curriculumBound') // kazanım dışına taştı
+  if (v.internallyConsistent === false) s.push('internallyConsistent') // kök kendi içinde çelişkili
+  if (!(v.osymStyleScore >= 4)) s.push(`osymStyleScore=${v.osymStyleScore}`)
+  return s
 }
 
 const isAccepted = (v: Verdict): boolean =>
@@ -618,6 +708,12 @@ export async function generateVerifiedSet(
   priority: LlmPriority = 'P1', // canlı top-up P1 · gece demirhanesi P2
 ): Promise<Array<TaggedQuestion & { quality: number }>> {
   const accepted: Array<TaggedQuestion & { quality: number }> = []
+
+  // Özgünlük eşiklerini DB'den tazele (0025) — 60sn önbellekli, pratikte bedelsiz.
+  // Panelden yapılan bir eşik değişimi bir sonraki üretimde YÜRÜRLÜĞE girmeli; deploy
+  // beklemesi, eşiği yönetilebilir kılmanın bütün amacını ortadan kaldırırdı.
+  // DB'ye ulaşılamazsa sessizce kod tablosuna düşer — üretim DURMAZ (lib/ozgunluk-esik.ts).
+  await esikleriTazele()
 
   // ── Turlar arasında DEĞİŞMEYEN her şey: bir kez ──
   const query = `${spec.subject} ${spec.topic} ${spec.kazanim} ${spec.difficulty}`
@@ -681,20 +777,23 @@ export async function generateVerifiedSet(
     try {
       let aday = q
 
-      // ── [TASARIM] PLAN KAPISI (yalnız zor siparişi) — plansız zor adayı elenir.
-      // Tarif "önce iki mekanizma seç, [TASARIM]'a yaz, soruyu ona göre kur" diyor; bu kapı
-      // planın VARLIĞINI zorlar (kod ancak bunu zorlayabilir), plana UYULDUĞUNU hakem ölçer
-      // (mekanizma taraması — yazarın planını GÖRMEDEN). Onarım yok: plansız üretim tarifi
-      // okumamış üretimdir; onarıma değil yeni tura gider.
+      // ── [TASARIM] PLANI: ARTIK KAPI DEĞİL, İZ — plansız zor adayı ATILMAZ, hakeme bırakılır.
+      // Eskiden burada `return null` vardı (plansız zor → çöp). Kaldırıldı çünkü zorluğu ZATEN
+      // HAKEM bağımsız türetiyor (hakemZorluguTuret: kanıtlı 2+ mekanizma → zor, değilse orta/
+      // kolay) ve `damgala` dürüst etiketle KAYDEDİYOR, atmıyor — "ZORLUK ETİKETİ HAKEMDEN GELİR"
+      // doktriniyle aynı. Plansız aday çoğu kez geçerli bir ORTA sorudur; çöpe atıp yeniden PARALI
+      // üretmek yerine hakeme yollamak (bir ÜCRETSİZ verify çağrısı) hem ucuz hem havuzun ~%44
+      // orta ihtiyacını besler. Kaliteyi zaten `isAccepted` (osymStyleScore>=4) süzer.
+      // (v4-pro zor'da [TASARIM]'ı zaten yazar → bu dal nadiren tetiklenir; asıl fayda zor
+      //  free-model'e düştüğünde boşa giden üretimi orta olarak kurtarmaktır.)
       if (spec.difficulty === 'zor') {
         const plan = (aday.tasarim ?? '').toLocaleUpperCase('tr')
         const planli = MEKANIZMALAR.filter((m) => plan.includes(m)).length
         if (planli < 2) {
           logger.info(
             { kazanim: spec.kazanim, tasarim: aday.tasarim ?? null },
-            'zor siparişinde mekanizma planı yok/eksik — aday elendi',
+            'zor siparişinde [TASARIM] planı yok/eksik — atılmıyor, gerçek zorluğu hakem belirleyecek',
           )
-          return null
         }
       }
 
@@ -798,10 +897,25 @@ export async function generateVerifiedSet(
 
       const v = await verifyQuestion(aday, grounding, priority, spec.difficulty)
       if (isAccepted(v)) return damgala(aday, v)
-      if (v.verdict !== 'REPAIR') return null
+      if (v.verdict !== 'REPAIR') {
+        logger.info(
+          { kazanim: spec.kazanim, zorluk: spec.difficulty, asama: 'ilk', sebep: retSebepleri(v),
+            skor: v.osymStyleScore, critique: (v.critique ?? '').slice(0, 160) },
+          'hakem RED — aday elendi',
+        )
+        return null
+      }
       const repaired = await repairQuestion(aday, v.critique, grounding, priority)
       const v2 = await verifyQuestion(repaired, grounding, priority, spec.difficulty)
-      return isAccepted(v2) ? damgala(repaired, v2) : null
+      if (isAccepted(v2)) return damgala(repaired, v2)
+      // Onarım denendi ve TUTMADI — bu ayrı bir olgu: onarımın işe yarama oranını ölçer
+      // (paralı/ücretsiz onarım kararı buna bakacak).
+      logger.info(
+        { kazanim: spec.kazanim, zorluk: spec.difficulty, asama: 'onarim-sonrasi', sebep: retSebepleri(v2),
+          skor: v2.osymStyleScore, ilkSebep: retSebepleri(v) },
+        'hakem RED — onarım tutmadı, aday elendi',
+      )
+      return null
     } catch (err) {
       logger.warn({ err }, 'aday denetimi başarısız — aday elendi (tur sürüyor)')
       return null

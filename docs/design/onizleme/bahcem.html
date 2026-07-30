@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FİDAN Önizleme — Bahçem</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+
+/* ═══ FİDAN v1.2 "Soft Doğa" — Gün Işığı (VARSAYILAN) ═══ */
+:root{
+  --zemin1:#F4F7F4; --zemin2:#E8EFE9;
+  --cam:rgba(255,255,255,.78); --cam-cizgi:rgba(46,79,58,.08);
+  --cam-koyu:rgba(255,255,255,.92);
+  --m1:#183121; --m2:#4A5D4E; --m3:#7C8F80;
+  --cta:#1E4620; --cta-metin:#F2F7F3; --vurgu:#2A5A3B;
+  --adacayi:#84A98C; --yaprak:#4FA56F; --toprak:#D4A373;
+  --v0:#EFF3EF; --v1:#DCE9DE; --v2:#BBD3C0;
+  --golge:0 8px 28px rgba(24,49,33,.07);
+  --gunes-lekesi:radial-gradient(circle, rgba(244,215,150,.28) 0%, transparent 70%);
+  --cim1:#BFDCC4; --cim2:#A9CDB0; --su:#CBE3E4; --tas:#D8D3C8;
+}
+html.gece{
+  --zemin1:#0C120E; --zemin2:#101A13;
+  --cam:rgba(16,26,19,.72); --cam-cizgi:rgba(148,180,155,.12);
+  --cam-koyu:rgba(20,32,24,.9);
+  --m1:#E5EFE7; --m2:#A7BCAC; --m3:#75887B;
+  --cta:#2E6B47; --cta-metin:#EAF4EC; --vurgu:#7FBF95;
+  --adacayi:#5E7D66; --yaprak:#4FA56F; --toprak:#B98F66;
+  --v0:#16211A; --v1:#1C2B21; --v2:#26402F;
+  --golge:0 8px 28px rgba(0,0,0,.35);
+  --gunes-lekesi:radial-gradient(circle, rgba(163,190,140,.07) 0%, transparent 70%);
+  --cim1:#1C3524; --cim2:#254230; --su:#14252A; --tas:#3A3830;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--m1);
+  background:linear-gradient(160deg,var(--zemin1) 0%,var(--zemin2) 100%);
+  min-height:100vh;transition:background .4s,color .4s;overflow-x:hidden}
+h1,h2,h3{font-family:'Outfit',sans-serif}
+.mono{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--m3);font-weight:500}
+
+.band{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;
+  padding:9px 22px;background:var(--cam-koyu);backdrop-filter:blur(16px);border-bottom:1px solid var(--cam-cizgi)}
+.band .mono{color:var(--vurgu)}
+.tema-dugme{font-family:'Inter';font-size:12.5px;font-weight:600;color:var(--m2);background:var(--v0);
+  border:1px solid var(--cam-cizgi);border-radius:12px;padding:7px 14px;cursor:pointer;transition:.2s}
+.tema-dugme:hover{color:var(--m1);border-color:var(--adacayi)}
+
+.ustbar{display:flex;align-items:center;gap:26px;max-width:1160px;margin:0 auto;padding:16px 28px 0;opacity:.92}
+.logo{font-family:'Outfit';font-weight:800;font-size:17px}
+.logo span{color:var(--yaprak)}
+.sekmeler{display:flex;gap:4px;font-size:13px;font-weight:500;color:var(--m3);flex-wrap:wrap}
+.sekmeler a{padding:7px 13px;border-radius:12px;text-decoration:none;color:inherit}
+.sekmeler a.aktif{color:var(--vurgu);background:var(--v1);font-weight:600;position:relative}
+.sekmeler a.aktif::after{content:'';position:absolute;left:50%;bottom:2px;transform:translateX(-50%);width:14px;height:2.5px;border-radius:2px;background:var(--yaprak)}
+
+.sahne-dis{max-width:1160px;margin:0 auto;padding:22px 28px 80px;position:relative}
+.leke{position:fixed;border-radius:50%;pointer-events:none;z-index:0}
+.leke.a{width:520px;height:520px;top:-120px;right:-80px;background:var(--gunes-lekesi)}
+
+.kart{position:relative;z-index:2;background:var(--cam);backdrop-filter:blur(16px);
+  border:1px solid var(--cam-cizgi);border-radius:20px;box-shadow:var(--golge);
+  animation:giris .5s cubic-bezier(.2,.7,.3,1) both;transition:background .4s}
+@keyframes giris{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.g1{animation-delay:0s}.g2{animation-delay:.08s}.g3{animation-delay:.16s}.g4{animation-delay:.24s}.g5{animation-delay:.3s}
+
+/* üst şerit */
+.baslik-satiri{display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+.baslik-satiri h1{font-size:24px}
+.cip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:12px;background:var(--cam);border:1px solid var(--cam-cizgi)}
+.cip.coin{color:#8A6134;background:rgba(212,163,115,.18);border-color:transparent}
+html.gece .cip.coin{color:#DDB27F}
+.baslik-satiri .sag{margin-left:auto;display:flex;gap:9px}
+
+.btn{font-family:'Inter';font-weight:600;font-size:13px;border-radius:12px;cursor:pointer;transition:.2s;border:none}
+.btn-birincil{background:var(--cta);color:var(--cta-metin);padding:10px 20px;box-shadow:0 6px 16px rgba(30,70,32,.25)}
+.btn-birincil:hover{filter:brightness(1.12)}
+.btn-soluk{background:var(--v0);color:var(--m2);padding:8px 15px;border:1px solid var(--cam-cizgi)}
+.btn-soluk:hover{color:var(--m1);border-color:var(--adacayi)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+
+/* ═══ YERLEŞİM: sahne + market ═══ */
+.izgara{display:grid;grid-template-columns:1.7fr 1fr;gap:14px}
+@media(max-width:960px){.izgara{grid-template-columns:1fr}}
+
+.sahne-karti{overflow:hidden;position:relative}
+.sahne-karti svg{display:block;width:100%}
+.mod-seridi{position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  background:var(--cam-koyu);backdrop-filter:blur(16px);border:1px solid var(--adacayi);
+  border-radius:12px;padding:8px 16px;font-size:12px;font-weight:600;color:var(--vurgu);
+  display:flex;gap:8px;align-items:center;white-space:nowrap}
+.mod-seridi .nokta{width:8px;height:8px;border-radius:50%;background:var(--yaprak);animation:nbz 1.4s ease-in-out infinite}
+@keyframes nbz{0%,100%{opacity:.4}50%{opacity:1}}
+
+/* seçili bitki paneli */
+.bitki-paneli{position:absolute;right:14px;bottom:14px;width:212px;
+  background:var(--cam-koyu);backdrop-filter:blur(16px);border:1px solid var(--cam-cizgi);
+  border-radius:16px;padding:14px 16px;box-shadow:var(--golge)}
+.bitki-paneli h3{font-size:14px;display:flex;align-items:center;gap:7px}
+.nadir{font-size:10.5px;font-weight:700;padding:2.5px 9px;border-radius:10px}
+.n-yaygin{background:var(--v1);color:var(--m2)}
+.n-nadir{background:rgba(79,165,111,.16);color:var(--vurgu)}
+.n-efsanevi{background:rgba(212,163,115,.22);color:#8A6134}
+html.gece .n-efsanevi{color:#DDB27F}
+.bitki-paneli .satir{display:flex;gap:8px;margin-top:12px}
+
+/* ═══ MARKET ═══ */
+.market{padding:20px 22px;display:flex;flex-direction:column;gap:11px;max-height:520px;overflow-y:auto}
+.market h2{font-size:17px}
+.urun{display:flex;align-items:center;gap:12px;padding:12px 13px;border:1.5px solid var(--cam-cizgi);
+  border-radius:14px;background:var(--cam-koyu);transition:.2s;cursor:pointer}
+.urun:hover{border-color:var(--adacayi)}
+.urun.secili{border-color:var(--yaprak);box-shadow:0 6px 18px rgba(79,165,111,.15)}
+.urun .gorsel{width:42px;height:42px;border-radius:12px;background:var(--v1);display:flex;align-items:center;justify-content:center;font-size:21px;flex:none}
+.urun .orta{flex:1;min-width:0}
+.urun .orta h4{font-size:13.5px}
+.urun .orta .alt{display:flex;gap:7px;align-items:center;margin-top:3px}
+.fiyat{font-family:'JetBrains Mono';font-size:12px;font-weight:500;color:#8A6134}
+html.gece .fiyat{color:#DDB27F}
+.sahip{font-size:11.5px;font-weight:700;color:var(--vurgu)}
+.yetersiz{font-size:10.5px;font-weight:600;color:var(--m3)}
+
+/* ═══ ENVANTER ÇEKMECESİ ═══ */
+.envanter{margin-top:14px;padding:18px 22px}
+.envanter-baslik{display:flex;align-items:center;gap:10px;margin-bottom:13px}
+.envanter-baslik h2{font-size:16px}
+.envanter-baslik .mono{margin-left:auto}
+.env-izgara{display:flex;gap:10px;flex-wrap:wrap}
+.env-kutu{width:104px;background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:14px;
+  padding:12px 10px;text-align:center;transition:.2s}
+.env-kutu:hover{border-color:var(--adacayi);transform:translateY(-2px)}
+.env-kutu .gorsel{font-size:26px}
+.env-kutu .ad{font-size:11px;font-weight:600;margin-top:6px;line-height:1.3}
+.env-kutu .adet{font-size:10px;color:var(--m3);margin-top:2px}
+.env-kutu .btn{margin-top:8px;padding:5px 12px;font-size:11px}
+
+/* varyantlar + notlar */
+.varyantlar{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:26px}
+@media(max-width:820px){.varyantlar{grid-template-columns:1fr}}
+.varyant{padding:24px 26px}
+.varyant .mono{display:block;margin-bottom:12px}
+.varyant h3{font-size:16px;margin-bottom:6px}
+.varyant p{font-size:12.5px;color:var(--m2);line-height:1.6}
+.bos-orta{text-align:center;padding:8px}
+.bos-orta .buyuk{font-size:36px;display:block;margin-bottom:8px}
+
+.notlar{margin-top:36px;padding:26px 30px;background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:20px;position:relative;z-index:2}
+.notlar h3{font-size:14px;margin-bottom:14px;color:var(--m2)}
+.notlar ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.notlar li{font-size:12.5px;color:var(--m2);line-height:1.6;padding-left:18px;position:relative}
+.notlar li::before{content:'🌿';position:absolute;left:0;font-size:10px;top:2px}
+.notlar b{color:var(--m1);font-weight:600}
+.notlar code{font-family:'JetBrains Mono';font-size:11px;background:var(--v1);padding:1.5px 6px;border-radius:6px;color:var(--vurgu)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<div class="band">
+  <span class="mono">FİDAN ÖNİZLEME · BAHÇEM · V1</span>
+  <button class="tema-dugme" id="temaDugme">☾ Gece Ormanı'na geç</button>
+</div>
+
+<div class="leke a"></div>
+
+<nav class="ustbar">
+  <span class="logo">Learn<span>Up</span></span>
+  <div class="sekmeler">
+    <a href="#">Bugün</a><a href="#">Analizler</a><a href="#">Çalışma Planı</a>
+    <a href="#">Koç</a><a href="#" class="aktif">Bahçem</a><a href="#">Profilim</a>
+  </div>
+</nav>
+
+<main class="sahne-dis">
+
+  <div class="baslik-satiri g1">
+    <h1>Bahçem</h1>
+    <span class="cip coin">🪙 240 coin</span>
+    <span class="cip">🌳 Koleksiyon 6/12 tür</span>
+    <div class="sag"><span class="mono" style="align-self:center">SORU ÇÖZ → COIN KAZAN → BAHÇENİ BÜYÜT</span></div>
+  </div>
+
+  <div class="izgara">
+
+    <!-- ═══ 3D SAHNE (temsilî 2D çizim) ═══ -->
+    <section class="kart sahne-karti g2">
+      <div class="mod-seridi"><span class="nokta"></span> Yerleştirme modu — zemine tıkla · ESC iptal</div>
+      <svg viewBox="0 0 640 430" aria-hidden="true">
+        <defs>
+          <linearGradient id="gokyuzu" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="var(--zemin1)"/><stop offset="1" stop-color="var(--cim1)"/>
+          </linearGradient>
+        </defs>
+        <rect width="640" height="430" fill="url(#gokyuzu)"/>
+        <circle cx="540" cy="64" r="30" fill="#F4D796" opacity=".8"/>
+        <!-- çim zemin (izometrik his) -->
+        <ellipse cx="320" cy="300" rx="300" ry="130" fill="var(--cim1)"/>
+        <ellipse cx="320" cy="308" rx="252" ry="104" fill="var(--cim2)"/>
+        <!-- ızgara ipucu (yerleştirme modu) -->
+        <g stroke="var(--zemin1)" stroke-width="1" opacity=".35">
+          <path d="M140,300 L500,300 M170,268 L470,268 M170,332 L470,332"/>
+          <path d="M240,240 L240,364 M320,232 L320,372 M400,240 L400,364"/>
+        </g>
+        <!-- hedef hücre vurgusu -->
+        <ellipse cx="400" cy="300" rx="34" ry="15" fill="var(--yaprak)" opacity=".35">
+          <animate attributeName="opacity" values=".2;.5;.2" dur="1.6s" repeatCount="indefinite"/>
+        </ellipse>
+        <!-- taş yol -->
+        <g fill="var(--tas)">
+          <ellipse cx="230" cy="352" rx="17" ry="8"/><ellipse cx="268" cy="338" rx="15" ry="7"/>
+          <ellipse cx="302" cy="326" rx="16" ry="7"/><ellipse cx="336" cy="315" rx="14" ry="6"/>
+        </g>
+        <!-- gölet -->
+        <ellipse cx="472" cy="345" rx="58" ry="22" fill="var(--su)"/>
+        <ellipse cx="472" cy="345" rx="38" ry="13" fill="#FFFFFF" opacity=".14"/>
+        <!-- büyük meşe -->
+        <g transform="translate(180,222)">
+          <rect x="-6" y="26" width="12" height="30" rx="5" fill="#8A6B4F"/>
+          <circle cx="0" cy="6" r="34" fill="var(--yaprak)"/>
+          <circle cx="-22" cy="16" r="22" fill="var(--adacayi)"/>
+          <circle cx="20" cy="18" r="20" fill="var(--adacayi)"/>
+        </g>
+        <!-- çam -->
+        <g transform="translate(300,208)">
+          <path d="M0,-34 L26,14 L-26,14 Z" fill="var(--vurgu)"/>
+          <path d="M0,-10 L32,44 L-32,44 Z" fill="var(--yaprak)" opacity=".9"/>
+          <rect x="-5" y="44" width="10" height="18" rx="4" fill="#8A6B4F"/>
+        </g>
+        <!-- yeni dikilen fidan (seçili) -->
+        <g transform="translate(400,282)">
+          <rect x="-2.5" y="0" width="5" height="18" rx="2.5" fill="#5F8F6E"/>
+          <path d="M0,4 C-12,-2 -15,-14 -4,-17 C0,-9 0,-3 0,4 Z" fill="var(--yaprak)"/>
+          <path d="M0,7 C12,1 16,-9 6,-13 C1,-5 0,1 0,7 Z" fill="var(--adacayi)"/>
+          <ellipse cx="0" cy="20" rx="20" ry="8" fill="none" stroke="var(--yaprak)" stroke-width="2" stroke-dasharray="5 4"/>
+        </g>
+        <!-- çalı + kuş yuvası -->
+        <ellipse cx="520" cy="290" rx="26" ry="16" fill="var(--adacayi)"/>
+        <g transform="translate(560,238)" font-size="17"><text>🐦</text></g>
+      </svg>
+
+      <!-- seçili bitki paneli -->
+      <div class="bitki-paneli">
+        <h3>🌱 Genç Meşe <span class="nadir n-nadir">nadir</span></h3>
+        <div class="satir">
+          <button class="btn btn-soluk">↔ Taşı</button>
+          <button class="btn btn-soluk">Sök</button>
+        </div>
+        <p style="font-size:10.5px;color:var(--m3);margin-top:9px">Sök = onay diyaloğu (yıkıcı eylem)</p>
+      </div>
+    </section>
+
+    <!-- ═══ MARKET ═══ -->
+    <section class="kart market g3">
+      <h2>Market</h2>
+      <div class="urun secili">
+        <div class="gorsel">🌸</div>
+        <div class="orta"><h4>Kiraz Fidanı</h4>
+          <div class="alt"><span class="nadir n-nadir">nadir</span><span class="fiyat">🪙 120</span></div></div>
+        <button class="btn btn-birincil">Satın al</button>
+      </div>
+      <div class="urun">
+        <div class="gorsel">🌳</div>
+        <div class="orta"><h4>Meşe Fidanı</h4>
+          <div class="alt"><span class="nadir n-yaygin">yaygın</span><span class="fiyat">🪙 60</span></div></div>
+        <button class="btn btn-soluk">Seç</button>
+      </div>
+      <div class="urun">
+        <div class="gorsel">⛲</div>
+        <div class="orta"><h4>Taş Çeşme</h4>
+          <div class="alt"><span class="nadir n-efsanevi">efsanevi</span><span class="fiyat">🪙 400</span></div></div>
+        <button class="btn btn-soluk" disabled>yetersiz coin</button>
+      </div>
+      <div class="urun">
+        <div class="gorsel">🪨</div>
+        <div class="orta"><h4>Taş Yol</h4>
+          <div class="alt"><span class="nadir n-yaygin">yaygın</span><span class="sahip">✓ sahipsin</span></div></div>
+        <button class="btn btn-soluk">Dik</button>
+      </div>
+      <div class="urun">
+        <div class="gorsel">🎋</div>
+        <div class="orta"><h4>Bambu Korusu</h4>
+          <div class="alt"><span class="nadir n-nadir">nadir</span><span class="fiyat">🪙 180</span></div></div>
+        <button class="btn btn-soluk">Seç</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- ═══ ENVANTER ═══ -->
+  <section class="kart envanter g4">
+    <div class="envanter-baslik">
+      <h2>Envanter</h2>
+      <span class="mono">MOBİLDE ALT ÇEKMECE (KAYDIRARAK)</span>
+    </div>
+    <div class="env-izgara">
+      <div class="env-kutu"><div class="gorsel">🌳</div><div class="ad">Meşe Tohumu</div><div class="adet">×2</div><button class="btn btn-soluk">Dik</button></div>
+      <div class="env-kutu"><div class="gorsel">🪨</div><div class="ad">Taş Yol</div><div class="adet">×3</div><button class="btn btn-soluk">Dik</button></div>
+      <div class="env-kutu"><div class="gorsel">🌷</div><div class="ad">Lale Tohumu</div><div class="adet">×1</div><button class="btn btn-soluk">Dik</button></div>
+      <div class="env-kutu"><div class="gorsel">🪵</div><div class="ad">Ahşap Bank</div><div class="adet">×1</div><button class="btn btn-soluk">Dik</button></div>
+    </div>
+  </section>
+
+  <!-- ═══ VARYANTLAR ═══ -->
+  <div class="varyantlar">
+    <section class="kart varyant g5">
+      <span class="mono">VARYANT · BOŞ BAHÇE (YENİ KULLANICI)</span>
+      <div class="bos-orta">
+        <span class="buyuk">🌱</span>
+        <h3>Bahçen seni bekliyor</h3>
+        <p>Soru çözdükçe coin kazanırsın; ilk fidanını marketten alıp buraya dikersin.
+        Koyu buton bu durumda markete götürür: "Markete göz at".</p>
+      </div>
+    </section>
+    <section class="kart varyant g5">
+      <span class="mono">VARYANT · WEBGL YOK</span>
+      <h3>2D ızgara yedeği</h3>
+      <p>Cihaz WebGL desteklemiyorsa 3D sahne yerine aynı işlevli düz 2D ızgara açılır
+      (mevcut yedek davranış korunur) — dik/taşı/sök akışı birebir aynı, yalnız sahne düz.
+      Kullanıcıya kelimeli küçük not gösterilir: "Basit görünüm — işlevler aynı".</p>
+    </section>
+  </div>
+
+  <!-- ═══ TASARIM NOTLARI ═══ -->
+  <section class="notlar">
+    <h3>Tasarım notları — veri kaynakları ve kurallar (mock yasak)</h3>
+    <ul>
+      <li><b>Tek istek</b> <code>GET /garden</code>: bitkiler + envanter + katalog + coin (mevcut wiring).
+          Buradaki coin/adet/ürünler TEMSİLÎ; gerçek ekranda katalog ve fiyat SUNUCUDAN gelir
+          (fiyat/kilit otoritesi sunucuda — arayüz fiyat hesaplamaz).</li>
+      <li><b>3D sahne korunur:</b> mevcut three.js sahnesi (lazy chunk) kalır — bu önizlemedeki çizim
+          yalnız çevre arayüzü göstermek için 2D temsildir. Sahne malzeme renkleri v1.2 paletine
+          uyumlanır (uygulama kartında).</li>
+      <li><b>Akış mevcut davranış:</b> envanterden "Dik" → yerleştirme modu (üstte nabızlı şerit +
+          zeminde hedef hücre vurgusu) → zemine tıkla → <code>/garden/plant</code>; bitkiye tıkla →
+          panel (Taşı → <code>/move</code> · Sök → onay diyaloğu → <code>/remove</code>);
+          satın alma <code>/purchase</code> atomik.</li>
+      <li><b>Nadirlik rozetleri kelimeli</b> (yaygın/nadir/efsanevi — asla yalnız renk); "yetersiz coin"
+          devre dışı durumu da kelimeli.</li>
+      <li><b>Tek birincil eylem:</b> seçili market ürünündeki "Satın al"; boş-bahçe durumunda "Markete
+          göz at". Diğer her şey soluk.</li>
+      <li><b>İçerik adları serbest bölge</b> (EKRAN-HARITASI §8): bitki/eşya adları (Kiraz Fidanı, Taş
+          Çeşme…) metafor taşıyabilir — ürün içeriğidir; başarı/rozet adları DÜZ kalır (GOREV-004 kuralı).</li>
+      <li><b>Ambiyans:</b> süzülen yaprak katmanı bu ekranda YOK — sahnenin kendisi zaten doğa;
+          çakışan hareket eklenmez. Hedef hücre nabzı + mod şeridi noktası motion-safe.</li>
+      <li><b>Mobil:</b> market sağ panelden alta iner; envanter mevcut vaul alt çekmecesiyle.</li>
+      <li><b>GELECEK (yer ayrılmadı):</b> odak seansına bahçe ödülü (ödül ucu ister).</li>
+    </ul>
+  </section>
+
+</main>
+
+<script>
+const dugme = document.getElementById('temaDugme');
+dugme.addEventListener('click', () => {
+  const gece = document.documentElement.classList.toggle('gece');
+  dugme.textContent = gece ? '☀ Gün Işığı'na dön' : '☾ Gece Ormanı'na geç';
+});
+</script>
+</body>
+</html>

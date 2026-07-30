@@ -7,6 +7,7 @@ import { runCompact } from './katip.js'
 import { runPlanTask } from './pusula.js'
 import { runDiagnose, runClosureCheck } from './atlas.js'
 import { runAffect, runNudge } from './nabiz.js'
+import { evalKosVeYaz } from '../lib/eval-olc.js'
 import type { AgentTask } from './bus.js'
 
 /**
@@ -32,6 +33,10 @@ export async function handleTask(task: AgentTask): Promise<unknown> {
       return runNudge(task)
     case 'compact':
       return runCompact(task)
+    case 'eval':
+      // Yönetim tetikli yapısal ölçüm (0025). LLM çağırmaz ama binlerce soruyu tarar
+      // (NN benzerliği O(n²)) — bu yüzden HTTP'de değil, worker'da koşar.
+      return evalKosVeYaz('panel', task.userId)
     default:
       return { error: `bilinmeyen görev türü: ${String(task.kind)}` }
   }

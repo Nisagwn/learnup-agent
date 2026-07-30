@@ -24,6 +24,8 @@ import { HttpHatasi } from './hata.js'
 
 const SIK_SIRASI = ['A', 'B', 'C', 'D', 'E'] as const
 
+/** 'osym' tipte KALIR ama artık yalnız AÇIK HATA için ayırt edilir (telif kararı 2026-07-22):
+ *  istemci gönderirse havuzdanSec 400 `cikmis_kaynak_kapali` fırlatır. 'karisik' fiilen 'ai'. */
 export type HavuzKaynak = 'osym' | 'ai' | 'karisik'
 
 export type HavuzSatiri = {
@@ -122,27 +124,28 @@ async function ogrenciyeGidenler(studentId: string): Promise<Set<string>> {
   return new Set((data ?? []).map((r) => String((r as { kaynak_soru_id: unknown }).kaynak_soru_id)))
 }
 
-/** Tek tabloda, rastgele pencereyle örnekleme. */
+/** AI havuzunda (yks_ai_questions) rastgele pencereyle örnekleme.
+ *  TELİF KARARI (2026-07-22): yks_questions (çıkmış) derleme yüzeyinden TAMAMEN çıkarıldı —
+ *  parametreyle bile seçilemez; kapı havuzdanSec'te, tablo adı burada sabit. */
 async function tablodanOrnekle(
-  tablo: 'yks_questions' | 'yks_ai_questions',
   f: SecimFiltresi,
   kazanimIds: number[] | null,
   adet: number,
 ): Promise<HavuzSatiri[]> {
   if (adet <= 0) return []
-  const kaynak: 'osym' | 'ai' = tablo === 'yks_questions' ? 'osym' : 'ai'
 
   const kur = (sayimIcin: boolean) => {
     let q = sayimIcin
-      ? supabase.from(tablo).select('id', { count: 'exact', head: true })
-      : supabase.from(tablo).select(SUTUNLAR)
-    q = q.eq('verified', true)
-    if (tablo === 'yks_questions') q = q.eq('source_type', 'osym_cikmis')
+      ? supabase.from('yks_ai_questions').select('id', { count: 'exact', head: true })
+      : supabase.from('yks_ai_questions').select(SUTUNLAR)
+    // ⚠️ İKİ FİLTRE BİRLİKTE (0025): `verified` doğrulama hattının kararı, `karantina`
+    // yöneticinin. Biri olmadan diğeri havuzu yalan gösterir — karantinaya alınmış bozuk
+    // soru ödeve girerse karantina hiçbir şey ifade etmemiş olur.
+    q = q.eq('verified', true).eq('karantina', false)
     if (f.subject) q = q.eq('subject', f.subject)
     if (f.topic) q = q.eq('topic', f.topic)
     if (kazanimIds?.length) q = q.in('kazanim_id', kazanimIds)
-    // Zorluk yalnız AI havuzunda anlamlı: ÖSYM sorularında difficulty çoğunlukla NULL.
-    if (f.difficulty && tablo === 'yks_ai_questions') q = q.eq('difficulty', f.difficulty)
+    if (f.difficulty) q = q.eq('difficulty', f.difficulty)
     return q
   }
 
@@ -162,7 +165,7 @@ async function tablodanOrnekle(
   if (error) throw new HttpHatasi(500, 'havuz_okunamadi', 'Soru havuzu okunamadı.')
 
   return karistir((data ?? []) as Array<Record<string, unknown>>).map(
-    (r) => ({ ...r, kaynak }) as unknown as HavuzSatiri,
+    (r) => ({ ...r, kaynak: 'ai' }) as unknown as HavuzSatiri,
   )
 }
 
@@ -176,6 +179,17 @@ async function tablodanOrnekle(
  *  - `studentId` verilirse daha önce o öğrenciye gitmiş sorular elenir.
  */
 export async function havuzdanSec(f: SecimFiltresi): Promise<HavuzSatiri[]> {
+  // TELİF KARARI (2026-07-22): çıkmış ÖSYM sorusu ödeve DERLENMEZ — ödev de servis yüzeyidir
+  // (öğrenci ödevi açınca soruyu görür). Açık 'osym' isteği açık hatayla döner; sessizce AI'ya
+  // düşmek öğretmene "ÖSYM verdim" yalanı söyletirdi. 'karisik' ise açık çıkmış talebi değildir
+  // → aşağıda fiilen yalnız AI havuzundan örneklenir.
+  if (f.kaynak === 'osym') {
+    throw new HttpHatasi(
+      400,
+      'cikmis_kaynak_kapali',
+      'Çıkmış ÖSYM soruları telif kararı gereği ödevlere eklenemez. Kaynak olarak AI havuzunu seçin.',
+    )
+  }
   // Elle seçim: filtre mantığı devre dışı, öğretmenin seçtikleri aynen getirilir.
   if (f.secilenIds?.length) return secilenleriGetir(f.secilenIds)
 
@@ -212,44 +226,43 @@ export async function havuzdanSec(f: SecimFiltresi): Promise<HavuzSatiri[]> {
   }
 
   for (const g of gruplar) {
-    let kalan = g.adet
-    if (f.kaynak !== 'ai' && kalan > 0) {
-      kalan -= ekle(await tablodanOrnekle('yks_questions', f, g.ids, kalan), kalan)
-    }
-    if (f.kaynak !== 'osym' && kalan > 0) {
-      kalan -= ekle(await tablodanOrnekle('yks_ai_questions', f, g.ids, kalan), kalan)
-    }
+    if (g.adet > 0) ekle(await tablodanOrnekle(f, g.ids, g.adet), g.adet)
   }
 
   // Bazı kazanımlar kotasını dolduramadıysa açığı kalanlardan tamamla —
   // "5 istendi, 3 geldi" demek yerine havuzda varsa 5'e tamamla.
   if (secilen.length < f.adet && kazanimlar && kazanimlar.length > 1) {
-    const acik = f.adet - secilen.length
-    if (f.kaynak !== 'ai') {
-      ekle(await tablodanOrnekle('yks_questions', f, kazanimlar, acik), f.adet - secilen.length)
-    }
-    if (f.kaynak !== 'osym' && secilen.length < f.adet) {
-      ekle(await tablodanOrnekle('yks_ai_questions', f, kazanimlar, f.adet - secilen.length), f.adet - secilen.length)
-    }
+    ekle(await tablodanOrnekle(f, kazanimlar, f.adet - secilen.length), f.adet - secilen.length)
   }
 
   return secilen.slice(0, f.adet)
 }
 
-/** Öğretmenin elle seçtiği havuz id'lerini iki tablodan toplar. */
+/** Öğretmenin elle seçtiği havuz id'lerini getirir — TELİF gereği YALNIZ AI havuzundan. */
 async function secilenleriGetir(ids: string[]): Promise<HavuzSatiri[]> {
-  const [osym, ai] = await Promise.all([
-    supabase.from('yks_questions').select(SUTUNLAR).in('id', ids).eq('verified', true),
-    supabase.from('yks_ai_questions').select(SUTUNLAR).in('id', ids).eq('verified', true),
-  ])
-  const out: HavuzSatiri[] = [
-    ...((osym.data ?? []) as Array<Record<string, unknown>>).map(
-      (r) => ({ ...r, kaynak: 'osym' }) as unknown as HavuzSatiri,
-    ),
-    ...((ai.data ?? []) as Array<Record<string, unknown>>).map(
-      (r) => ({ ...r, kaynak: 'ai' }) as unknown as HavuzSatiri,
-    ),
-  ]
+  // Eski listelerden/istemciden kalan bir id çıkmış havuzu işaret edebilir. Sessizce elemek
+  // "5 seçtim, 3 geldi" muamması bırakır → çıkmış id yakalanırsa AÇIK Türkçe hata.
+  // (Sayım sorgusu içerik döndürmez; hata da döndürmezse en kötü sonuç sessiz ELEME olur —
+  // çıkmış soru hiçbir koşulda ödeve giremez, çünkü aşağıda yalnız yks_ai_questions okunur.)
+  const { count: cikmisAdedi } = await supabase
+    .from('yks_questions')
+    .select('id', { count: 'exact', head: true })
+    .in('id', ids)
+  if ((cikmisAdedi ?? 0) > 0) {
+    throw new HttpHatasi(
+      400,
+      'cikmis_kaynak_kapali',
+      'Seçilen sorulardan bazıları çıkmış ÖSYM havuzuna ait; telif kararı gereği ödevlere eklenemez.',
+    )
+  }
+
+  // Elle seçim de kapılardan geçer: öğretmenin id'siyle istediği soru karantinadaysa sete girmez.
+  const { data } = await supabase
+    .from('yks_ai_questions').select(SUTUNLAR).in('id', ids)
+    .eq('verified', true).eq('karantina', false)
+  const out: HavuzSatiri[] = ((data ?? []) as Array<Record<string, unknown>>).map(
+    (r) => ({ ...r, kaynak: 'ai' }) as unknown as HavuzSatiri,
+  )
   // Öğretmenin seçim SIRASINI koru — listede gördüğü sırayla ödeve girsin.
   const sira = new Map(ids.map((id, i) => [id, i]))
   return out.sort((a, b) => (sira.get(a.id) ?? 0) - (sira.get(b.id) ?? 0))

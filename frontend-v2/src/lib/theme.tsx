@@ -3,7 +3,7 @@ import {
 } from 'react'
 import { makeTokens, type Theme, type Tokens } from '../ui'
 
-// Tema: KIYI (açık) varsayılan · OKYANUS (koyu) seçilebilir. Tercih localStorage'da.
+// Tema: Gün Işığı (açık) VARSAYILAN · Gece Ormanı (koyu) tercihe bağlı. Tercih localStorage'da.
 // Tailwind tarafı: <html>.dark sınıfı (@custom-variant dark) · legacy tarafı: makeTokens.
 const KEY = 'learnup.theme'
 
@@ -21,11 +21,9 @@ function initialTheme(): Theme {
     const saved = localStorage.getItem(KEY)
     if (saved === 'light' || saved === 'dark') return saved
   } catch { /* localStorage kapalı olabilir */ }
-  // Kayıtlı tercih yoksa işletim sistemi tercihi — index.html'deki FOUC scriptiyle
-  // AYNI kural (ikisi ayrışırsa açılışta tema bir kare yanlış basılır).
-  try {
-    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark'
-  } catch { /* matchMedia yoksa açık */ }
+  // Kayıtlı tercih yoksa VARSAYILAN AÇIK (Gün Işığı) — FİDAN: koyu tema tercihe bağlı ikincil.
+  // OS tercihi bilinçli YOK SAYILIR; index.html FOUC scriptiyle AYNI kural (ayrışırsa tema
+  // açılışta bir kare yanlış basılır).
   return 'light'
 }
 

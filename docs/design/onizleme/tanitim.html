@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FİDAN Önizleme — Tanıtım Sayfası</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+
+/* ═══ FİDAN v1.2 "Soft Doğa" — Gün Işığı (VARSAYILAN) ═══ */
+:root{
+  --zemin1:#F4F7F4; --zemin2:#E8EFE9;
+  --cam:rgba(255,255,255,.78); --cam-cizgi:rgba(46,79,58,.08);
+  --cam-koyu:rgba(255,255,255,.92);
+  --m1:#183121; --m2:#4A5D4E; --m3:#7C8F80;
+  --cta:#1E4620; --cta-metin:#F2F7F3; --vurgu:#2A5A3B;
+  --adacayi:#84A98C; --yaprak:#4FA56F; --toprak:#D4A373;
+  --v0:#EFF3EF; --v1:#DCE9DE; --v2:#BBD3C0; --v3:#9BBEA3; --v4:#6FA57F;
+  --golge:0 8px 28px rgba(24,49,33,.07);
+  --gunes-lekesi:radial-gradient(circle, rgba(244,215,150,.30) 0%, transparent 70%);
+  --tepe1:#DCE9DE; --tepe2:#C7DCCB; --agac:#7FA98A; --agac2:#5F8F6E; --gol:#CBE3E4;
+}
+html.gece{
+  --zemin1:#0C120E; --zemin2:#101A13;
+  --cam:rgba(16,26,19,.72); --cam-cizgi:rgba(148,180,155,.12);
+  --cam-koyu:rgba(20,32,24,.9);
+  --m1:#E5EFE7; --m2:#A7BCAC; --m3:#75887B;
+  --cta:#2E6B47; --cta-metin:#EAF4EC; --vurgu:#7FBF95;
+  --adacayi:#5E7D66; --yaprak:#4FA56F; --toprak:#B98F66;
+  --v0:#16211A; --v1:#1C2B21; --v2:#26402F; --v3:#33573F; --v4:#458257;
+  --golge:0 8px 28px rgba(0,0,0,.35);
+  --gunes-lekesi:radial-gradient(circle, rgba(163,190,140,.08) 0%, transparent 70%);
+  --tepe1:#16211A; --tepe2:#1C2B21; --agac:#2E4A38; --agac2:#3A5C46; --gol:#14252A;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--m1);
+  background:linear-gradient(160deg,var(--zemin1) 0%,var(--zemin2) 100%);
+  min-height:100vh;transition:background .4s,color .4s;overflow-x:hidden}
+h1,h2,h3{font-family:'Outfit',sans-serif}
+.mono{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--m3);font-weight:500}
+
+.band{position:sticky;top:0;z-index:60;display:flex;align-items:center;justify-content:space-between;
+  padding:9px 22px;background:var(--cam-koyu);backdrop-filter:blur(16px);border-bottom:1px solid var(--cam-cizgi)}
+.band .mono{color:var(--vurgu)}
+.tema-dugme{font-family:'Inter';font-size:12.5px;font-weight:600;color:var(--m2);background:var(--v0);
+  border:1px solid var(--cam-cizgi);border-radius:12px;padding:7px 14px;cursor:pointer;transition:.2s}
+.tema-dugme:hover{color:var(--m1);border-color:var(--adacayi)}
+
+/* ── site nav ── */
+.nav{position:sticky;top:44px;z-index:50;background:var(--cam);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--cam-cizgi)}
+.nav-ic{max-width:1160px;margin:0 auto;display:flex;align-items:center;gap:26px;padding:13px 28px}
+.logo{font-family:'Outfit';font-weight:800;font-size:19px;display:flex;align-items:center;gap:7px}
+.logo span{color:var(--yaprak)}
+.logo .filiz{font-size:16px}
+.nav-linkler{display:flex;gap:2px;font-size:13px;font-weight:500;color:var(--m2);margin-left:8px}
+.nav-linkler a{padding:7px 12px;border-radius:12px;text-decoration:none;color:inherit;transition:.2s}
+.nav-linkler a:hover{color:var(--vurgu);background:var(--v1)}
+.nav-sag{margin-left:auto;display:flex;gap:9px;align-items:center}
+.btn{font-family:'Inter';font-weight:600;font-size:13.5px;border-radius:12px;cursor:pointer;transition:.2s;border:none;text-decoration:none;display:inline-block}
+.btn-birincil{background:var(--cta);color:var(--cta-metin);padding:11px 22px;box-shadow:0 6px 16px rgba(30,70,32,.25)}
+.btn-birincil:hover{filter:brightness(1.12);transform:translateY(-1px)}
+.btn-buyuk{padding:14px 30px;font-size:15px;border-radius:14px}
+.btn-soluk{background:transparent;color:var(--m2);padding:10px 16px;border:1px solid var(--cam-cizgi)}
+.btn-soluk:hover{color:var(--m1);border-color:var(--adacayi)}
+.btn-acik{background:rgba(255,255,255,.92);color:#1E4620;padding:14px 30px;font-size:15px;border-radius:14px}
+.btn-acik:hover{transform:translateY(-1px)}
+@media(max-width:760px){.nav-linkler{display:none}}
+
+.leke{position:fixed;border-radius:50%;pointer-events:none;z-index:0}
+.leke.a{width:640px;height:640px;top:-160px;right:-120px;background:var(--gunes-lekesi)}
+.leke.b{width:480px;height:480px;top:60%;left:-140px;background:var(--gunes-lekesi)}
+.yaprak-uc{position:fixed;top:-40px;font-size:16px;opacity:.5;pointer-events:none;z-index:1;animation:suzul 17s linear infinite}
+.yaprak-uc.y1{left:18%}.yaprak-uc.y2{left:57%;animation-delay:6s}.yaprak-uc.y3{left:86%;animation-delay:11s;font-size:13px}
+@keyframes suzul{0%{transform:translateY(-5vh) rotate(0) translateX(0)}50%{transform:translateY(50vh) rotate(160deg) translateX(40px)}100%{transform:translateY(108vh) rotate(320deg) translateX(-20px)}}
+@media(max-width:900px){.yaprak-uc{display:none}}
+
+.govde{max-width:1160px;margin:0 auto;padding:0 28px;position:relative;z-index:2}
+
+/* ═══ HERO ═══ */
+.hero{display:grid;grid-template-columns:1.05fr 1fr;gap:44px;align-items:center;padding:64px 0 40px}
+@media(max-width:900px){.hero{grid-template-columns:1fr;padding-top:40px}}
+.hero h1{font-size:clamp(32px,4.6vw,52px);font-weight:900;line-height:1.12;letter-spacing:-.02em}
+.hero h1 em{font-style:normal;color:var(--vurgu);position:relative}
+.hero h1 em::after{content:'';position:absolute;left:0;right:0;bottom:4px;height:10px;background:var(--v2);z-index:-1;border-radius:5px}
+.hero p.alt{font-size:16px;color:var(--m2);line-height:1.65;margin-top:18px;max-width:520px}
+.hero-cta{display:flex;gap:12px;margin-top:28px;flex-wrap:wrap;align-items:center}
+.hero-notlar{display:flex;gap:18px;margin-top:22px;flex-wrap:wrap}
+.hero-not{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--m2);font-weight:500}
+.hero-not b{color:var(--yaprak);font-size:14px}
+
+/* hero sahnesi */
+.sahne-kap{position:relative;animation:belir 1s .2s both}
+@keyframes belir{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+.sahne{width:100%;border-radius:24px;display:block;box-shadow:var(--golge)}
+.vinyet{position:absolute;background:var(--cam-koyu);backdrop-filter:blur(16px);border:1px solid var(--cam-cizgi);
+  border-radius:16px;box-shadow:var(--golge);padding:12px 15px;animation:yuz 6s ease-in-out infinite}
+.vinyet.v-a{top:8%;right:-14px;width:172px;animation-delay:0s}
+.vinyet.v-b{bottom:10%;left:-18px;width:190px;animation-delay:1.6s}
+@keyframes yuz{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@media(max-width:900px){.vinyet.v-a{right:4px}.vinyet.v-b{left:4px}}
+.vinyet .mono{display:block;margin-bottom:7px;font-size:9px}
+.v-halka{display:flex;align-items:center;gap:10px}
+.v-halka .halka{width:44px;height:44px;border-radius:50%;flex:none;position:relative;
+  background:conic-gradient(var(--yaprak) 70%, var(--v1) 0)}
+.v-halka .halka::before{content:'';position:absolute;inset:5px;border-radius:50%;background:var(--cam-koyu)}
+.v-halka .halka span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:'Outfit';font-weight:700;font-size:10.5px;color:var(--vurgu)}
+.v-halka .metin{font-size:11px;color:var(--m2);line-height:1.4}
+.v-isi{display:flex;gap:4px;margin-top:2px}
+.v-isi i{width:20px;height:20px;border-radius:6px}
+.i1{background:var(--v1)}.i2{background:var(--v2)}.i3{background:var(--v3)}.i4{background:var(--v4)}
+.v-isi+.metin{font-size:11px;color:var(--m2);margin-top:7px;line-height:1.4}
+
+/* ═══ BÖLÜM ORTAK ═══ */
+.bolum{padding:56px 0}
+.bolum-baslik{text-align:center;max-width:620px;margin:0 auto 36px}
+.bolum-baslik .mono{color:var(--vurgu)}
+.bolum-baslik h2{font-size:clamp(24px,3vw,32px);font-weight:800;margin-top:10px}
+.bolum-baslik p{font-size:14px;color:var(--m2);margin-top:10px;line-height:1.6}
+
+/* özellikler */
+.ozellikler{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:900px){.ozellikler{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.ozellikler{grid-template-columns:1fr}}
+.ozellik{background:var(--cam);backdrop-filter:blur(16px);border:1px solid var(--cam-cizgi);
+  border-radius:20px;padding:24px;box-shadow:var(--golge);transition:transform .25s}
+.ozellik:hover{transform:translateY(-3px)}
+.ozellik .ikon{width:42px;height:42px;border-radius:13px;background:var(--v1);display:flex;
+  align-items:center;justify-content:center;font-size:20px;margin-bottom:14px}
+.ozellik h3{font-size:15.5px;margin-bottom:7px}
+.ozellik p{font-size:12.5px;color:var(--m2);line-height:1.6}
+
+/* nasıl çalışır — yol motifi */
+.adimlar{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;position:relative}
+@media(max-width:760px){.adimlar{grid-template-columns:1fr}}
+.adimlar::before{content:'';position:absolute;top:44px;left:12%;right:12%;height:2px;
+  background:repeating-linear-gradient(90deg,var(--adacayi) 0 8px,transparent 8px 16px);z-index:0}
+@media(max-width:760px){.adimlar::before{display:none}}
+.adim{text-align:center;position:relative;z-index:1;padding:0 14px}
+.adim .no{width:56px;height:56px;border-radius:50%;background:var(--cta);color:var(--cta-metin);
+  font-family:'Outfit';font-weight:800;font-size:20px;display:flex;align-items:center;justify-content:center;
+  margin:16px auto 16px;box-shadow:0 8px 20px rgba(30,70,32,.28);border:4px solid var(--zemin1)}
+.adim h3{font-size:16px;margin-bottom:7px}
+.adim p{font-size:12.5px;color:var(--m2);line-height:1.6}
+
+/* öğretmen bandı */
+.ogretmen{background:var(--cam);backdrop-filter:blur(16px);border:1px solid var(--cam-cizgi);
+  border-radius:24px;box-shadow:var(--golge);display:grid;grid-template-columns:1.1fr 1fr;gap:30px;
+  padding:38px 40px;align-items:center}
+@media(max-width:860px){.ogretmen{grid-template-columns:1fr}}
+.ogretmen h2{font-size:24px;font-weight:800}
+.ogretmen>div>p{font-size:13.5px;color:var(--m2);line-height:1.65;margin-top:12px}
+.o-liste{list-style:none;margin-top:18px;display:flex;flex-direction:column;gap:10px}
+.o-liste li{font-size:13px;color:var(--m1);display:flex;gap:9px;align-items:flex-start;line-height:1.5}
+.o-liste li::before{content:'✓';color:var(--yaprak);font-weight:700;flex:none}
+.kod-karti{background:var(--v0);border:1.5px dashed var(--adacayi);border-radius:18px;padding:26px;text-align:center}
+.kod-karti .mono{display:block;margin-bottom:12px}
+.kod{font-family:'JetBrains Mono';font-weight:500;font-size:24px;letter-spacing:.28em;color:var(--vurgu);
+  background:var(--cam-koyu);border:1px solid var(--cam-cizgi);border-radius:12px;padding:12px 18px;display:inline-block}
+.kod-karti p{font-size:12px;color:var(--m2);margin-top:12px;line-height:1.55}
+
+/* kapanış CTA */
+.kapanis{background:linear-gradient(150deg,#1E4620 0%,#2A5A3B 100%);border-radius:28px;
+  padding:52px 40px;text-align:center;position:relative;overflow:hidden;margin:56px 0}
+.kapanis::before{content:'🌿';position:absolute;font-size:120px;opacity:.08;left:6%;top:-10px;transform:rotate(-15deg)}
+.kapanis::after{content:'🍃';position:absolute;font-size:100px;opacity:.08;right:7%;bottom:-14px;transform:rotate(20deg)}
+.kapanis h2{color:#F2F7F3;font-size:clamp(24px,3.2vw,34px);font-weight:800}
+.kapanis p{color:rgba(242,247,243,.75);font-size:14.5px;margin:12px auto 26px;max-width:440px;line-height:1.6}
+
+/* footer */
+.footer{border-top:1px solid var(--cam-cizgi);padding:26px 0 40px;display:flex;align-items:center;
+  justify-content:space-between;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--m3)}
+.footer a{color:var(--m2);text-decoration:none;margin-left:16px}
+.footer a:hover{color:var(--vurgu)}
+
+/* notlar */
+.notlar{margin:20px 0 60px;padding:26px 30px;background:var(--v0);border:1px solid var(--cam-cizgi);border-radius:20px}
+.notlar h3{font-size:14px;margin-bottom:14px;color:var(--m2)}
+.notlar ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.notlar li{font-size:12.5px;color:var(--m2);line-height:1.6;padding-left:18px;position:relative}
+.notlar li::before{content:'🌿';position:absolute;left:0;font-size:10px;top:2px}
+.notlar b{color:var(--m1);font-weight:600}
+
+.gorunum{animation:giris .6s cubic-bezier(.2,.7,.3,1) both}
+@keyframes giris{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<div class="band">
+  <span class="mono">FİDAN ÖNİZLEME · TANITIM SAYFASI · V1</span>
+  <button class="tema-dugme" id="temaDugme">☾ Gece Ormanı'na geç</button>
+</div>
+
+<nav class="nav">
+  <div class="nav-ic">
+    <span class="logo"><span class="filiz">🌱</span>Learn<span>Up</span></span>
+    <div class="nav-linkler">
+      <a href="#ozellikler">Özellikler</a>
+      <a href="#nasil">Nasıl çalışır</a>
+      <a href="#ogretmen">Öğretmenler için</a>
+    </div>
+    <div class="nav-sag">
+      <a class="btn btn-soluk" href="#">Giriş yap</a>
+      <a class="btn btn-birincil" href="#">Ücretsiz başla</a>
+    </div>
+  </div>
+</nav>
+
+<div class="leke a"></div><div class="leke b"></div>
+<span class="yaprak-uc y1">🍃</span><span class="yaprak-uc y2">🍃</span><span class="yaprak-uc y3">🍂</span>
+
+<main class="govde">
+
+  <!-- ═══ HERO ═══ -->
+  <section class="hero">
+    <div class="gorunum">
+      <h1>ÖSYM formatına <em>en yakın</em> sorular.</h1>
+      <p class="alt">LearnUp'ın soru motoru gerçek sınav dilinin analiziyle beslenir: şık düzeni,
+      çeldirici mantığı ve zorluk dengesi ÖSYM standardında kurulur; her soru yayına çıkmadan
+      çift kontrolden geçer. Ve hepsi senin zayıf konularına göre önüne gelir.</p>
+      <div class="hero-cta">
+        <a class="btn btn-birincil btn-buyuk" href="#">Ücretsiz başla</a>
+        <a class="btn btn-soluk" href="#nasil">Nasıl çalışır?</a>
+      </div>
+      <div class="hero-notlar">
+        <span class="hero-not"><b>✓</b> ÖSYM standardında şık &amp; çeldirici düzeni</span>
+        <span class="hero-not"><b>✓</b> Çift kontrollü soru havuzu</span>
+        <span class="hero-not"><b>✓</b> Ücretsiz kayıt</span>
+      </div>
+    </div>
+
+    <div class="sahne-kap">
+      <!-- katmanlı orman + göl sahnesi -->
+      <svg class="sahne" viewBox="0 0 520 360" aria-hidden="true">
+        <defs>
+          <linearGradient id="gok" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="var(--zemin1)"/><stop offset="1" stop-color="var(--tepe1)"/>
+          </linearGradient>
+        </defs>
+        <rect width="520" height="360" rx="24" fill="url(#gok)"/>
+        <circle cx="418" cy="72" r="34" fill="#F4D796" opacity=".85"/>
+        <circle cx="418" cy="72" r="52" fill="#F4D796" opacity=".22"/>
+        <path d="M0,208 Q130,150 260,196 T520,186 V360 H0 Z" fill="var(--tepe1)"/>
+        <path d="M0,252 Q150,204 300,240 T520,232 V360 H0 Z" fill="var(--tepe2)"/>
+        <!-- ağaçlar -->
+        <g fill="var(--agac)">
+          <path d="M84,232 L104,190 L124,232 Z"/><rect x="101" y="232" width="6" height="14" fill="#8A6B4F"/>
+          <path d="M150,224 L166,192 L182,224 Z"/><rect x="163" y="224" width="5" height="11" fill="#8A6B4F"/>
+        </g>
+        <g fill="var(--agac2)">
+          <path d="M372,238 L394,192 L416,238 Z"/><rect x="390" y="238" width="7" height="15" fill="#8A6B4F"/>
+          <path d="M440,246 L456,214 L472,246 Z"/><rect x="453" y="246" width="5" height="11" fill="#8A6B4F"/>
+        </g>
+        <!-- göl -->
+        <ellipse cx="262" cy="316" rx="180" ry="34" fill="var(--gol)"/>
+        <ellipse cx="262" cy="316" rx="120" ry="20" fill="#FFFFFF" opacity=".12"/>
+        <!-- filiz -->
+        <g transform="translate(250,268)">
+          <rect x="-3" y="0" width="6" height="26" rx="3" fill="#5F8F6E"/>
+          <path d="M0,6 C-16,-2 -20,-18 -6,-22 C0,-12 0,-4 0,6 Z" fill="var(--yaprak)"/>
+          <path d="M0,10 C16,2 22,-12 8,-18 C2,-8 0,0 0,10 Z" fill="var(--adacayi)"/>
+        </g>
+      </svg>
+
+      <!-- yüzen arayüz vinyetleri (temsilî) -->
+      <div class="vinyet v-a">
+        <span class="mono">GÜNLÜK HEDEF</span>
+        <div class="v-halka">
+          <div class="halka"><span>%70</span></div>
+          <div class="metin">21/30 soru<br>devam et 🌿</div>
+        </div>
+      </div>
+      <div class="vinyet v-b">
+        <span class="mono">USTALIK HARİTASI</span>
+        <div class="v-isi"><i class="i2"></i><i class="i4"></i><i class="i1"></i><i class="i3"></i><i class="i4"></i><i class="i2"></i></div>
+        <div class="v-isi"><i class="i3"></i><i class="i1"></i><i class="i4"></i><i class="i2"></i><i class="i3"></i><i class="i4"></i></div>
+        <div class="metin" style="margin-top:7px">Konu konu nerede olduğunu gör</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ ÖZELLİKLER ═══ -->
+  <section class="bolum" id="ozellikler">
+    <div class="bolum-baslik">
+      <span class="mono">NEDEN LEARNUP</span>
+      <h2>Sana göre kurulan bir hazırlık</h2>
+      <p>Hepsi bugün üründe olan özellikler — parlak vaat yok, çalışan sistem var.</p>
+    </div>
+    <div class="ozellikler">
+      <div class="ozellik"><div class="ikon">📝</div><h3>ÖSYM Formatında Sorular</h3>
+        <p>Şık düzeni, çeldirici mantığı ve soru dili gerçek sınav standardında kurulur; her soru kod kapıları + bağımsız denetçi modelden geçmeden havuza giremez.</p></div>
+      <div class="ozellik"><div class="ikon">🗺️</div><h3>Kişisel Çalışma Planı</h3>
+        <p>Her güne bir blok: zayıf kazanımın + tam vakti gelen tekrar + pekiştirme. Plan senin verinle kurulur, sen geliştikçe güncellenir.</p></div>
+      <div class="ozellik"><div class="ikon">📊</div><h3>Analizler</h3>
+        <p>Ustalık haritası, gelişim trendi, sık düştüğün tuzaklar ve hız karşılaştırması — neyi neden çalıştığını hep bilirsin.</p></div>
+      <div class="ozellik"><div class="ikon">🌿</div><h3>Koç</h3>
+        <p>Çalışma verini görebilen yapay zekâ rehber: "bugün ne çalışayım" diye sor, soruyu anlamadıysan açıklat.</p></div>
+      <div class="ozellik"><div class="ikon">🔁</div><h3>Aralıklı Tekrar</h3>
+        <p>Öğrendiğin konu tam unutulmaya yüz tuttuğunda karşına gelir — bilimsel tekrar aralıklarıyla kalıcı öğrenme.</p></div>
+      <div class="ozellik"><div class="ikon">🌳</div><h3>Oyunlaştırma</h3>
+        <p>Çalıştıkça büyüyen seri fidanı, haftalık lig, rozetler ve kendi 3D bahçen — motivasyon skorla değil, kökle büyür.</p></div>
+    </div>
+  </section>
+
+  <!-- ═══ NASIL ÇALIŞIR ═══ -->
+  <section class="bolum" id="nasil">
+    <div class="bolum-baslik">
+      <span class="mono">NASIL ÇALIŞIR</span>
+      <h2>Üç adımda kök salarsın</h2>
+    </div>
+    <div class="adimlar">
+      <div class="adim"><div class="no">1</div><h3>Kaydol, tanış</h3>
+        <p>Ücretsiz hesabını aç; kısa tanışma sınavıyla motor seviyeni öğrenir. Öğretmenin verdiyse sınıf kodunla bağlan.</p></div>
+      <div class="adim"><div class="no">2</div><h3>Planın kurulsun</h3>
+        <p>Zayıf kazanımların, tekrar vadelerin ve hedefin birleşir — haftalık bloklar hazır. Gerekçesiyle birlikte.</p></div>
+      <div class="adim"><div class="no">3</div><h3>Çöz, izle, büyü</h3>
+        <p>Her çözdüğün soru haritanı netleştirir, serini ve fidanını büyütür. Analizler gelişimini gösterir.</p></div>
+    </div>
+  </section>
+
+  <!-- ═══ ÖĞRETMEN ═══ -->
+  <section class="bolum" id="ogretmen">
+    <div class="ogretmen">
+      <div>
+        <span class="mono" style="color:var(--vurgu)">ÖĞRETMENLER İÇİN</span>
+        <h2 style="margin-top:10px">Sınıfını tek panodan izle</h2>
+        <p>Öğrencilerin nerede zorlanıyor, kim sessizce geride kalıyor — tahmin etme, gör.</p>
+        <ul class="o-liste">
+          <li><b>Sınıf panosu:</b> aktivite, doğruluk ve risk işaretli öğrenci listesi</li>
+          <li><b>Kazanım ısı haritası:</b> sınıfın konu konu fotoğrafı</li>
+          <li><b>Öğrenci analizi:</b> kavram yanılgısı teşhisi dahil derin görünüm</li>
+          <li><b>Ödev atölyesi:</b> kazanım seç, havuzdan derle, sınıfa veya kişiye gönder</li>
+        </ul>
+      </div>
+      <div class="kod-karti">
+        <span class="mono">SINIF KODUYLA BAĞLAN</span>
+        <span class="kod">ABC-724</span>
+        <p>Öğrencilerin kayıt olurken kodunu girer — sınıfın kendiliğinden kurulur.
+        Kod temsilîdir; her öğretmene özel üretilir.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ KAPANIŞ CTA ═══ -->
+  <section class="kapanis">
+    <h2>Fidanını bugün dik.</h2>
+    <p>YKS yolculuğu uzun — ama her gün bir blok, her blok bir kök. Başlamak ücretsiz.</p>
+    <a class="btn btn-acik" href="#">Ücretsiz başla</a>
+  </section>
+
+  <footer class="footer">
+    <span>🌱 LearnUp © 2026</span>
+    <span>
+      <a href="#">KVKK &amp; Gizlilik</a><a href="#">Kullanım Koşulları</a><a href="#">İletişim</a>
+    </span>
+  </footer>
+
+  <!-- ═══ TASARIM NOTLARI ═══ -->
+  <section class="notlar">
+    <h3>Tasarım notları — kurallar (EKRAN-HARITASI §0)</h3>
+    <ul>
+      <li><b>Uydurma sosyal kanıt YOK:</b> sahte kullanıcı sayısı, sahte yorum/başarı hikâyesi, "N öğrenci
+          kullanıyor" istatistiği bilinçli olarak KONULMADI — gerçek veri oluştuğunda eklenebilir.</li>
+      <li><b>Telif uyumu:</b> çıkmış soru YAYINI/erişimi vaadi yok (2026-07-22 kararı). "ÖSYM formatına
+          en yakın" ifadesi <b>biçim</b> iddiasıdır (şık düzeni · çeldirici mantığı · soru dili) — resmî
+          bağ/onay iması taşımaz; üslup kaynağı gerçek sınav analizidir, içerik özgün ve çift kontrollüdür.</li>
+      <li><b>Vinyetler temsilîdir</b> (hedef halkası %70, ısı ızgarası, sınıf kodu ABC-724) — canlı veri
+          değil, illüstrasyon; uygulama ekranı iddiası taşımaz.</li>
+      <li><b>CTA tekrarı:</b> "Ücretsiz başla" nav + hero + kapanışta AYNI eylemdir — tek-birincil kuralının
+          ihlali değil (farklı koyu eylem yok). "Giriş yap" hep ikincil.</li>
+      <li><b>Rota önerisi</b> (uygulama kartında netleşir): kimliksiz kök <b>/</b> → bu sayfa; "Giriş yap"/"Ücretsiz
+          başla" → mevcut giriş ekranı (sekmeleriyle). Kimlikli kullanıcı köke gelirse doğrudan Bugün'e.</li>
+      <li><b>Hareket:</b> hero belirmesi + yüzen vinyetler + yapraklar; <b>hepsi</b>
+          <b>prefers-reduced-motion</b>'da durur; sayfa içi kaydırma da düzleşir.</li>
+      <li><b>Mobil:</b> hero tek kolon, nav linkleri gizlenir (buton çifti kalır), adımlar dikey.</li>
+      <li><b>Başlık kararı (kullanıcı 2026-07-22):</b> hero soruların reklamını yapar (ÖSYM formatı
+          vurgusu); "Her soru, fidanını büyütür." sloganı giriş ekranında ve kapanış bandında yaşamaya devam eder.</li>
+    </ul>
+  </section>
+
+</main>
+
+<script>
+const dugme = document.getElementById('temaDugme');
+dugme.addEventListener('click', () => {
+  const gece = document.documentElement.classList.toggle('gece');
+  dugme.textContent = gece ? '☀ Gün Işığı'na dön' : '☾ Gece Ormanı'na geç';
+});
+</script>
+</body>
+</html>

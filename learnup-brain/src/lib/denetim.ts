@@ -14,13 +14,34 @@ import { logger } from '../utils/logger.js'
  * YANITTA GÖSTERİR — yönetici izin tutulmadığını EKRANDA görür.
  */
 
-export type DenetimEylemi = 'ogretmen_onay' | 'rol_degis' | 'sinif_ata' | 'gorev_yeniden'
+/**
+ * KANONİK EYLEM LİSTESİ. DB'de CHECK yok (0020 kasıtlı bıraktı: yeni yetki eklemek
+ * migration beklemesin) — sözleşmeyi bu union tutar, 0025 yorumu onun aynasıdır.
+ */
+export type DenetimEylemi =
+  // ── 0020 ──
+  | 'ogretmen_onay' | 'rol_degis' | 'sinif_ata' | 'gorev_yeniden'
+  // ── 0025: hesap yaşam döngüsü ──
+  | 'hesap_olustur' | 'profil_duzelt' | 'sifre_sifirla'
+  | 'hesap_askiya' | 'hesap_geri_al' | 'basvuru_reddet'
+  // ── 0025: havuz moderasyonu ──
+  | 'soru_dogrulama' | 'soru_karantina' | 'soru_etiket' | 'uretim_tetik'
+  // ── 0025: ops ──
+  | 'esik_degis' | 'eval_tetik' | 'onbellek_dus' | 'gorev_iptal'
+  // ── 0025: vekil kapsam (yönetici, öğretmenin sınıfında ONUN ADINA) ──
+  | 'ogretmen_adina_odev' | 'ogretmen_adina_ogrenci'
+
+/**
+ * `ogretmen` = eylem o öğretmenin sınıfında onun adına yapıldı (vekil kapsam).
+ * `sistem`   = hedefi olmayan ops eylemi (önbellek, eval, eşik).
+ */
+export type DenetimHedefTuru = 'kullanici' | 'gorev' | 'ogretmen' | 'soru' | 'sistem'
 
 export type DenetimKaydi = {
   adminId: string
   eylem: DenetimEylemi
   hedefId?: string | null
-  hedefTur?: 'kullanici' | 'gorev' | null
+  hedefTur?: DenetimHedefTuru | null
   detay?: Record<string, unknown>
 }
 

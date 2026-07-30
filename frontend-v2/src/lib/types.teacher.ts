@@ -70,6 +70,35 @@ export interface IsiHaritasiYaniti {
   olcumZamani: string
 }
 
+/**
+ * GET /teacher/sinif/isi-haritasi/ogrenciler — bir hücrenin (ders × ünite) zayıf öğrenci
+ * KIRILIMI (drill-down; RPC 0023). Backend `IsiOgrenciKirilimiYaniti`'nın aynası.
+ *
+ * ⚠️ TUTARLILIK DEĞİŞMEZİ: `ogrenciler.length`, o hücrenin `weakStudentCount` değerine
+ * EŞİTTİR (aynı roster + aynı eşik). UI bu iki sayının eşit görünmesini bozmaz.
+ * Öğrenciler EN ZAYIF BAŞTA gelir — sunucu sıraladı, istemci YENİDEN SIRALAMAZ.
+ */
+export interface IsiOgrenciKirilimiSatiri {
+  studentId: string
+  /** roster kaynağıyla (profiles.name) AYNI; yoksa null — uydurma isim YOK. */
+  ad: string | null
+  /** ogrenci_ort — çürüme uygulanmış ünite ortalaması, 0..1 (4 ondalık). */
+  mastery: number
+  attempts: number
+  nodeCount: number
+}
+
+export interface IsiOgrenciKirilimiYaniti {
+  subject: string
+  unitPath: string
+  /** curriculum_nodes'tan çözülür; eşleşmezse null (uydurma başlık YOK). */
+  unitTitle: string | null
+  /** İstemci renk/eşik yorumunu buradan kurar — ısı haritasıyla TEK kaynak. */
+  esik: { zayif: number }
+  ogrenciler: IsiOgrenciKirilimiSatiri[]
+  olcumZamani: string
+}
+
 export interface SinifZayifKazanim {
   kazanimId: number
   code: string | null
@@ -110,6 +139,32 @@ export interface OgrenciDetayYaniti {
     submittedAt: string | null
   }>
   olcumZamani: string
+}
+
+/* ═══ GET /teacher/ogrenci/:id/loglar — ham cevap akışı (sayfalı) ═══
+   ⚠️ Yanıtta "doğru şık" alanı YOK — UI doğru şıkkı GÖSTEREMEZ (uydurma yasak);
+   yalnız seçilen şık + kelimeli sonuç (doğru/yanlış/boş) çizilir. */
+
+export interface OgrenciLogSatiri {
+  createdAt: string
+  subject: string | null
+  subTopic: string | null
+  kazanimId: number | null
+  /** null = değerlendirilmemiş (ör. boş geçilen soruda backend null bırakır). */
+  isCorrect: boolean | null
+  isSkipped: boolean
+  selectedOption: string | null
+  durationMs: number | null
+  difficulty: string | null
+  xp: number
+}
+
+export interface OgrenciLoglarYaniti {
+  logs: OgrenciLogSatiri[]
+  total: number
+  limit: number
+  offset: number
+  gunAraligi: number
 }
 
 export interface YanilgiAyrinti {

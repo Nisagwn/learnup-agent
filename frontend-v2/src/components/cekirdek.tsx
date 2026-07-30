@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import NumberFlow, { type Format } from '@number-flow/react'
 import * as RTooltip from '@radix-ui/react-tooltip'
-import { m } from 'framer-motion'
+import { m, useReducedMotion } from 'framer-motion'
 import { cn } from '../lib/cn'
 import { Icon, type IconName } from '../ui'
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   ÇEKİRDEK GÖRSEL BİLEŞENLER — Deep Ocean veri dili.
-   Dataviz sözleşmesi: magnitude = tek ton sky · metin asla seri rengi giymez ·
-   meter track'i aynı rampanın açık kademesi · bar ≤24px/4px yuvarlak uç.
+   ÇEKİRDEK GÖRSEL BİLEŞENLER — FİDAN veri dili (TASARIM-DILI v1.2).
+   Dataviz sözleşmesi: magnitude = TEK renk (adaçayı) 4 doygunluk tonu
+   `--v1..--v4` · ölçüm yok = `--v0` + kesik kenar (null ≠ 0) · metin asla seri
+   rengi giymez · ray/track = `--ic` çökük yüzey · dolum adaçayı→yaprak gradyanı.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /** tr-TR biçimli, dijit-kayması animasyonlu sayı (NumberFlow). */
@@ -131,8 +132,8 @@ export function Meter({ oran, yukseklik = 6, renk, className }: {
   const yuzde = Math.min(100, Math.max(0, oran * 100))
   return (
     <div
-      className={cn('overflow-hidden rounded-full bg-sky-500/12 dark:bg-sky-400/10', className)}
-      style={{ height: yukseklik }}
+      className={cn('overflow-hidden rounded-full', className)}
+      style={{ height: yukseklik, background: 'var(--ic)' }}
     >
       <m.div
         initial={{ width: 0 }}
@@ -140,7 +141,7 @@ export function Meter({ oran, yukseklik = 6, renk, className }: {
         viewport={{ once: true, amount: 0.6 }}
         transition={{ duration: 0.7, ease: [0.22, 0.61, 0.36, 1] }}
         className="h-full rounded-full"
-        style={{ background: renk ?? 'linear-gradient(90deg, var(--color-sky-600), var(--color-sky-400))' }}
+        style={{ background: renk ?? 'linear-gradient(90deg, var(--adacayi), var(--yaprak))' }}
       />
     </div>
   )
@@ -160,7 +161,7 @@ export function Halka({ oran, boyut = 64, kalinlik = 6, renk, children, classNam
       <svg width={boyut} height={boyut}>
         <circle
           cx={boyut / 2} cy={boyut / 2} r={r} fill="none" strokeWidth={kalinlik}
-          className="stroke-sky-500/15 dark:stroke-sky-400/12"
+          stroke="var(--ic)"
         />
         <m.circle
           cx={boyut / 2} cy={boyut / 2} r={r} fill="none" strokeWidth={kalinlik}
@@ -208,38 +209,45 @@ export function Sparkline({ veri, genislik = 96, yukseklik = 28 }: {
   )
 }
 
-/* ── Isı hücresi — sekansiyel sky, zengin tooltip'li ──────────────────────── */
+/* ── Isı hücresi — FİDAN 4-ton skala, zengin tooltip'li ───────────────────── */
 
-export function IsiHucre({ deger, boyut = 14, uyari, tip, gecikmeMs = 0, className, onClick, etiket }: {
+/** FİDAN ısı skalası: TEK renk (adaçayı) 4 doygunluk tonu. 0 = boş gün/veri
+    (`--v0` yüzeyine düşer); ölçülmüş düşük değerler `--v1`den başlar. */
+export const isiTonu = (deger: number): string => {
+  const d = Math.min(1, Math.max(0, deger))
+  if (d <= 0) return 'var(--v0)'
+  return d < 0.25 ? 'var(--v1)' : d < 0.5 ? 'var(--v2)' : d < 0.75 ? 'var(--v3)' : 'var(--v4)'
+}
+
+export function IsiHucre({ deger, boyut = 14, uyari, tip, gecikmeMs = 0, className, onClick, etiket, olcumYok }: {
   deger: number                    // 0–1 (ustalık / yoğunluk)
   boyut?: number
-  uyari?: boolean                  // amber halka (açık yanılgı vb.)
+  uyari?: boolean                  // uyarı kenarı (açık yanılgı vb.) — tooltip kelimesi eşlik eder
   tip?: ReactNode                  // tooltip içeriği (verilmezse tooltip yok)
-  gecikmeMs?: number               // stagger
+  gecikmeMs?: number               // stagger (dalga girişi)
   className?: string
   /** Verilirse hücre <button> olur (sınıf ısı matrisinde üniteye inmek için). */
   onClick?: () => void
   /** onClick varken ekran okuyucu adı — renk tek başına bilgi taşıyamaz. */
   etiket?: string
+  /** null ≠ 0: hiç ölçüm yok → `--v0` dolgu + KESİK kenar; hover büyümez. */
+  olcumYok?: boolean
 }) {
-  // %16 taban KASITLI: açık temada (--heat-zero #d6e4f0, sayfa #f3f7fc) sıfıra yakın
-  // değerler zeminde kaybolurdu. Her yeni ısı yüzeyi bu tabanı korumak zorunda.
-  const x = Math.round(16 + Math.min(1, Math.max(0, deger)) * 84)
+  const azalt = useReducedMotion()
   const ortak = {
     className: cn(
-      'inline-block rounded-[4px] border transition-transform duration-150 hover:scale-125',
-      uyari
-        ? 'border-amber-500/70 dark:border-amber-400/60'
-        : 'border-sky-900/10 dark:border-sky-500/10',
+      'inline-block rounded-[4px] border transition-transform duration-150',
+      !olcumYok && 'hover:scale-125',
       onClick && 'cursor-pointer',
       className,
     ),
     style: {
       width: boyut, height: boyut,
-      backgroundColor: `color-mix(in oklab, var(--data-hue) ${x}%, var(--heat-zero))`,
-      boxShadow: deger > 0.7 ? '0 0 8px rgb(14 165 233 / 0.4)' : undefined,
-      animation: `heatIn 0.4s ease-out ${Math.min(gecikmeMs, 900)}ms backwards`,
-    },
+      backgroundColor: olcumYok ? 'var(--v0)' : isiTonu(deger),
+      borderColor: uyari && !olcumYok ? 'var(--uyari)' : 'var(--cam-kenar)',
+      borderStyle: olcumYok ? 'dashed' : 'solid',
+      animation: azalt ? undefined : `heatIn 0.4s ease-out ${Math.min(gecikmeMs, 900)}ms backwards`,
+    } as CSSProperties,
   }
   const kutu = onClick
     ? <button type="button" onClick={onClick} aria-label={etiket} {...ortak} />

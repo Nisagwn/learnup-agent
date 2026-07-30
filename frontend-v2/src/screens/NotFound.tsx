@@ -9,14 +9,13 @@ export function NotFound() {
       <div>
         <SisliDeniz />
         <h1 className="mt-2 font-display text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100">
-          Rota bulunamadı
+          Sayfa bulunamadı
         </h1>
         <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-          Bu koordinatlarda bir liman yok — sis basmış olmalı. Güverteye dönüp
-          rotayı yeniden çizelim.
+          Aradığın sayfa bulunamadı. Ana sayfaya dönebilirsin.
         </p>
         <GlowButton className="mt-6" icon="compass" onClick={() => nav('/')}>
-          Güverteye dön
+          Ana sayfaya dön
         </GlowButton>
       </div>
     </div>

@@ -26,10 +26,10 @@ export class ErrorBoundary extends Component<
             </svg>
           </div>
           <h2 className="mt-4 font-display text-lg font-bold text-slate-800 dark:text-slate-100">
-            Beklenmedik bir dalga vurdu
+            Bir şeyler ters gitti
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            Bu ekran bir hatayla karşılaştı. Sayfayı yenilemek genellikle rotayı düzeltir.
+            Bu ekran bir hatayla karşılaştı. Sayfayı yenilemek genellikle sorunu çözer.
           </p>
           <button
             onClick={() => window.location.reload()}

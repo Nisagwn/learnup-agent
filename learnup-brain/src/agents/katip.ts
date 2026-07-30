@@ -2,7 +2,7 @@ import { redis } from '../clients/redis.js'
 import { supabase } from '../clients/supabase.js'
 import { logger } from '../utils/logger.js'
 import { KATIP_OZET_SYSTEM, KATIP_KATLAMA_SYSTEM } from '../persona/katip.charter.js'
-import { routedText } from '../lib/model-router.js'
+import { routedText, jsonCoz } from '../lib/model-router.js'
 import { embed } from '../lib/rag.js'
 import { invalidateDesk } from '../lib/desk.js'
 import { lastSeenAt } from '../lib/signals.js'
@@ -172,7 +172,14 @@ export async function runNightlyFold(): Promise<void> {
         ],
       }, { priority: 'P2' })
 
-      const semantic = JSON.parse(merged) as Record<string, unknown>
+      // jsonCoz: Atlas/Nabız ile aynı savunma — boş/çitli/kısmi çıktıda FIRLATMAZ, null döner.
+      // Katlama YIKICI: kalıcı hafızayı EZER. Bozuk ya da BOŞ bir yanıt öğrencinin semantik
+      // gerçeklerini sessizce silmesin — şüphede MEVCUT korunur (charter: "emin değilsen tut").
+      const semantic = jsonCoz<Record<string, unknown>>(merged)
+      if (!semantic || Array.isArray(semantic) || !Object.keys(semantic).length) {
+        logger.warn({ userId }, 'gece katlama: model geçerli semantic üretmedi — hafıza korundu')
+        continue
+      }
       await supabase.from('student_memory').upsert(
         { user_id: userId, semantic, updated_at: new Date().toISOString() },
         { onConflict: 'user_id' },

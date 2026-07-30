@@ -13,23 +13,44 @@ import { logger } from '../utils/logger.js'
  * yalnız ajan orkestrasyonu (Pusula ↔ Ritim) devre dışı kalır.
  */
 /**
- * İki client'ın DAYANIKLILIK İHTİYACI ZITTIR — aynı ayarı vermek biri için hatalıdır.
+ * Client'ların DAYANIKLILIK İHTİYACI ZITTIR — aynı ayarı vermek biri için hatalıdır.
  *
- * hotPath=false (worker, XREAD BLOCK): `maxRetriesPerRequest: null` + çevrimdışı kuyruk.
+ * 'worker' (XREAD BLOCK): `maxRetriesPerRequest: null` + çevrimdışı kuyruk.
  *   Worker'ın işi zaten beklemek; Redis dönene kadar komut kuyrukta durmalı, düşmemeli.
  *
- * hotPath=true (istek yolu: buildStudentContext, telemetri): HIZLI PATLAMALI.
+ * 'hot' (istek yolu: buildStudentContext, telemetri): HIZLI PATLAMALI.
  *   Ölçüldü — `maxRetriesPerRequest: null` + çevrimdışı kuyruk ile Redis kapalıyken
  *   `redis.get()` HİÇ ÇÖZÜLMÜYOR: promise sonsuza kadar asılı kalıyor, soru üretimi ve
  *   sohbet tamamen donuyor. Oysa mimarinin kuralı "Postgres = hakikat · Redis = hot-path":
  *   Redis'in yokluğu YAVAŞLATMALI, KİLİTLEMEMELİ.
  *   → enableOfflineQueue:false ile komut anında REDDEDİLİR; çağıran .catch() ile
  *     Redis'siz devam eder (bkz. buildStudentContext).
+ *
+ * 'limiter' (rate-limit-redis store): İKİSİ DE DEĞİL — açılışta beklemeli, sonra patlamalı.
+ *   ⚠️ Neden ayrı bir profil şart: rate-limit-redis store'u kurulur kurulmaz `SCRIPT LOAD`
+ *   gönderir; bu, modül gövdesinde (rateLimit.ts'teki top-level `rateLimit({...})`) yani
+ *   soket daha AÇILMADAN olur. 'hot' profiliyle komut anında reddedilir, reddedişi
+ *   rate-limit-redis yakalamaz → unhandled rejection → süreç exit(1). Ölçüldü: Redis
+ *   ERİŞİLEBİLİRKEN bile `bun src/server.ts` her denemede açılışta öldü (Docker'da
+ *   patlamıyordu çünkü ilk istek soket hazır olduktan sonra geliyor — yani hata gizliydi,
+ *   yok değildi).
+ *   → enableOfflineQueue:true  : açılıştaki SCRIPT LOAD kuyrukta bekler, çökme yok.
+ *   → commandTimeout           : ama kuyruk SONSUZ BEKLEME olmamalı. Redis gerçekten
+ *     kapalıysa komut 1sn'de reddedilir; rateLimit.ts'teki passOnStoreError bunu
+ *     "limitsiz geç"e çevirir. Timeout OLMADAN offline queue, Redis düştüğünde her isteği
+ *     süresiz asardı — 'hot' profilinde kaçınılan tam o tuzak.
  */
-function createConnection(url: string, label: string, hotPath: boolean): Redis {
+type Profil = 'hot' | 'worker' | 'limiter'
+
+const PROFILLER: Record<Profil, { maxRetriesPerRequest: number | null; enableOfflineQueue: boolean; commandTimeout?: number }> = {
+  hot: { maxRetriesPerRequest: 1, enableOfflineQueue: false },
+  worker: { maxRetriesPerRequest: null, enableOfflineQueue: true },
+  limiter: { maxRetriesPerRequest: 2, enableOfflineQueue: true, commandTimeout: 1000 },
+}
+
+function createConnection(url: string, label: string, profil: Profil): Redis {
   const client = new Redis(url, {
-    maxRetriesPerRequest: hotPath ? 1 : null,
-    enableOfflineQueue: !hotPath,
+    ...PROFILLER[profil],
     connectTimeout: 2000,
     // Kademeli geri çekilme: kapalı Redis saniyede onlarca hata log'u basmasın.
     retryStrategy: (times: number) => Math.min(times * 500, 10_000),
@@ -47,9 +68,13 @@ function createConnection(url: string, label: string, hotPath: boolean): Redis {
   return client
 }
 
-export const redis: Redis | null = env.REDIS_URL ? createConnection(env.REDIS_URL, 'redis', true) : null
+export const redis: Redis | null = env.REDIS_URL ? createConnection(env.REDIS_URL, 'redis', 'hot') : null
 export const redisBlocking: Redis | null = env.REDIS_URL
-  ? createConnection(env.REDIS_URL, 'redisBlocking', false)
+  ? createConnection(env.REDIS_URL, 'redisBlocking', 'worker')
+  : null
+/** Yalnız rate-limit-redis store'u için — bkz. 'limiter' profili. Başka yerde KULLANMA. */
+export const redisLimiter: Redis | null = env.REDIS_URL
+  ? createConnection(env.REDIS_URL, 'redisLimiter', 'limiter')
   : null
 
 /**

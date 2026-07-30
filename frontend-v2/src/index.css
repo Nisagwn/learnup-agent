@@ -1,10 +1,12 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   COASTAL — "Deniz Kenarı" tasarım sistemi. İKİ TEMA:
-   · Varsayılan: KIYI (açık, ferah, camlı — beyaz köpük + turkuaz)
-   · .dark:      OKYANUS (derin petrol + yakamoz)
-   Kullanıcı üst bardan geçiş yapar; tercih localStorage'da.
+   FİDAN v1.2 "Soft Doğa" — organik doğa teması. İKİ TEMA:
+   · Varsayılan: Gün Işığı (AÇIK — adaçayı/keten zemin + derin orman yeşili vurgu)
+   · .dark:      Gece Ormanı (koyu — ay ışığında derin orman, tercihe bağlı ikincil)
+   Kaynak gerçek: docs/design/TASARIM-DILI.md §2/§11. Tercih localStorage'da.
+   NOT (geçici): shore, ocean, sky, teal @theme renk token'ları utility geçiş
+   döneminde DURUYOR — ekran kartları utility'leri FİDAN'a taşıyınca sökülecek.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -39,7 +41,7 @@
     0 0 52px --alpha(var(--color-teal-500) / 9%);
   --shadow-glow-sky: 0 0 18px --alpha(var(--color-sky-500) / 24%),
     0 0 52px --alpha(var(--color-sky-500) / 10%);
-  --shadow-card: 0 10px 30px rgb(15 46 74 / 0.10);
+  --shadow-card: var(--golge);  /* FİDAN golge/kart — :root/.dark'ta tema ile döner */
 
   /* ── Ambiyans animasyonları ── */
   --animate-drift: drift 34s ease-in-out infinite alternate;
@@ -70,44 +72,104 @@
 @layer base {
   :root {
     color-scheme: light;
-    --page-bg: var(--color-shore-50);
-    --heat-zero: var(--color-shore-200);
-    --glass-bg: rgb(255 255 255 / 0.62);
-    --glass-border: rgb(2 64 110 / 0.10);
-    --glass-solid-bg: rgb(255 255 255 / 0.78);
-    --glass-solid-border: rgb(2 64 110 / 0.09);
-    /* Veri/ısı ana tonu — sekansiyel tek ton (dataviz: magnitude=sky) */
-    --data-hue: var(--color-sky-500);
+
+    /* ─── FİDAN v1.2 "Soft Doğa" — Gün Işığı (VARSAYILAN) · TASARIM-DILI §2 ─── */
+    --grad-a: #F4F7F4;
+    --grad-b: #E8EFE9;
+    --page-bg: linear-gradient(160deg, var(--grad-a), var(--grad-b));
+    --cam: rgba(255, 255, 255, 0.78);           /* cam/dolgu — STANDART kart */
+    --cam-kenar: rgba(46, 79, 58, 0.08);        /* cam/kenar */
+    --mat: #FBFDFB;                             /* zemin/mat — blur'suz ikiz */
+    --ic: #EDF2ED;                              /* zemin/ic — çökük iç yüzey */
+    --cizgi: rgba(34, 76, 56, 0.06);
+    --hairline: var(--cizgi);                   /* §11: cizgi → hairline */
+    --metin1: #183121;
+    --metin2: #4A5D4E;
+    --metin3: #7C8F80;
+    --cta: #1E4620;                            /* orman/700 — TEK birincil eylem */
+    --vurgu: #2A5A3B;                          /* orman/600 */
+    --adacayi: #84A98C;
+    --yaprak: #4FA56F;                         /* canliyaprak */
+    --toprak: #D4A373;                         /* topraksari — streak/ödül/odak */
+    --dogru: #2E8B57;
+    --yanlis: #D9534F;
+    --uyari: #C77E2E;
+    --bilgi: #6FA8B5;                          /* yumuşak su */
+    --v1: #DCE9DE;
+    --v2: #BBD3C0;
+    --v3: #9BBEA3;
+    --v4: #6FA57F;                             /* veri/ton — ısı matrisi doygun uç */
+    --v0: #EFF3EF;                             /* veri/sifir */
+    --golge: 0 8px 32px rgba(24, 49, 33, 0.04);
+    --golge-h: 0 14px 40px rgba(24, 49, 33, 0.09);
+    --parilti: 0 0 20px rgba(79, 165, 111, 0.25);
+
+    /* App'in tükettiği köprü değişkenleri (§11 eşleme + utility geçiş dönemi) */
+    --heat-zero: var(--v0);
+    --data-hue: var(--v4);
+    --glass-bg: var(--cam);
+    --glass-border: var(--cam-kenar);
+    --glass-solid-bg: var(--mat);
+    --glass-solid-border: var(--cam-kenar);
   }
   .dark {
     color-scheme: dark;
-    --page-bg: var(--color-ocean-900);
-    --heat-zero: var(--color-ocean-800);
-    --glass-bg: rgb(8 47 73 / 0.22);
-    --glass-border: rgb(14 165 233 / 0.10);
-    --glass-solid-bg: rgb(14 27 40 / 0.85);
-    --glass-solid-border: rgb(14 165 233 / 0.08);
-    --data-hue: var(--color-sky-400);
+
+    /* ─── Gece Ormanı (koyu — tercihe bağlı ikincil) · v1.2 türetilmiş ─── */
+    --grad-a: #0C120E;
+    --grad-b: #101A13;
+    --page-bg: linear-gradient(160deg, var(--grad-a), var(--grad-b));
+    --cam: rgba(16, 26, 19, 0.72);
+    --cam-kenar: rgba(167, 199, 172, 0.08);
+    --mat: #121C15;
+    --ic: #18251B;
+    --cizgi: rgba(200, 230, 205, 0.05);
+    --hairline: var(--cizgi);
+    --metin1: #E6EFE7;
+    --metin2: #A9BCA9;
+    --metin3: #74887A;
+    --cta: #2E6B47;
+    --vurgu: #7FC79C;
+    --adacayi: #8FB49A;
+    --yaprak: #5CB781;
+    --toprak: #D4A373;
+    --dogru: #58C08A;
+    --yanlis: #E37A72;
+    --uyari: #D8A45B;
+    --bilgi: #7FB6C4;
+    --v1: #1B2A20;
+    --v2: #24402E;
+    --v3: #2F5A3D;
+    --v4: #3F7A52;
+    --v0: #141F17;
+    --golge: 0 10px 36px rgba(0, 0, 0, 0.5);
+    --golge-h: 0 16px 44px rgba(0, 0, 0, 0.6);
+    --parilti: 0 0 20px rgba(92, 183, 129, 0.28);
+
+    --heat-zero: var(--v0);
+    --data-hue: var(--v4);
+    --glass-bg: var(--cam);
+    --glass-border: var(--cam-kenar);
+    --glass-solid-bg: var(--mat);
+    --glass-solid-border: var(--cam-kenar);
   }
   body {
-    background: var(--page-bg);
-    @apply font-sans text-slate-700 antialiased;
+    background: var(--page-bg) fixed;
+    color: var(--metin1);
+    @apply font-sans antialiased;
   }
-  .dark body { @apply text-slate-200; }
 
-  /* Klavye odağı — uygulamada hiç yoktu. --data-hue tema ile döndüğü için
-     hem Kıyı'da hem Okyanus'ta kontrast doğru. Fare kullanıcısını rahatsız etmez
-     (:focus-visible, :focus değil). */
+  /* Klavye odağı — --data-hue tema ile döner (FİDAN filiz halkası); :focus-visible. */
   :focus-visible {
     outline: 2px solid var(--data-hue);
     outline-offset: 2px;
     border-radius: 4px;
   }
 
-  ::selection { background: --alpha(var(--color-sky-400) / 30%); }
+  ::selection { background: color-mix(in srgb, var(--yaprak) 28%, transparent); }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb {
-    background: --alpha(var(--color-sky-600) / 25%);
+    background: color-mix(in srgb, var(--adacayi) 45%, transparent);
     border-radius: 6px;
   }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -119,28 +181,30 @@
    (border-rose-*, hover:border-teal-* çalışmaya devam eder).
    Renkler .dark ile dönen CSS değişkenlerinden gelir. */
 @layer components {
-  /* Deniz köpüğü camı — blur BÜTÇELİDİR (≤5 yüzey/görünüm) */
+  /* STANDART kart yüzeyi — buzlu cam (FİDAN v1.2: cam standart, blur 16).
+     Renkler .dark ile dönen değişkenlerden (--glass-bg/--glass-border = cam/cam-kenar).
+     Perf: kaydırılan yoğun listelerde .glass-solid (mat ikiz) kullanılır. */
   .glass {
     background-color: var(--glass-bg);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--glass-border);
   }
 
-  /* Blur'suz ikiz — yoğun listeler / perf */
+  /* Mat ikiz — blur'suz (--glass-solid-bg = zemin/mat); yoğun listeler / perf / sticky sütun */
   .glass-solid {
     background-color: var(--glass-solid-bg);
     border: 1px solid var(--glass-solid-border);
   }
 
-  /* Yakamoz parıltısı — yalnız koyu temada anlamlı */
+  /* Işık parıltısı — yalnız koyu temada anlamlı (FİDAN yaprak) */
   .text-glow { text-shadow: none; }
-  .dark .text-glow { text-shadow: 0 0 12px rgb(56 189 248 / 0.45); }
+  .dark .text-glow { text-shadow: 0 0 12px color-mix(in srgb, var(--yaprak) 50%, transparent); }
 
-  /* İnce yakamoz ayracı */
+  /* İnce ayraç çizgisi (FİDAN adaçayı) */
   .wave-divider {
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgb(14 165 233 / 0.35), transparent);
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--adacayi) 45%, transparent), transparent);
   }
 }
 
@@ -150,25 +214,62 @@
    çevresindeki metinden farklı renge kaçar (ör. yeşil "doğru" şıkkında siyah formül). */
 .math { color: inherit; word-break: break-word; }
 .math--inline { display: inline; }
-.math p { margin: 0; color: inherit; }
+/* leading-relaxed: kesirin (\frac) payı ÜST satırın metnine çarpmasın. Baloncuğun kendi
+   line-height'ı (1.6) korunur; buradaki 1.625 yalnız LaTeX taşıyan paragraflara uygulanır. */
+.math p { margin: 0; color: inherit; line-height: 1.625; }
 .math p + p { margin-top: 0.5rem; }
-.math .katex { color: inherit; font-size: 1.05em; }
+
+/* SATIR İÇİ FORMÜL — metinle aynı hizada dursun:
+   · inline-flex + align-items:center + vertical-align:middle → formül kutusu, çevresindeki
+     metnin ortasına oturur (yalnız baseline'a değil); kesir/kök yukarı kaçmaz.
+   · line-height:normal → baloncuğun 1.6'lık satır yüksekliği KaTeX'in vlist ölçülerini
+     esnetip payı/paydayı kaydırmasın.
+   · max-width + overflow → uzun formül baloncuğu yana taşırmaz, kendi içinde kayar.
+     Kaydırma çubuğu GİZLİ: satır içi her formülün altında 10px'lik çubuk çıkmasın
+     (::-webkit-scrollbar global olarak boyanıyor). Blok formülde çubuk görünür kalır. */
+.math .katex {
+  color: inherit;
+  font-size: 1.05em;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  line-height: normal;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.math .katex::-webkit-scrollbar { display: none; }
 
 /* ⚠️ SATIR SONLARI: çözüm metni "Adım 1 …\nAdım 2 …" diye geliyor ve markdown TEK satır sonunu
    boşluğa çevirir → adımlar tek satıra yapışır. `pre-line` bunu geri getirir.
    Ama `pre-line`/`pre-wrap` KaTeX'in ÜRETTİĞİ HTML'de satır sonlarını görünür boşluğa çevirip
    formülü bozar — bu yüzden .katex içinde `normal`a geri alınır. (Kapsayıcıya pre-wrap vermek
-   tam olarak bu yüzden yanlıştı: Coz.tsx'te inline style ile duruyordu, kaldırıldı.) */
+   tam olarak bu yüzden yanlıştı: Coz.tsx'te inline style ile duruyordu, kaldırıldı.)
+
+   ⚠️⚠️ `.math .katex *` DİYE YAZMA (ölçüldü, headless Chrome ile birebir üretildi): katex.min.css'in
+   `.katex .base{white-space:nowrap}` kuralıyla AYNI özgüllükte olduğu için onu eziyordu →
+   `y-1=\frac{3}{4}(x-2)` atomlarına ayrılıp alt alta dağılıyor, uzun vlist satır kutusunu
+   şişirip kesri metnin üstüne fırlatıyordu (sohbet VE soru ekranında). Sarmalayıcılar
+   `normal`, atom kutusu (.base) `nowrap` kalmalı. */
 .math { white-space: pre-line; }
-.math .katex, .math .katex-display, .math .katex * { white-space: normal; }
+.math .katex, .math .katex-display { white-space: normal; }
+.math .katex .base { white-space: nowrap; }
+/* .math'in break-word'ü formülün İÇİNE sızmasın (nowrap zaten kırmaz; bu ikinci emniyet). */
+.math .katex * { word-break: normal; overflow-wrap: normal; }
 
-/* Uzun formüller taşmasın, kendi içinde kaysın (mobilde sayfayı yana kaydırmasın) */
-.math .katex-display { margin: 0.6rem 0; overflow-x: auto; overflow-y: hidden; }
+/* Uzun formüller taşmasın, kendi içinde kaysın (mobilde sayfayı yana kaydırmasın).
+   Blok formülde kaydırma kabı DIŞTAKİ .katex-display'dir; içteki .katex blok kalır ki
+   ortalama bozulmasın (satır içi kuralın inline-flex'i buraya sızmamalı). */
+.math .katex-display { margin: 0.6rem 0; vertical-align: middle; overflow-x: auto; overflow-y: hidden; }
+.math .katex-display > .katex { display: block; max-width: none; overflow: visible; }
 
-/* Eski ekranların beklediği keyframe'ler (geçiş dönemi) */
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-@keyframes ping { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(1.6); opacity: 0; } }
-@keyframes flicker { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+/* Eski ekranların beklediği keyframe'ler (geçiş dönemi) — hareket-azalt'ta tanımsız kalır (motion durur). */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes ping { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(1.6); opacity: 0; } }
+  @keyframes flicker { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+}
 
 /* Global animasyon sözlüğü — ekranlar kendi <style> bloğunu taşımasın */
 @keyframes heatIn { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }

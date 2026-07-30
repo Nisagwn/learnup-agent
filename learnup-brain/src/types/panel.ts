@@ -1,4 +1,5 @@
 import type { RontgenGovdesi } from '../lib/rontgen.js'
+import type { DenetimEylemi, DenetimHedefTuru } from '../lib/denetim.js'
 
 /**
  * ÖĞRETMEN & YÖNETİCİ PANELİ — yanıt sözleşmeleri.
@@ -208,6 +209,8 @@ export type OdevOlusturYanit = {
   bulunan: number
   kaynakDagilimi: { osym: number; ai: number }
   uyari: string | null
+  /** Vekil kapsam (0025): yönetici öğretmen adına yazdıysa denetim izi tutuldu mu. Öğretmenin kendi yazmasında `null`. */
+  denetimYazildi?: boolean | null
 }
 
 /** POST /api/v1/teacher/hedefli-odev */
@@ -227,6 +230,8 @@ export type HedefliOdevYanit = {
   bulunan: number
   rationale: string
   uyari: string | null
+  /** Vekil kapsam (0025) — bkz. OdevOlusturYanit.denetimYazildi. */
+  denetimYazildi?: boolean | null
 }
 
 /** GET /api/v1/teacher/soru-havuzu */
@@ -265,6 +270,12 @@ export type AdminHavuzYaniti = {
     dersler: Array<{ subject: string; count: number; verified: number }>
     /** kazanim_id IS NULL → konu listesine giremeyen ölü stok. */
     kazanimsiz: number
+    /**
+     * Yöneticinin karantinaya aldığı soru sayısı (0025). `verified` sayımının DIŞINDA:
+     * doğrulamayı geçmiş ama artık servis edilmiyor. İkisini toplamak havuzu olduğundan
+     * büyük gösterirdi.
+     */
+    karantinada: number
     sonUretim: string | null
   }
   osym: {
@@ -313,6 +324,12 @@ export type AdminEvalYaniti = {
 export type AdminOzgunlukYaniti = {
   esikler: Array<{ subject: string; esik: number; taban: boolean; havuzAdedi: number }>
   tabanEsik: number
+  /**
+   * Eşikler DB'den mi okundu (0025)? false ise `ozgunluk_esikleri` tablosu boş/erişilemez
+   * ve üretim KOD tablosuyla sürüyor. Panel bunu söylemek zorunda: yönetici düzenlediğini
+   * sandığı bir eşiğin yürürlükte olmadığını EKRANDA görmeli.
+   */
+  kaynakDB: boolean
   shingle: number
   snapshot: { tarih: string; nnKopya: number | null; nnP90: number | null } | null
   /** uretim_telemetri'den; tablo henüz boşsa null (ölçülmemiş ≠ sıfır). */
@@ -399,6 +416,16 @@ export type AdminKullaniciSatiri = {
   /** Yalnız role==='teacher'; diğerlerinde null. */
   ogrenciSayisi: number | null
   createdAt: string
+  /**
+   * Öğretmen başvuru durumu (0021). 'bekliyor' → GOREV-028 rozeti bunu okur.
+   * ROL DEĞİLDİR: başvuru yalnız niyet; rolü yönetici onayı çevirir.
+   */
+  basvuruDurumu: 'bekliyor' | 'onaylandi' | 'reddedildi' | null
+  /**
+   * Hesap askıda mı (0025). ROL DEĞİLDİR ve onayla karıştırılmaz: askı erişimi keser,
+   * hiçbir sınıf/öğretmen bağını koparmaz. Rozet ayrı çizilir.
+   */
+  askidaMi: boolean
 }
 
 /** GET /api/v1/admin/kullanicilar */
@@ -408,6 +435,10 @@ export type AdminKullanicilarYaniti = {
   limit: number
   offset: number
   bekleyenOnay: number
+  /** role='student' + başvuru='bekliyor' → yöneticinin işlem kuyruğu. */
+  bekleyenBasvuru: number
+  /** Askıya alınmış hesap sayısı (0025) — filtresiz toplam. */
+  askidaSayisi: number
 }
 
 /** POST /api/v1/admin/ogretmen/:id/onay */
@@ -439,6 +470,19 @@ export type AdminKullaniciDetayi = {
     sonGorulme: string | null
     takipEdilenKazanim: number
   } | null
+  /** Öğretmen başvurusu (0021) — bağlamı yöneticiye açar. Başvuru yoksa null. */
+  basvuru: {
+    durum: 'bekliyor' | 'onaylandi' | 'reddedildi'
+    tarih: string | null
+    not: string | null
+  } | null
+  /** Askı bağlamı (0025) — hesap askıda değilse null. */
+  aski: {
+    neden: string | null
+    verenId: string | null
+    verenAdi: string | null
+    tarih: string | null
+  } | null
   /** Bu kullanıcı üzerinde yapılmış yönetim işlemleri (en yeni önce). */
   denetim: DenetimSatiri[]
   olcumZamani: string
@@ -448,9 +492,10 @@ export type DenetimSatiri = {
   id: number
   adminId: string
   adminAdi: string | null
-  eylem: 'ogretmen_onay' | 'rol_degis' | 'sinif_ata' | 'gorev_yeniden'
+  /** Kanonik liste lib/denetim.ts'te — yeni yetki eklenince orası genişler, burası izler. */
+  eylem: DenetimEylemi
   hedefId: string | null
-  hedefTur: 'kullanici' | 'gorev' | null
+  hedefTur: DenetimHedefTuru | null
   hedefAdi: string | null
   detay: Record<string, unknown>
   createdAt: string
@@ -464,6 +509,8 @@ export type AdminDenetimYaniti = {
   offset: number
   /** 0020 uygulanmadıysa true — panel "defter yok" der, "hiç işlem yok" DEMEZ. */
   defterYok: boolean
+  /** Filtre menüsünü besleyen yönetici listesi (defterde eylemi olanlar). */
+  yoneticiler: Array<{ id: string; ad: string | null }>
 }
 
 /** POST /api/v1/admin/kullanici/:id/rol — body: { rol } */
@@ -498,5 +545,233 @@ export type GorevYenidenYanit = {
    * "çalışmadı" sanmaya iterdi.
    */
   akisaItildi: boolean
+  denetimYazildi: boolean
+}
+
+// ──────────────────── YÖNETİM: HESAP YAŞAM DÖNGÜSÜ (0025) ────────────────────
+//
+// ⚠️ KALICI SİLME YOK (kullanıcı kararı 2026-07-24). Yönetici hesabı ASKIYA ALIR;
+// askı geri alınabilir, silme onarılamaz. KVKK silme talebi kullanıcının kendi
+// ucunda kalır (POST /account/delete).
+
+/** POST /api/v1/admin/kullanici — davetle hesap açma */
+export type HesapOlusturYanit = {
+  id: string | null
+  email: string
+  role: 'student' | 'teacher'
+  /**
+   * Davet e-postası gerçekten gönderildi mi? Supabase projesinde SMTP kurulu değilse
+   * `false` döner ve `hata` doldurulur — "hesap açıldı" demek yanıltıcı olurdu.
+   */
+  davetGonderildi: boolean
+  hata: string | null
+  denetimYazildi: boolean
+}
+
+/** PATCH /api/v1/admin/kullanici/:id — künye düzeltme */
+export type ProfilDuzeltYanit = {
+  id: string
+  /** Yalnız GERÇEKTEN değişen alanlar (öncesi → sonrası). Boşsa 400 döner. */
+  degisenler: Record<string, { onceki: unknown; yeni: unknown }>
+  denetimYazildi: boolean
+}
+
+/** POST /api/v1/admin/kullanici/:id/sifre-sifirla */
+export type SifreSifirlaYanit = {
+  id: string
+  email: string
+  gonderildi: boolean
+  hata: string | null
+  denetimYazildi: boolean
+}
+
+/** POST /api/v1/admin/kullanici/:id/aski — body: { askida, neden? } */
+export type AskiYanit = {
+  id: string
+  askidaMi: boolean
+  neden: string | null
+  denetimYazildi: boolean
+}
+
+/** POST /api/v1/admin/basvuru/:id/reddet */
+export type BasvuruReddetYanit = {
+  id: string
+  durum: 'reddedildi'
+  not: string | null
+  denetimYazildi: boolean
+}
+
+// ──────────────────────── YÖNETİM: HAVUZ MODERASYONU (0025) ────────────────────────
+
+export type AdminSoruSatiri = {
+  id: string
+  subject: string
+  kazanimId: number | null
+  kazanimBaslik: string | null
+  topic: string | null
+  /** Liste görünümü için kısaltılmış gövde; tam metin detay ucunda. */
+  onizleme: string
+  difficulty: string | null
+  quality: number | null
+  verified: boolean
+  karantina: boolean
+  karantinaNeden: string | null
+  createdAt: string
+  /** Ampirik kanıt: bu soru kaç kez çözüldü (atlananlar hariç). */
+  cozulme: number
+  /** Doğru oranı 0-1. Örneklem < 5 ise null — az veriden oran üretmek yanıltır. */
+  dogruOrani: number | null
+  /** Triyaj risk skoru (yüksek = önce bakılmalı). Bkz. riskSkoru(). */
+  risk: number
+}
+
+/** GET /api/v1/admin/havuz/sorular */
+export type AdminSorularYaniti = {
+  sorular: AdminSoruSatiri[]
+  total: number
+  limit: number
+  offset: number
+  /** Havuzdaki toplam karantina sayısı (filtreden bağımsız). */
+  karantinaToplam: number
+  /** Uygulanan sıralama: 'risk' (triyaj kuyruğu) | 'yeni' (kronolojik). */
+  sirala: 'risk' | 'yeni'
+}
+
+/** GET /api/v1/admin/havuz/kapsama — ders × konu × zorluk üretim açığı haritası. */
+export type KapsamaKonu = {
+  konuId: number
+  ad: string
+  sinav: string
+  toplam: number
+  kolay: number
+  orta: number
+  zor: number
+  /** Bu konuya giren FARKLI öğrenci sayısı (0028) — üretim önceliğinin talep ayağı. */
+  talep: number
+}
+export type KapsamaDersi = {
+  subject: string
+  toplam: number
+  konuSayisi: number
+  /** İçinde HİÇ soru olmayan konu adedi — üretim önceliği bu sayıdan okunur. */
+  bosKonu: number
+  konular: KapsamaKonu[]
+}
+export type KapsamaYaniti = {
+  dersler: KapsamaDersi[]
+  toplamSoru: number
+  toplamKonu: number
+  bosKonu: number
+  /** Hiçbir konuya eşlenmemiş kazanımdaki soru adedi (etiketleme borcu). */
+  eslenmemisSoru: number
+}
+
+/**
+ * GET /api/v1/admin/havuz/soru/:id
+ *
+ * ⚠️ SAĞLIK BAYRAKLARI ÜRETİM HATTININ AYNI FONKSİYONLARIYLA ÖLÇÜLÜR
+ * (utils/shufflers.ts, utils/soru-saglik.ts). Panelde ikinci bir "kalite kanısı"
+ * hesaplamak, iki ölçünün zamanla ayrışması demekti.
+ */
+export type AdminSoruDetayi = {
+  soru: AdminSoruSatiri & {
+    questionText: string
+    options: Record<string, string>
+    correctOption: string
+    solution: string | null
+    contentHash: string | null
+  }
+  /**
+   * ⚠️ `null` = KURAL UYGULANMAZ, "temiz" DEĞİL. Şıklar metinselse kuşatma ölçülemez;
+   * onu "sorun yok" diye çizmek, ölçülmemiş bir hattı temiz göstermek olurdu.
+   */
+  saglik: {
+    /** Doğru şık belirgin biçimde uzun mu (sızıntı sinyali)? */
+    sikUzunluk: 'sizinti' | 'temiz' | null
+    /** Çeldiriciler doğru cevabı kuşatıyor mu? 'tek-yanda' = zayıf çeldirici. */
+    celdirici: 'kusatilmis' | 'tek-yanda' | null
+    /** AI sorusu var olmayan bir görsele gönderiyor mu ("şekildeki gibi", görsel yok)? */
+    gorseleGonderme: boolean
+    /** Metin bir şekil/tablo/grafiğe dayanıyor mu (PDF kaynaklı bozulma sinyali)? */
+    gorselBagimli: boolean
+  }
+  ozgunluk: {
+    esik: number
+    /** Aynı dersteki en yakın komşuya benzerlik. Karşılaştırılacak soru yoksa null. */
+    enYakin: number | null
+    enYakinId: string | null
+    esikAsildi: boolean
+  }
+  /** Bu soru üzerinde yapılmış yönetim işlemleri. */
+  denetim: DenetimSatiri[]
+}
+
+/** POST /api/v1/admin/havuz/soru/:id/dogrulama · /karantina · PATCH /:id */
+export type SoruMudahaleYanit = {
+  id: string
+  verified: boolean
+  karantina: boolean
+  difficulty: string | null
+  kazanimId: number | null
+  denetimYazildi: boolean
+}
+
+/** POST /api/v1/admin/havuz/uretim */
+export type UretimTetikYanit = {
+  taskId: string
+  kazanimId: number
+  kazanimBaslik: string
+  difficulty: string | null
+  adet: number
+  denetimYazildi: boolean
+}
+
+// ─────────────────────────── YÖNETİM: OPS (0025) ───────────────────────────
+
+/** GET/PUT /api/v1/admin/ozgunluk/esik */
+export type AdminEsikYaniti = {
+  esikler: Array<{
+    subject: string
+    esik: number
+    /** DB'de satırı yok → kod tablosundaki taban uygulanıyor. */
+    taban: boolean
+    havuzAdedi: number
+  }>
+  tabanEsik: number
+  /**
+   * Eşikler DB'den mi okundu? false ise tablo boş/erişilemez ve üretim KOD
+   * tablosuyla sürüyor — panel bunu söylemek zorunda, sessizce "kaydedildi" demek değil.
+   */
+  kaynakDB: boolean
+}
+
+export type EsikDegisYanit = {
+  subject: string
+  onceki: number | null
+  yeni: number
+  denetimYazildi: boolean
+}
+
+/** POST /api/v1/admin/eval/kosum */
+export type EvalTetikYanit = {
+  taskId: string
+  denetimYazildi: boolean
+}
+
+/** POST /api/v1/admin/onbellek/dus */
+export type OnbellekDusYanit = {
+  /** Hangi katmandan kaç anahtar düştü — görünmez ops yok. */
+  panel: number
+  kimlik: number
+  sinif: number
+  redis: number
+  denetimYazildi: boolean
+}
+
+/** POST /api/v1/admin/gorev/:id/iptal */
+export type GorevIptalYanit = {
+  id: string
+  oncekiDurum: string
+  yeniDurum: 'FAILED'
   denetimYazildi: boolean
 }

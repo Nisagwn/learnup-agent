@@ -35,6 +35,12 @@ const TAVAN = Number(arg('tavan') ?? 0.2)
 const DERS = arg('ders') ?? 'Matematik'
 const PER_CELL = Number(arg('perCell') ?? 3) // PARCA_TAVANI ile aynı — parçalanma olmasın
 const ES_ZAMAN = Number(arg('esZaman') ?? 2)
+/** SABİT-ZORLUK MODU (opsiyonel): verilirse tüm hücreler bu zorluğa gider (rotasyon yok) ve
+ *  HEDEF'e yalnız ÖLÇÜLEN zorluğu tutan sorular sayılır → "10 gerçek zor" gibi ölçüm/pilot. */
+const hedefZorluk = arg('zorluk')
+if (hedefZorluk && !['kolay', 'orta', 'zor'].includes(hedefZorluk)) {
+  console.error(`⛔ --zorluk geçersiz: "${hedefZorluk}" (kolay|orta|zor bekleniyor)`); process.exit(1)
+}
 const SYSTEM_USER = '00000000-0000-0000-0000-000000000000'
 
 const ZINCIR = process.env.LLM_CHAIN_GENERATE
@@ -57,12 +63,13 @@ const hucreSayisi = Math.ceil((HEDEF / PER_CELL) * 2.5) // doğrulama firesi pay
 const hucreler: Array<{ node: Node; difficulty: string }> = []
 for (let i = 0; i < hucreSayisi; i++) {
   const idx = Math.round((i * (nodes.length - 1)) / Math.max(1, hucreSayisi - 1)) % nodes.length
-  hucreler.push({ node: nodes[idx], difficulty: DIFFS[i % 3] })
+  // Sabit-zorluk modunda hepsi hedefZorluk; yoksa kolay/orta/zor rotasyonu.
+  hucreler.push({ node: nodes[idx], difficulty: hedefZorluk ?? DIFFS[i % 3] })
 }
 
 console.log(`=== A/B KOL: ${ETIKET} ===`)
 console.log(`yazar zinciri : ${ZINCIR}   (denetçi zincirden bağımsız, ücretsiz)`)
-console.log(`ders/hedef    : ${DERS} · ${HEDEF} soru · hücre ${PER_CELL} · eşzamanlı ${ES_ZAMAN}`)
+console.log(`ders/hedef    : ${DERS} · ${HEDEF} ${hedefZorluk ? `${hedefZorluk} (SABİT)` : 'soru (kolay/orta/zor rotasyon)'} · hücre ${PER_CELL} · eşzamanlı ${ES_ZAMAN}`)
 console.log(`MALİYET TAVANI: $${TAVAN.toFixed(2)}  ← aşılınca paralı çağrı GÖNDERİLMEZ`)
 console.log(`kazanım havuzu: ${nodes.length} · planlanan hücre: ${hucreler.length}\n`)
 
@@ -71,6 +78,10 @@ type Kayit = {
   quality: number; soru: string; siklar: Record<string, string>; dogru: string
 }
 const kayitlar: Kayit[] = []
+/** HEDEF'e ne sayılır: sabit-zorluk modunda yalnız ÖLÇÜLEN zorluğu tutanlar; yoksa hepsi.
+ *  (Salvage ile sipariş-zor'dan inen orta yazılır ama zor hedefine sayılmaz.) */
+const sayilan = (): number =>
+  hedefZorluk ? kayitlar.filter((k) => k.difficulty === hedefZorluk).length : kayitlar.length
 let uretilen = 0
 let imlec = 0
 let dur = false
@@ -78,7 +89,7 @@ let durSebep = ''
 const t0 = Date.now()
 
 async function isle(cell: { node: Node; difficulty: string }): Promise<void> {
-  if (dur || kayitlar.length >= HEDEF) return
+  if (dur || sayilan() >= HEDEF) return
   const { node, difficulty } = cell
   try {
     const set = await generateVerifiedSet(
@@ -115,7 +126,7 @@ async function isle(cell: { node: Node; difficulty: string }): Promise<void> {
     const dk = ((Date.now() - t0) / 60000).toFixed(1)
     console.log(
       `[${dk} dk] ${(node.code ?? node.title.slice(0, 14)).padEnd(14)} (${difficulty.padEnd(5)}) → ` +
-      `üretilen ${set.length}, yazılan ${yazilan} · toplam ${kayitlar.length}/${HEDEF} · $${maliyetHarcanan().toFixed(4)}`,
+      `üretilen ${set.length}, yazılan ${yazilan} · sayılan ${sayilan()}/${HEDEF}${hedefZorluk ? ` · toplam yazılan ${kayitlar.length}` : ''} · $${maliyetHarcanan().toFixed(4)}`,
     )
   } catch (err) {
     if (err instanceof MaliyetTavaniAsildi) {
@@ -129,7 +140,7 @@ async function isle(cell: { node: Node; difficulty: string }): Promise<void> {
 
 async function calisan(): Promise<void> {
   for (;;) {
-    if (dur || kayitlar.length >= HEDEF) return
+    if (dur || sayilan() >= HEDEF) return
     const i = imlec++
     if (i >= hucreler.length) return
     await isle(hucreler[i])
@@ -137,7 +148,7 @@ async function calisan(): Promise<void> {
 }
 await Promise.all(Array.from({ length: Math.max(1, ES_ZAMAN) }, () => calisan()))
 
-if (!dur && kayitlar.length >= HEDEF) durSebep = 'HEDEF DOLDU'
+if (!dur && sayilan() >= HEDEF) durSebep = 'HEDEF DOLDU'
 else if (!dur && !durSebep) durSebep = 'HÜCRE KUYRUĞU BİTTİ'
 
 const sure = ((Date.now() - t0) / 60000).toFixed(1)
@@ -150,16 +161,16 @@ const ortKalite = kayitlar.length ? kayitlar.reduce((s, k) => s + k.quality, 0) 
 console.log(`\n=== KOL BİTTİ: ${ETIKET} (${sure} dk) — ${durSebep} ===`)
 console.log(`yazar          : ${ZINCIR}`)
 console.log(`üretilen aday  : ${uretilen} · kapılardan geçip yazılan: ${kayitlar.length}`)
-console.log(`MALİYET        : $${harcanan.toFixed(4)}${kayitlar.length ? ` · soru başına $${(harcanan / kayitlar.length).toFixed(4)}` : ''}`)
+console.log(`MALİYET        : $${harcanan.toFixed(4)}${kayitlar.length ? ` · yazılan başına $${(harcanan / kayitlar.length).toFixed(4)}` : ''}${hedefZorluk && sayilan() ? ` · ${hedefZorluk} başına $${(harcanan / sayilan()).toFixed(4)}` : ''}`)
 console.log(`zorluk dağılımı: ${Object.entries(zorlukDagilim).map(([k, n]) => `${k}=${n}`).join(' ') || '-'}`)
 console.log(`farklı kazanım : ${kazanimSayisi}`)
 console.log(`ort. kalite    : ${ortKalite.toFixed(2)}`)
 
 const dosya = fileURLToPath(new URL(`../../data/ab-${ETIKET}.json`, import.meta.url))
 writeFileSync(dosya, JSON.stringify({
-  etiket: ETIKET, model: ZINCIR, ders: DERS, hedef: HEDEF, tavan: TAVAN,
+  etiket: ETIKET, model: ZINCIR, ders: DERS, hedef: HEDEF, hedefZorluk: hedefZorluk ?? null, tavan: TAVAN,
   durSebep, sureDk: Number(sure), maliyet: harcanan, uretilenAday: uretilen,
-  yazilan: kayitlar.length, zorlukDagilim, kazanimSayisi, ortKalite, kayitlar,
+  yazilan: kayitlar.length, sayilan: sayilan(), zorlukDagilim, kazanimSayisi, ortKalite, kayitlar,
 }, null, 2))
 console.log(`\nkünye dosyası  : ${dosya}`)
 process.exit(0)

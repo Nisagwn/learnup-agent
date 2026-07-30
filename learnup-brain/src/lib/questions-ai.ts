@@ -2,13 +2,25 @@
 // (ücretsiz zincir + bütçe + kesici — §5.4). Rol eşlemesi: GEN_MODEL→generate, CHAT_MODEL→chat.
 // NOT: Bu app-dünyası (4-şık). Beyin'in 5-şıklı ÖSYM üretimi `lib/generation.ts`'te AYRIDIR.
 import { routedText } from './model-router.js'
+import { sayisalNormalize } from '../utils/shufflers.js'
 
 export const GEN_MODEL = 'generate' // rol: soru üretimi (router zinciri seçer)
 export const CHAT_MODEL = 'chat' // rol: sohbet + dinamik ipucu
 
+interface Message {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+interface LLMOptions {
+  model?: string
+  temperature?: number
+  max_tokens?: number
+}
+
 export async function llmChat(
-  messages: any[],
-  opts: { model?: string; temperature?: number; max_tokens?: number } = {},
+  messages: Message[],
+  opts: LLMOptions = {},
 ): Promise<string> {
   const role = opts.model === GEN_MODEL ? 'generate' : 'chat'
   return routedText(role, {
@@ -19,28 +31,57 @@ export async function llmChat(
 }
 
 // ─── Satır-etiketli soru ayrıştırıcı ([SORU]/[A]..[D]/[DOGRU]/[ACIKLAMA]) ──────
-export function parseTaggedQuestions(text: string) {
-  const tagMap: Record<string, string> = { SORU: 'q', A: 'a', B: 'b', C: 'c', D: 'd', DOGRU: 'correct', ACIKLAMA: 'exp' }
-  const blocks: any[] = []
-  let cur: any = null, lastKey: string | null = null
+export interface ParsedQuestion {
+  question_text: string
+  options: string[]
+  correct_answer: string
+  explanation: string
+}
+
+const TAG_MAP_4: Record<string, keyof RawQuestion> = {
+  SORU: 'q',
+  A: 'a',
+  B: 'b',
+  C: 'c',
+  D: 'd',
+  DOGRU: 'correct',
+  ACIKLAMA: 'exp',
+}
+
+interface RawQuestion {
+  q: string
+  a: string
+  b: string
+  c: string
+  d: string
+  correct: string
+  exp: string
+}
+
+export function parseTaggedQuestions(text: string): ParsedQuestion[] {
+  const blocks: RawQuestion[] = []
+  let cur: Partial<RawQuestion> | null = null, lastKey: keyof RawQuestion | null = null
   for (const line of String(text || '').split(/\r?\n/)) {
     const m = line.match(/^\s*\[\s*(SORU|A|B|C|D|DOGRU|ACIKLAMA)\b[^\]]*\]\s*(.*)$/i)
     if (m) {
-      const key = tagMap[m[1].toUpperCase()]
-      if (key === 'q') { if (cur && cur.q) blocks.push(cur); cur = { q: '', a: '', b: '', c: '', d: '', correct: '', exp: '' } }
+      const key = TAG_MAP_4[m[1].toUpperCase()]
+      if (key === 'q') { if (cur && cur.q) blocks.push(cur as RawQuestion); cur = { q: '', a: '', b: '', c: '', d: '', correct: '', exp: '' } }
       if (cur) { cur[key] = m[2].trim(); lastKey = key }
     } else if (cur && lastKey && line.trim()) cur[lastKey] += ' ' + line.trim()
   }
-  if (cur && cur.q) blocks.push(cur)
+  if (cur && cur.q) blocks.push(cur as RawQuestion)
   const letterIdx: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 }
   return blocks.map((c) => {
-    const options = [c.a, c.b, c.c, c.d].map((o: string) => (o || '').trim())
-    if (!c.q.trim() || options.some((o: string) => !o)) return null
+    // Yazım yolu normalizasyonu (GOREV-031): tire ailesi/kesir-bölü/rakam → ASCII, DB temiz
+    // kalsın. Dedup (Set.size !== 4) normalize SONRASI: yalnız tire tipiyle ayrışan iki şık
+    // ("–2" ile "-2") öğrenciye aynı görünür → aynı sayılıp soru elenir (doğru davranış).
+    const options = [c.a, c.b, c.c, c.d].map((o) => sayisalNormalize((o || '').trim()))
+    if (!c.q.trim() || options.some((o) => !o)) return null
     if (new Set(options).size !== 4) return null
     const idx = letterIdx[(c.correct || '').trim().toUpperCase().charAt(0)]
     if (idx == null) return null
-    return { question_text: c.q.trim(), options, correct_answer: options[idx], explanation: (c.exp || '').trim() }
-  }).filter(Boolean) as any[]
+    return { question_text: sayisalNormalize(c.q.trim()), options, correct_answer: options[idx], explanation: sayisalNormalize((c.exp || '').trim()) }
+  }).filter((q): q is ParsedQuestion => q != null)
 }
 
 // ─── Üretim modları ────────────────────────────────────────────────────────────
@@ -49,6 +90,31 @@ const VALID_MODES = new Set(Object.values(GEN_MODES))
 export const resolveMode = (mode: string) => {
   const m = String(mode || '').toLowerCase().trim()
   return VALID_MODES.has(m) ? m : GEN_MODES.STRICT_CURRICULUM
+}
+
+interface SampleQuestion {
+  question_text?: string
+  text?: string
+  options?: string[]
+  correct_answer?: string
+  correctAnswer?: string
+  explanation?: string
+}
+
+interface PromptConfig {
+  mode: string
+  system: string
+  temperature: number
+  prompt: string
+}
+
+interface PromptOptions {
+  subject?: string
+  topic?: string
+  grade?: string | number
+  difficulty?: string
+  count?: number
+  samples?: SampleQuestion[]
 }
 
 const OUTPUT_FORMAT = `Her soruyu AYNEN aşağıdaki formatta ver. Her etiket ayrı bir satırda olsun; numara, başlık veya ek açıklama YAZMA. Sorular arasına bir boş satır koy:
@@ -68,12 +134,12 @@ SORU KALIBI ZORUNLU: Soru metnini bir soru cümlesiyle kur ve "?" ile bitir. Emi
 
 const SYSTEM = 'Sen LearnUp asistanısın. Lise müfredatına hakimsin ve istenen çıktı formatına harfiyen uyarsın.'
 
-function renderSamplesAsFewShot(samples: any[]): string {
+function renderSamplesAsFewShot(samples: SampleQuestion[]): string {
   if (!Array.isArray(samples) || samples.length === 0) return ''
   return samples.slice(0, 5).map((s) => {
     const opts = Array.isArray(s.options) ? s.options : []
     const letters = ['A', 'B', 'C', 'D']
-    const correctIdx = opts.findIndex((o: string) => o === (s.correct_answer ?? s.correctAnswer))
+    const correctIdx = opts.findIndex((o) => o === (s.correct_answer ?? s.correctAnswer))
     const correctLetter = letters[correctIdx >= 0 ? correctIdx : 0]
     const lines = [`[SORU] ${s.question_text || s.text || ''}`]
     letters.forEach((L, i) => lines.push(`[${L}] ${opts[i] || ''}`))
@@ -83,7 +149,7 @@ function renderSamplesAsFewShot(samples: any[]): string {
   }).join('\n\n')
 }
 
-export function buildModePromptConfig(mode: string, opts: any = {}) {
+export function buildModePromptConfig(mode: string, opts: PromptOptions = {}): PromptConfig {
   const resolved = resolveMode(mode)
   const { subject = 'Genel', topic = subject, grade = '10', difficulty = 'orta', count = 1, samples = [] } = opts
   const gradeStr = String(grade || '10')

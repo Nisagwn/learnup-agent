@@ -107,13 +107,16 @@ practiceRouter.get('/review', async (req, res, next) => {
     }
     const ids = [...new Set(kartlar.map((k) => String(k.question_id)))]
     const SECIM = 'id, subject, kazanim_id, question_text, options, correct_option, solution, difficulty'
-    const [ai, osym] = await Promise.all([
-      supabase.from('yks_ai_questions').select(SECIM).in('id', ids).eq('verified', true),
-      supabase.from('yks_questions').select(SECIM + ', exam_year, exam_label, source_type').in('id', ids).eq('verified', true),
-    ])
+    // TELİF KARARI (2026-07-22): yks_questions (çıkmış ÖSYM) buradan da OKUNMAZ — SRS kartı
+    // Arşiv döneminden bir çıkmışa işaret ediyorsa, eski `questions` (öğretmen) havuzu kartları
+    // gibi sessizce atlanır. Tekrar seti yalnız AI havuzundan kurulur.
+    // 0025: karantinadaki soru tekrar setine de girmez (kartı sessizce atlanır).
+    const { data: ai } = await supabase
+      .from('yks_ai_questions').select(SECIM).in('id', ids)
+      .eq('verified', true).eq('karantina', false)
     const byId = new Map<string, unknown>()
-    for (const q of [...(ai.data ?? []), ...(osym.data ?? [])]) byId.set(String((q as { id: string }).id), q)
-    // Vade sırası korunur; eski `questions` (öğretmen) havuzuna ait kartlar sessizce atlanır
+    for (const q of ai ?? []) byId.set(String((q as { id: string }).id), q)
+    // Vade sırası korunur; AI havuzunda karşılığı olmayan kartlar (öğretmen/çıkmış) atlanır
     const questions = ids.map((id) => byId.get(id)).filter(Boolean).slice(0, 10)
     res.json({ count: kartlar.length, questions })
   } catch (err) {

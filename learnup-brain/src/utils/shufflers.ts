@@ -64,9 +64,40 @@ const latexSoy = (s: string): string => {
   )
 }
 
-/** "4/3" → 1.333 · "1,5" → 1.5 · "-2" → -2 · "$12$" → 12 · "$\\frac{4}{3}$" → 1.333 · aksi hâlde null */
+/**
+ * TİRE/KESİR/RAKAM NORMALİZASYONU — sayısal kapıların SESSİZ atlatılmasını kapatır.
+ *
+ * ⚠️ NEDEN (GOREV-021 teşhisi; kanıt 5d6c6db3 / 2a568933): şıklar `–2` (U+2013 en-dash) gibi
+ * ASCII-DIŞI bir tire taşıyınca `sayiya()` → null döner ve `celdiriciKusatmasi` + artan-sıra +
+ * `sikUzunlukSizintisi` kapılarının ÜÇÜ de "şık sayısal değil" deyip SESSİZCE kenara çekilir.
+ * Sonuç: gizli `tek-yanda` ihlali hiç ölçülmeden VERIFIED soru öğrenciye gider (havuzda 2 vaka
+ * doğrulandı). Bu fonksiyon tire ailesini ASCII '-'e, kesir-bölü işaretlerini '/'e indirger,
+ * yumuşak tireyi siler ve (ihtiyaten — havuzda görülmedi ama yazım yolu bir daha sızdırmasın)
+ * fullwidth/Arabic-Indic rakamları ASCII'ye çeker. Karakter kümesi GOREV-021 önerisinin AYNISI.
+ *
+ * İki yerde çağrılır: (1) `sayiya()` girişi — tek nokta üç kapı + `siklariDuzenle` +
+ * `benzerlik.sikKanonik`'i besler; (2) üretim yazım yolu (generation.ts / questions-ai.ts) —
+ * depolanan metin de temiz kalsın (KaTeX/ekran tutarlılığı + gelecekteki okumalar sayiya'ya
+ * bağımlı olmasın).
+ */
+// ⚠️ Bu karakterler görsel olarak ASCII '-'e (U+2212 minus, U+2010 hyphen) ya da birbirine
+// benzer, U+00AD ise GÖRÜNMEZDİR — kaynakta ayırt edilemez. Karşılık gelen kod noktaları
+// yanlarına yorumla yazıldı (küme GOREV-021 önerisinin aynısı). Değiştirirken yorumu koru.
+// tire ailesi: U+2010 U+2011 U+2012 U+2013 U+2014 U+2015 U+2212 U+FE63 U+FF0D → '-'
+const TIRE_AILESI = /[‐‑‒–—―−﹣－]/g
+const KESIR_BOLU = /[⁄∕]/g // U+2044 fraction slash + U+2215 division slash → '/'
+export function sayisalNormalize(s: string): string {
+  return s
+    .replace(TIRE_AILESI, '-')
+    .replace(/­/g, '') // yumuşak tire (soft hyphen) — GÖRÜNMEZ, sayiya'yı sessizce bozar
+    .replace(KESIR_BOLU, '/')
+    .replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xff10 + 0x30)) // fullwidth 0-9
+    .replace(/[٠-٩]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0x0660 + 0x30)) // Arabic-Indic 0-9
+}
+
+/** "4/3" → 1.333 · "1,5" → 1.5 · "-2" → -2 · "$12$" → 12 · "$\\frac{4}{3}$" → 1.333 · "–2" → -2 · aksi hâlde null */
 export function sayiya(s: string): number | null {
-  const t = latexSoy(s).replace(/\s/g, '')
+  const t = sayisalNormalize(latexSoy(s)).replace(/\s/g, '')
   const kesir = t.match(/^([-+]?\d+)\/(\d+)$/)
   if (kesir) return Number(kesir[1]) / Number(kesir[2])
   const n = Number(t.replace(',', '.'))

@@ -30,6 +30,11 @@ export type Kimlik = {
   classCode: string | null
   teacherId: string | null
   name: string | null
+  /**
+   * Hesap askıda mı (0025). ROL DEĞİLDİR: askı hiçbir sınıf/öğretmen bağını koparmaz,
+   * yalnız erişimi keser — `requireAktifHesap` her /api/v1 isteğinde buna bakar.
+   */
+  askidaMi: boolean
 }
 
 export type OgrenciKimlik = {
@@ -75,8 +80,14 @@ export async function kimlikAl(userId: string): Promise<Kimlik> {
   if (l2) {
     try {
       const veri = JSON.parse(l2) as Kimlik
-      cacheYaz(userId, veri)
-      return veri
+      // ⚠️ ŞEMA KONTROLÜ: 0025 öncesi yazılmış bir kayıtta `askidaMi` YOKTUR ve
+      // undefined "askıda değil" gibi okunur. Dağıtım penceresinde askıya alınmış
+      // bir hesabın eski önbellekle geçmesi demek olurdu — eksik alan görülünce
+      // kayıt bayat sayılır ve DB'den tazelenir.
+      if (typeof veri.askidaMi === 'boolean') {
+        cacheYaz(userId, veri)
+        return veri
+      }
     } catch {
       // Bozuk JSON → yok say, DB'den tazele.
     }
@@ -84,7 +95,7 @@ export async function kimlikAl(userId: string): Promise<Kimlik> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, role, is_approved, class_code, teacher_id, name')
+    .select('id, role, is_approved, class_code, teacher_id, name, askiya_alindi')
     .eq('id', userId)
     .maybeSingle()
 
@@ -102,6 +113,7 @@ export async function kimlikAl(userId: string): Promise<Kimlik> {
     classCode: data.class_code ?? null,
     teacherId: data.teacher_id ?? null,
     name: data.name ?? null,
+    askidaMi: data.askiya_alindi === true,
   }
 
   cacheYaz(userId, veri)
@@ -213,4 +225,20 @@ export async function sinifOgrencileri(teacherId: string): Promise<string[]> {
  */
 export function sinifiUnut(teacherId: string): void {
   rosterCache.delete(teacherId)
+}
+
+/**
+ * SÜREÇ-İÇİ yetki önbelleklerini tümden düşürür (0025 ops ucu).
+ *
+ * ⚠️ REDIS'İ TEMİZLEMEZ. L2 tek bir sürecin değil, bütün örneklerin ortak katmanıdır;
+ * onu silmek çağıranın işidir (admin.routes.ts, `yetki:kimlik:*`). Burada iki şeyi
+ * birden yapmak, "hangi katman düştü" sorusunu yanıtsız bırakırdı — dönüş değeri
+ * katman katman sayı verir, yönetici sonucu EKRANDA görür.
+ */
+export function yetkiOnbelleginiDus(): { kimlik: number; sinif: number } {
+  const kimlik = kimlikCache.size
+  const sinif = rosterCache.size
+  kimlikCache.clear()
+  rosterCache.clear()
+  return { kimlik, sinif }
 }

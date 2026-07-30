@@ -4,8 +4,17 @@ import cors from 'cors'
 import { pinoHttp } from 'pino-http'
 import { env } from './config/env.js'
 import { logger } from './utils/logger.js'
+
+const isProd = env.NODE_ENV === 'production'
+const originList = isProd
+  ? [env.APP_URL]
+  : [env.APP_URL, 'http://localhost:5173', 'http://localhost:3000']
+if (!isProd) {
+  logger.debug({ origins: originList }, 'CORS: geliştirme modunda localhost origin\'leri açık')
+}
 import { notFound, errorHandler } from './middleware/error.js'
 import { requireAuth } from './middleware/auth.js'
+import { requireAktifHesap } from './middleware/requireAktifHesap.js'
 import { standardLimiter, chatLimiter, llmLimiter } from './middleware/rateLimit.js'
 import { healthRouter } from './routes/health.routes.js'
 import { chatRouter } from './routes/chat.routes.js'
@@ -23,13 +32,13 @@ import { aiRouter } from './routes/ai.routes.js'
 import { accountRouter } from './routes/account.routes.js'
 // ── v1 (master plan Faz 1) ──
 import { answersRouter } from './routes/answers.routes.js'
-import { osymRouter } from './routes/osym.routes.js'
 import { aiQuestionsRouter } from './routes/aiquestions.routes.js'
 import { masteryRouter } from './routes/mastery.routes.js'
 // ── Öğretmen / Yönetici panelleri ──
-import { requireRole } from './middleware/requireRole.js'
+import { requireRole, requireOgretmenKapsami } from './middleware/requireRole.js'
 import { teacherRouter } from './routes/teacher.routes.js'
 import { sinifRouter } from './routes/sinif.routes.js'
+import { ogretmenBasvuruRouter } from './routes/ogretmen-basvuru.routes.js'
 import { adminRouter } from './routes/admin.routes.js'
 
 /**
@@ -53,7 +62,7 @@ export function createApp(): Express {
   // herkese açık tutmanın da bir gerekçesi yok.
   app.use(
     cors({
-      origin: [env.APP_URL, 'http://localhost:5173', 'http://localhost:3000'],
+      origin: originList,
       credentials: false,
     }),
   )
@@ -69,41 +78,64 @@ export function createApp(): Express {
     nextFn()
   })
 
+  /**
+   * KİMLİK ZİNCİRİ — tek yerde kurulur, her yola aynı biçimde takılır.
+   *
+   * `requireAuth` "sen kimsin?"i, `requireAktifHesap` "hesabın açık mı?"yı yanıtlar.
+   * İkincisi rol kapılarından ÖNCE gelmek zorunda: askı bir yetki sorunu değil,
+   * erişimin tümden kesilmesidir (0025). Diziyi tek sabitte tutmak, yeni bir router
+   * eklerken kapılardan birinin sessizce unutulmasını imkânsız kılar.
+   */
+  const kimlikli = [requireAuth, requireAktifHesap]
+
   // Aynı router setini hem /api (legacy alias) hem /api/v1 (kanonik) altına bağlar.
   for (const base of ['/api', '/api/v1']) {
-    // SSE: compression YOK, standardLimiter YOK → requireAuth → chatLimiter (yalnız başlatma)
-    app.use(`${base}/chat`, requireAuth, chatLimiter, chatRouter)
+    // SSE: compression YOK, standardLimiter YOK → kimlik zinciri → chatLimiter (yalnız başlatma)
+    app.use(`${base}/chat`, kimlikli, chatLimiter, chatRouter)
     // LLM ÇAĞIRAN rotalar: dar limit (10/dk/kullanıcı). Tek istek onlarca LLM çağrısı
     // tetikleyebiliyor → burada sınır hız değil, FATURA meselesi.
-    app.use(`${base}/tests`, requireAuth, llmLimiter, testsRouter)
-    app.use(`${base}/agents`, requireAuth, llmLimiter, agentsRouter)
-    // Mutating rotalar: requireAuth + standardLimiter
-    app.use(`${base}/telemetry`, requireAuth, standardLimiter, telemetryRouter)
-    app.use(`${base}/question-state`, requireAuth, standardLimiter, questionStateRouter)
+    app.use(`${base}/tests`, kimlikli, llmLimiter, testsRouter)
+    app.use(`${base}/agents`, kimlikli, llmLimiter, agentsRouter)
+    // Mutating rotalar: kimlik zinciri + standardLimiter
+    app.use(`${base}/telemetry`, kimlikli, standardLimiter, telemetryRouter)
+    app.use(`${base}/question-state`, kimlikli, standardLimiter, questionStateRouter)
     // Birleşik cevap ucu (record-answer + telemetry'nin halefi)
-    app.use(`${base}/answers`, requireAuth, standardLimiter, answersRouter)
-    // Çıkmış sorular — /questions'tan ÖNCE mount edilmeli (Express sıralı eşleşir)
-    app.use(`${base}/questions/osym`, requireAuth, standardLimiter, osymRouter)
-    // AI üretimi havuz görüntüleyici (salt-okunur) — yine /questions'tan ÖNCE
-    app.use(`${base}/questions/ai`, requireAuth, standardLimiter, aiQuestionsRouter)
+    app.use(`${base}/answers`, kimlikli, standardLimiter, answersRouter)
+    // TELİF KARARI (2026-07-22): /questions/osym KALDIRILDI — çıkmış ÖSYM soruları hiçbir
+    // role servis edilmez (UI'sız API erişimi de yayındır). Yol hiçbir router'a eşleşmez →
+    // notFound 404, kaynak hiç yokmuş gibi (M§9 deseniyle tutarlı; 403/410 varlığı doğrulardı).
+    // Veri DB'de yaşamaya devam eder: RAG/üretim hattı ve iç ölçüm okumayı sürdürür.
+    // AI üretimi havuz görüntüleyici (salt-okunur) — /questions'tan ÖNCE (Express sıralı eşleşir, V§3.5.8)
+    app.use(`${base}/questions/ai`, kimlikli, standardLimiter, aiQuestionsRouter)
     // Migrasyon rotaları (Edge Functions → Express) — LLM çağıranlar llmLimiter'da
-    app.use(`${base}/questions`, requireAuth, llmLimiter, questionsRouter)
-    app.use(`${base}/ai`, requireAuth, llmLimiter, aiRouter)
-    app.use(`${base}/practice`, requireAuth, standardLimiter, practiceRouter)
+    app.use(`${base}/questions`, kimlikli, llmLimiter, questionsRouter)
+    app.use(`${base}/ai`, kimlikli, llmLimiter, aiRouter)
+    app.use(`${base}/practice`, kimlikli, standardLimiter, practiceRouter)
     // Bilişsel harita (salt-okunur) — çürüme-farkındalıklı ustalık; LLM yok
-    app.use(`${base}/mastery`, requireAuth, standardLimiter, masteryRouter)
-    app.use(`${base}/assignments`, requireAuth, standardLimiter, assignmentsRouter)
-    app.use(`${base}/gamification`, requireAuth, standardLimiter, gamificationRouter)
-    app.use(`${base}/garden`, requireAuth, standardLimiter, gardenRouter)
-    app.use(`${base}/account`, requireAuth, standardLimiter, accountRouter)
-    // Öğretmen paneli — sınıf kapsamı req.userId'den türer, LLM çağrısı YOK.
-    // standardLimiter requireRole'dan ÖNCE: rol yoklayan döngü de sınırlansın.
-    app.use(`${base}/teacher`, requireAuth, standardLimiter, requireRole('teacher'), teacherRouter)
+    app.use(`${base}/mastery`, kimlikli, standardLimiter, masteryRouter)
+    app.use(`${base}/assignments`, kimlikli, standardLimiter, assignmentsRouter)
+    app.use(`${base}/gamification`, kimlikli, standardLimiter, gamificationRouter)
+    app.use(`${base}/garden`, kimlikli, standardLimiter, gardenRouter)
+    // ⚠️ /account/delete askı kapısının ARDINDA: askıdaki hesap kendini silerek
+    // askıdan kaçamaz. KVKK talebi askı kalktıktan sonra ya da yönetici eliyle işler.
+    app.use(`${base}/account`, kimlikli, standardLimiter, accountRouter)
+    // Öğretmen paneli — LLM çağrısı YOK. standardLimiter kapıdan ÖNCE: rol yoklayan
+    // döngü de sınırlansın.
+    //
+    // ⚠️ KAPSAM ARTIK req.userId DEĞİL (0025): `requireOgretmenKapsami` öğretmende
+    // kapsamı kendi id'sine, yöneticide ?ogretmenId ile SEÇİLEN öğretmene bağlar.
+    // Yönetici seçim yapmadan girerse 403 — sessizce boş sınıf ASLA.
+    app.use(`${base}/teacher`, kimlikli, standardLimiter, requireOgretmenKapsami, teacherRouter)
     // Sınıf kaydı (öğrenci tarafı) — rol kapısı YOK: uç kendi içinde role='student' arar.
     // Hedef satır her zaman req.userId'dir, gövdeden gelmez.
-    app.use(`${base}/sinif`, requireAuth, standardLimiter, sinifRouter)
-    // Yönetici paneli — öğretmen uçlarından KESİN AYRI (admin oraya giremez, tersi de).
-    app.use(`${base}/admin`, requireAuth, standardLimiter, requireRole('admin'), adminRouter)
+    app.use(`${base}/sinif`, kimlikli, standardLimiter, sinifRouter)
+    // Öğretmen başvurusu (öğrenci tarafı) — rol kapısı YOK: uç kendi içinde role='student'
+    // arar. YALNIZ "başvuru bekliyor" durumunu yazar; rolü yönetici çevirir (0019 çizgisi
+    // korunur, rol istemciden yazılmaz/türetilmez). Hedef satır her zaman req.userId.
+    app.use(`${base}/ogretmen-basvuru`, kimlikli, standardLimiter, ogretmenBasvuruRouter)
+    // Yönetici paneli. Öğretmen uçlarıyla AYRI yüzeyler olmayı sürdürür: yönetici
+    // sınıf verisine /teacher/* üzerinden ?ogretmenId ile girer, buradan DEĞİL.
+    app.use(`${base}/admin`, kimlikli, standardLimiter, requireRole('admin'), adminRouter)
   }
 
   app.use(notFound)

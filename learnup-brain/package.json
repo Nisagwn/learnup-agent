@@ -18,7 +18,8 @@
     "lint": "eslint src",
     "eval": "bun src/scripts/eval.ts",
     "etiketle": "bun src/scripts/etiketle-cikmis.ts",
-    "etiket-yaz": "bun src/scripts/etiket-yaz.ts"
+    "etiket-yaz": "bun src/scripts/etiket-yaz.ts",
+    "etiketle-konu": "bun src/scripts/etiketle-konu.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -33,6 +34,7 @@
     "openai": "^4.68.0",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
+    "rate-limit-redis": "^6.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

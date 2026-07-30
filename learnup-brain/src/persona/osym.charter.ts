@@ -153,10 +153,19 @@ export const zorlukAnahtari = (z: string): 'kolay' | 'orta' | 'zor' =>
  * buradaki tarifler yalnız YAZARA gider ve USER mesajının GÖREV bölümüne eklenir — system
  * mesajı stabil kalır (prompt-cache bozulmaz).
  *
- * Her zor tarifinde o aileden, mekanizmaları İŞARETLENMİŞ 1 GERÇEK ÖSYM örneği var — çünkü
- * ölçüldü: model tariften değil ÖRNEKTEN öğreniyor (charter'a gömülen karşıtlık örneği tek
- * başına 9 soruda 1 tuttu). Örnekler mekanizmayı gösterir; "zor" SERTİFİKASI taşımaz
- * (çıkmış soruların zorluk etiketi yok — o ancak kredili etiketlemeyle gelir).
+ * Her ZOR ve ORTA tarifinde o aileden, mekanizmaları İŞARETLENMİŞ 1 GERÇEK ÖSYM örneği var —
+ * çünkü ölçüldü: model tariften değil ÖRNEKTEN öğreniyor (charter'a gömülen karşıtlık örneği tek
+ * başına 9 soruda 1 tuttu). Örnekler mekanizmayı gösterir.
+ *
+ * ⚠️ ORTA TARİFLERİNDEN ÖRNEĞİ ÇIKARMA — çıkarılınca kademe kolay'a çöker, ÖLÇÜLDÜ.
+ * Orta eskiden tarif-only'di (örnek yok, [TASARIM] planı da yasak) ve kolay ile zor örneklenmiş
+ * iki çekim merkezi arasında boşlukta kalıyordu: 2026-07-24'te "orta" sipariş edilen 8 sorunun
+ * 8'i hakemden KOLAY damgası aldı. Soruları okuduk — hakem HAKLIYDI, gerçekten tek adımlıydılar.
+ * Yani darboğaz hakemde değil YAZARDAYDI ve sebebi, modelin orta'nın neye benzediğini hiçbir
+ * kanaldan görmemesiydi. Üstelik kavramsal-orta reçetesine HARFİYEN uyan sorular da kolay
+ * çıkıyordu ("senaryo ver, kavramı buldur" tek yargıdır) — yani tarif kendi başına yanlış
+ * hedefi tarif ediyordu. Ortak eksen üç ailede de aynı: ŞIK BAŞINA YARGI.
+ * Örnekler 1695 çıkmış sorunun "orta" etiketlilerinden seçildi (etiketleme %100 bitti).
  *
  * [TASARIM] SÖZLEŞMESİ (yalnız zor siparişinde): yazar soruyu kurmadan ÖNCE hangi iki
  * mekanizmayı kullanacağını [TASARIM] etiketine yazar. Bu satır ÖĞRENCİYE GİTMEZ, DENETÇİYE
@@ -168,10 +177,31 @@ export const ZORLUK_TARIFI: Record<DersAilesi, Record<'kolay' | 'orta' | 'zor', 
     kolay: `ZORLUK TARİFİ (sayısal-kolay): TEK bağıntı/tanım doğrudan uygulansın; veriler açık,
 ara büyüklük yok. Çeldiriciler yine TİPİK hatalardan gelsin (işaret, birim, eksik adım) ama
 göz kararı elenebilir olmaları kusur değil.`,
-    orta: `ZORLUK TARİFİ (sayısal-orta): BİR ara büyüklük ya da BİR dönüşüm/koşul kontrolü ekle;
-yol görünür kalsın ama düz olmasın. En az bir çeldirici, ara büyüklükte yapılan tipik hatanın
-SONUCU olsun. Köke SOMUT SAYISAL VERİ koy — ÖSYM veri verir, laf vermez (ölçüldü: gerçek ÖSYM
-kökünde Matematik 4.7 / Kimya 6.5 sayı; bizde 3.5 / 1.4).`,
+    orta: `ZORLUK TARİFİ (sayısal-orta): ORTA'YI YAPAN ŞEY ADIM SAYISI DEĞİL, ŞIK BAŞINA YARGIDIR.
+Kolay soruda öğrenci bir kez hesaplar ve sonucu şıklarda arar; ORTA soruda her şıkkı kökün
+koşuluna karşı AYRI AYRI sınamak zorundadır.
+Şu yapılardan BİRİNİ seç (aynı kazanımda arka arkaya aynı yapıyı kurma):
+  · ÖNCÜL: "I., II., III." — her öncül bağımsız bir yargı; şıklar bunların bileşimi.
+  · ÇOK ÖLÇÜT: iki nicelik aynı anda sorulsun (ör. "X nasıl değişir / Y nasıl değişir"),
+    şıklar ikili kombinasyon olsun — birini bilmek yetmesin.
+  · OLUMSUZ KÖK: "yanlıştır / gösterilemez" — beş eşleştirmenin dördü DOĞRU olsun.
+  · TİPİK HATA TUZAĞI: önce hatayı SEÇ (birim çevrilmedi, ara değer sonuç sanıldı, işaret ters),
+    o hatanın sayısal SONUCUNU hesapla ve bir çeldiriciyi TAM O DEĞER yap.
+Köke SOMUT SAYISAL VERİ koy — ÖSYM veri verir, laf vermez (ölçüldü: gerçek ÖSYM kökünde
+Matematik 4.7 / Kimya 6.5 sayı; bizde 3.5 / 1.4).
+MEKANİZMASI İŞARETLİ GERÇEK ÖRNEK (biçim ölçüsü; KOPYALAMA):
+  "Sürtünmelerin ihmal edildiği ortamda usta, ağır taş bloğu 2 m yükseklikteki duvarın üstüne
+   yerden kaldırmak yerine eğik düzlemde sabit hızla çekerek çıkarıyor. Bu  I. yoldan kazanç
+   sağlamak, II. daha küçük kuvvet uygulamak, III. daha az iş yapmak  amaçlarından hangilerine
+   hizmet eder?"  (Doğru: I ve II)
+  → ŞIK BAŞINA YARGI: üç öncülün her biri ayrı ayrı sınanır; ikisini bilip üçüncüyü bilmeyen
+    öğrenci şıkkı yine bulamaz.
+  → TİPİK HATA TUZAĞI: III, "basit makine iş kazancı sağlar" yanılgısının ta kendisi — çeldirici
+    uydurulmamış, öğrencinin KENDİ eksik bilgisinden üretilmiş.
+✗ BÖYLE YAZMA (ölçüldü — "orta" istenmişti, hakem KOLAY dedi):
+  "λ = 15 m, v = 3,0 km/s. Bu dalganın frekansı nedir?"  → tek bağıntı (f = v/λ), ara büyüklük
+  yok, çeldiriciler öğrencinin yapacağı hatanın sonucu değil rastgele sayılar. Hesabı yapan
+  öğrenci tek adımda bitirir; yapmayan hiçbir şık eleyemez. Bu KOLAY'dır.`,
     zor: `ZORLUK TARİFİ (sayısal-zor): ÖNCE PLAN — mekanizmalardan İKİSİNİ seç ve [TASARIM]
 etiketine yaz (ör. "[TASARIM] GİRİŞ GİZLİ + ÖRTÜK VERİ"), soruyu O PLANA göre kur. ADIM EKLEME,
 formül zinciri UZATMA — uzun soru zor soru değildir. Köke somut sayısal veri koy.
@@ -185,9 +215,29 @@ MEKANİZMASI İŞARETLİ GERÇEK ÖRNEK (biçim ölçüsü; KOPYALAMA):
   kavramsal: {
     kolay: `ZORLUK TARİFİ (kavramsal-kolay): TEK kavramın doğrudan uygulaması/tanınması; kök kısa,
 bağlam açık. Çeldiriciler aynı konunun komşu kavramlarından gelsin — alakasız şık RASTGELEDİR.`,
-    orta: `ZORLUK TARİFİ (kavramsal-orta): Kavramı bir DURUMA uygulat — tanımı sormak yerine örnek
-olay ver, hangi kavramın karşılığı olduğunu buldur. En az bir çeldirici, durumun YÜZEYSEL
-okumasına uyan yakın kavram olsun.`,
+    orta: `ZORLUK TARİFİ (kavramsal-orta): ORTA'YI YAPAN ŞEY ŞIK BAŞINA YARGIDIR — beş şıkkın
+HEPSİ konu içinde DOĞRU/geçerli olsun; öğrenci her birini kökün sorduğu KOŞULA karşı tek tek
+sınasın ve ayrım TEK BİR AYRINTIDA olsun. "Senaryo ver, kavramın adını sordur" YETMEZ: bu tek
+yargıdır ve kolay çıkar.
+Şu yapılardan BİRİNİ seç (aynı kazanımda arka arkaya aynı yapıyı kurma):
+  · OLUMSUZ KÖK: "değildir / ulaşamaz / gösterilemez" — dördü koşulu sağlasın, biri sağlamasın.
+  · ÖNCÜL: "I., II., III." — her öncül ayrı doğru/yanlış yargısı; şıklar bileşimleri.
+  · ÇOK ÖLÇÜTLÜ EŞLEŞTİRME: köke birkaç ölçüt say (madde madde), şıklar aynı KATEGORİDEN
+    yakın akrabalar olsun; yalnız biri ölçütlerin TAMAMINI karşılasın.
+MEKANİZMASI İŞARETLİ GERÇEK ÖRNEK (biçim ölçüsü; KOPYALAMA):
+  "Türkiye'de demir yolu ulaşımını kullanarak gezi yapmak isteyen bir turist … yalnızca trenle
+   seyahat ederek aşağıdaki şehirlerden hangisine ULAŞAMAZ?
+   A) Ankara B) Erzurum C) Antalya D) Adana E) Malatya"  (Doğru: Antalya)
+  → ŞIK BAŞINA YARGI: beşi de gerçek Türkiye şehri, beşi de büyük ve bilinen — hiçbiri "saçma
+    şık" değil. Öğrenci her şehri demir yolu ağına karşı AYRI AYRI yoklamak zorunda.
+  → AYRIM TEK AYRINTIDA: coğrafyayı bilen bile durup düşünür; ayrım yalnız Antalya'ya demir yolu
+    ulaşmamasında. Bilgi geniş ama karar tek noktada.
+  (İkinci örnek aynı ailede: "ekonomisi tarım-hayvancılık, en küçük İDARİ birim…" → Köy; çeldiriciler
+   kom/ağıl/oba/dam — hepsi GERÇEK yerleşme tipi, ayrım yalnız "idari birim" ölçütünde.)
+✗ BÖYLE YAZMA (ölçüldü — "orta" istenmişti, hakem KOLAY dedi):
+  "Bir bilim insanı gözlem yapar, hipotez kurar, deney yapar ve teori geliştirir. Bu süreç hangi
+  kavramı örnekler?"  → senaryo, cevabın ders kitabı tanımını zaten YENİDEN ANLATIYOR; öğrenci
+  şıkları okumadan cevabı bilir. Tek yargı = KOLAY. Senaryo cevabı TARİF EDİYORSA soru kolaydır.`,
     zor: `ZORLUK TARİFİ (kavramsal-zor): ÖNCE PLAN — mekanizmalardan İKİSİNİ seç ve [TASARIM]
 etiketine yaz, soruyu O PLANA göre kur. Bu ailenin ana silahı AYIRT ETME'dir: şıkların HEPSİ
 konu içinde DOĞRU olgular/önermeler olsun; yalnız biri kökün sorduğu İLİŞKİYİ karşılasın.
@@ -202,9 +252,29 @@ MEKANİZMASI İŞARETLİ GERÇEK ÖRNEK (biçim ölçüsü; KOPYALAMA):
   metin: {
     kolay: `ZORLUK TARİFİ (metin-kolay): Cevap metinde AÇIKÇA söylensin; soru, söyleneni bulmayı
 istesin. Çeldiriciler metinde HİÇ geçmeyen fikirlerden gelsin.`,
-    orta: `ZORLUK TARİFİ (metin-orta): Cevap metinde açıkça YAZMASIN, tek adımlık çıkarım istesin
-(neden-sonuç, karşılaştırma, amaç). En az bir çeldirici metindeki bir ifadenin yüzeysel/parçacı
-okumasından doğsun.`,
+    orta: `ZORLUK TARİFİ (metin-orta): Cevap metinde açıkça YAZMASIN. ORTA'YI YAPAN ŞEY ŞIK BAŞINA
+YARGIDIR: öğrenci her şıkkı metne DÖNÜP tek tek doğrulamak zorunda kalsın; tek okumada elenen
+şık bırakma.
+Şu yapılardan BİRİNİ seç (aynı kazanımda arka arkaya aynı yapıyı kurma):
+  · OLUMSUZ KÖK: "söylenemez / çıkarılamaz" — beş özelliğin DÖRDÜ metinde gerçekten var,
+    biri yok. Bu, gerçek ÖSYM'nin metin ailesindeki en yaygın orta kalıbıdır.
+  · YAKIN OKUMALAR: şıklar aynı cümlenin birbirine yakın yorumları olsun; ayrım metindeki
+    belirli bir sözcüğe/bağlaca dayansın.
+  · TEK ADIMLIK ÇIKARIM: neden-sonuç / karşılaştırma / amaç — ama çeldiriciler metnin
+    YÜZEYSEL ya da PARÇACI okumasından doğsun, metin dışından değil.
+MEKANİZMASI İŞARETLİ GERÇEK ÖRNEK (biçim ölçüsü; KOPYALAMA):
+  "…seyyahlar devletin büyüklüğünü, şehirlerin güzelliğini öve öve bitiremezler. Kusursuz işleyen
+   bu sistem; toplamı 15 milyon kilometrekare tutan bir devleti yaşatıyor, 12 eyalet barındırıyordu.
+   Bu parçanın ANLATIMIYLA ilgili aşağıdakilerden hangisi SÖYLENEMEZ?
+   A) İkilemelere yer verilmiştir  B) Açıklama yapılmıştır  C) Nicel verilerden yararlanılmıştır
+   D) Öznel ifadeler kullanılmıştır  E) Örneklerden yararlanılmıştır"  (Doğru: E)
+  → ŞIK BAŞINA YARGI: beş şık da geçerli bir anlatım özelliği; öğrenci her biri için metne dönüp
+    "bunun karşılığı burada var mı?" diye ayrı ayrı bakmak zorunda ("öve öve" → ikileme,
+    "15 milyon km²" → nicel veri, "kusursuz" → öznel).
+  → AYRIM TEK AYRINTIDA: dördü metinde bulunuyor, yalnız örnekleme yok. Metni okumadan hiçbiri
+    elenemez; okuyup da tek tek yoklamayan öğrenci yanılır.
+✗ BÖYLE YAZMA: cevabı metinde açıkça yazan ya da çeldiricileri metinde hiç geçmeyen fikirlerden
+  toplayan soru — o KOLAY'dır (bkz. metin-kolay tarifi), çünkü tek bakışta elenir.`,
     zor: `ZORLUK TARİFİ (metin-zor): ÖNCE PLAN — mekanizmalardan İKİSİNİ seç ve [TASARIM] etiketine
 yaz, soruyu O PLANA göre kur. Bu ailenin ana silahı EŞ-ÇEKİMLİ ÇELDİRİCİ'dir: en az iki şık,
 metnin SAVUNULABİLİR ama eksik okumaları olsun — ayrım metindeki belirli bir ayrıntıya dayansın.
@@ -329,7 +399,17 @@ ${COZUM_ORNEGI}
 Bu örnek SAYISAL bir soru içindir. Sözel/olgusal derslerde aynı ilkeler geçerlidir: gerekçeyi
 adım adım kur, metindeki hangi ifadeye dayandığını göster, en az bir çeldiricinin hangi yanlış
 okumadan doğduğunu açıkla.`,
+  // ⚠️ [TASARIM] BU LİSTEDEN ÇIKARMA — çıkarılınca zor kademesi SESSİZCE ölür.
+  // Liste eskiden [TASARIM]'ı saymıyordu ama başlık "her soru TAM BU ETİKETLERLE" diyordu; zor
+  // tarifi ise (ZORLUK_TARIFI.zor, user mesajında) "[TASARIM] etiketine yaz" diyordu. Yani model
+  // iki zıt talimat alıyordu ve hangisine uyduğu GÜCÜNE bağlıydı: v4-pro çelişkiyi çözüp planı
+  // yazıyordu, zayıf modeller sistem mesajındaki KAPALI LİSTEye uyup planı atıyordu.
+  // ÖLÇÜLDÜ (2026-07-24, ücretsiz zincir, 6 hücre): 26 zor adayının 26'sında tasarim=null →
+  // havuza yazılan 7 sorunun SIFIRI zor damgası aldı. Arıza model kapasitesinde görünüyordu
+  // (kolay teşhis: "free model zor yazamıyor") ama yeri BURASIYDI — kendi sözleşmemiz planı
+  // yasaklıyordu. Pahalı modele dönmek bu hatayı ÖRTERDİ, çözmezdi.
   `ÇIKTI SÖZLEŞMESİ (matematik $...$ ile — bkz. MATEMATİK BİÇİMİ; her soru tam bu etiketlerle):
+[TASARIM] ...   ← YALNIZ "zor" istendiğinde ve [SORU]'DAN ÖNCE. Kolay/orta'da bu satırı HİÇ yazma.
 [SORU] ...
 [A] ...
 [B] ...
@@ -339,7 +419,13 @@ okumadan doğduğunu açıkla.`,
 [DOGRU] <A-E>
 [COZUM] ...
 [KAZANIM] <kod>
-[ZORLUK] <kolay|orta|zor>`,
+[ZORLUK] <kolay|orta|zor>
+
+"zor" istendiğinde [TASARIM] ZORUNLUDUR ve soruyu yazmadan ÖNCE gelir: seçtiğin İKİ mekanizmanın
+adını yaz (ör. "[TASARIM] GİRİŞ GİZLİ + ÖRTÜK VERİ"), sonra soruyu O PLANA göre kur. Bu satır
+öğrenciye gösterilmez ve denetçiye geçirilmez — planı YAZMADAN kurulan "zor" soru, ölçüldüğünde
+kolay/orta çıkar ve zor kademesi boş kalır. Çoklu soru istendiğinde HER sorunun kendi [TASARIM]'ı
+olur; etiketleri NUMARALANDIRMA ([SORU 1] değil [SORU]).`,
 )
 
 /**

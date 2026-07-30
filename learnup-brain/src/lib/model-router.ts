@@ -3,12 +3,36 @@ import { openrouter } from '../clients/openrouter.js'
 import { redis } from '../clients/redis.js'
 import { logger } from '../utils/logger.js'
 
-/** OPSİYONEL ikinci ücretsiz sohbet/üretim sağlayıcısı: Groq (~1000 istek/gün,
- *  DeepSeek R1 distill dahil). Zincir girdisi 'groq:<model>' öneklidir;
- *  GROQ_API_KEY .env'de yoksa bu girdiler sessizce atlanır — OpenRouter omurga kalır.
- *  NOT: Embeddings (vektörler) HER ZAMAN OpenRouter'dadır (rag.ts) — Groq embedding sunmaz. */
+/**
+ * OPSİYONEL ücretsiz sağlayıcı: Groq. Zincir girdisi 'groq:<model>' öneklidir; GROQ_API_KEY
+ * .env'de yoksa bu girdiler sessizce atlanır — OpenRouter omurga kalır.
+ * NOT: Embeddings (vektörler) HER ZAMAN OpenRouter'dadır (rag.ts) — Groq embedding sunmaz.
+ *
+ * ⚠️ GROQ'U 'generate'/'generateFree' ZİNCİRİNE EKLEME — ARİTMETİK TUTMUYOR, ÖLÇÜLDÜ (2026-07-24).
+ * Groq'un ücretsiz katmanı istek/gün DEĞİL, DAKİKA-TOKEN (TPM) ile sınırlıyor ve sayaca İSTENEN
+ * `max_tokens`'ı da katıyor. Bizim üretim istemi ~9.7k GİRDİ + 16k tavan = ~25.7k token/istek:
+ *     gpt-oss-120b / gpt-oss-20b / qwen3.6-27b   1000 istek/gün · TPM  8.000 → girdi TEK BAŞINA aşıyor
+ *     llama-3.3-70b-versatile                    1000 istek/gün · TPM 12.000 → 413 "Request too large"
+ *     llama-3.1-8b-instant                     14.400 istek/gün · TPM  6.000 → aşıyor
+ *     groq/compound                               250 istek/gün · TPM 70.000 → max_tokens'ı 8192'de KESİYOR,
+ *       ayrıca tek model değil: içeride llama-4-scout'a yönlendiren ajan katmanı ve asıl kotayı
+ *       O model dayatıyor (girdi ~5k'da bile 429). Başlıktaki 70k sarmalayıcıya ait, ALTA GEÇMİYOR.
+ * "max_tokens'ı düşürüp sığdıralım" ÇIKIŞ DEĞİL: 8000 tavanı ölçüldü ve model bütçenin tamamını
+ * düşünmeye harcayıp SIFIR metin döndürdü (bkz. generation.ts, üretim çağrısındaki max_tokens
+ * yorumu). Yani Groq'u üretime sokmanın tek yolu, sıfır soru üreten tavana inmektir.
+ * Groq ancak KISA istemli roller için düşünülebilir (fast/chat); üretimde darboğaz zaten kota değil.
+ */
 const groq: OpenAI | null = process.env.GROQ_API_KEY
   ? new OpenAI({ baseURL: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY })
+  : null
+
+/** OPSİYONEL üçüncü ücretsiz sağlayıcı: Google AI Studio (Gemini). OpenAI-uyumlu endpoint
+ *  (generativelanguage.googleapis.com/v1beta/openai) → aynı SDK, farklı baseURL. Zincir girdisi
+ *  'google:<model>' öneklidir (ör. 'google:gemini-2.5-flash-lite'); GOOGLE_API_KEY yoksa bu
+ *  girdiler sessizce atlanır. AI Studio anahtarı ücretsiz kotalıdır (flash-lite gün-içi tavan);
+ *  Türkçesi güçlü — sözel/kavramsal üretimde nemotron/gemma'dan üstün (ölçüldü). */
+const google: OpenAI | null = process.env.GOOGLE_API_KEY
+  ? new OpenAI({ baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', apiKey: process.env.GOOGLE_API_KEY })
   : null
 
 /**
@@ -25,12 +49,14 @@ const groq: OpenAI | null = process.env.GROQ_API_KEY
  * geri gelir. Zincire 'anthropic:...' yazmak artık hiçbir şey yapmaz — o önek tanınmıyor,
  * girdi OpenRouter slug'ı sanılır ve 404'e düşer.
  */
-type Provider = 'openrouter' | 'groq'
+type Provider = 'openrouter' | 'groq' | 'google'
 const parseEntry = (entry: string): { provider: Provider; model: string } => {
   if (entry.startsWith('groq:')) return { provider: 'groq', model: entry.slice(5) }
+  if (entry.startsWith('google:')) return { provider: 'google', model: entry.slice(7) }
   return { provider: 'openrouter', model: entry }
 }
-const clientOf = (p: Provider): OpenAI | null => (p === 'groq' ? groq : openrouter)
+const clientOf = (p: Provider): OpenAI | null =>
+  p === 'groq' ? groq : p === 'google' ? google : openrouter
 
 
 /**
@@ -41,7 +67,7 @@ const clientOf = (p: Provider): OpenAI | null => (p === 'groq' ? groq : openrout
  * Redis yoksa bütçe/kesici in-memory yaklaşık çalışır (doğruluk değil hassasiyet düşer).
  */
 
-export type LlmRole = 'chat' | 'generate' | 'verify' | 'fast'
+export type LlmRole = 'chat' | 'generate' | 'generateFree' | 'repair' | 'verify' | 'fast'
 /** P0 interaktif (Kaptan) · P1 doğrulama/canlı üretim · P2 gece batch. */
 export type LlmPriority = 'P0' | 'P1' | 'P2'
 
@@ -54,7 +80,9 @@ const CHAINS: Record<LlmRole, string[]> = {
     'deepseek/deepseek-v4-flash',             // $0.098/$0.196 MTok — P0 sohbet: düşünmesiz → hızlı
     'deepseek/deepseek-v3.2',
     'nvidia/nemotron-3-super-120b-a12b:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
+    // llama-3.3-70b:free 2026-07-20'de KALKTI (404 "unavailable for free" — canlı sondajla
+    // yakalandı). Yerine gemma-4-26b: ölçüldü, 1.4sn + düşünmez — sohbet yedeği için doğru profil.
+    'google/gemma-4-26b-a4b-it:free',
   ]),
   /**
    * ÖSYM üretimi — v4-pro. UCUZ SLUG'A GEÇMEDEN ÖNCE BU ÖLÇÜMÜ OKU.
@@ -74,13 +102,75 @@ const CHAINS: Record<LlmRole, string[]> = {
    * daha çok düşündürdüğü için flash'ın denetim faturası ($0.055) pro'nunkinden ($0.031) YÜKSEK.
    * (Uyarı: pro'nun %92'si kendi kendini denetlediği turdan gelir → şişkin. Yön nettir, sayı değil.)
    */
+  /**
+   * ⚠️ SIRA 2026-07-24'te TERSİNE ÇEVRİLDİ: v4-pro BAŞTAN SONA alındı. Üstteki ölçüm hâlâ
+   * geçerli (pro en iyi yazar) ama ARTIK ZORUNLU DEĞİL — gerekçesi bayatladı.
+   *
+   * Eski gerekçe: "zor'u free'ye gönderemeyiz, [TASARIM] planını yalnız v4-pro yazar." Bu doğruydu
+   * ÇÜNKÜ [TASARIM] çıktı sözleşmesinde YOKTU (osym.charter'daki sözleşme "tam bu etiketlerle"
+   * deyip planı saymıyordu) ve zayıf modeller sistem mesajındaki kapalı listeye uyup planı
+   * atıyordu — ölçüldü: 26 zor adayının 26'sında tasarim=null. Sözleşme düzeltilince free modeller
+   * planı YAZDI ve zor kademesi bedavaya doldu.
+   *
+   * ÖLÇÜLDÜ (2026-07-24, aynı gün, aynı kapılar):
+   *   ücretsiz zincir → 19 zor damgalı soru · $0
+   *   v4-pro          →  2 zor damgalı soru · $0.185   (zor damgası başına ~$0.09)
+   * Fatura dökümü niye bu kadar yüksek olduğunu da söylüyor: 2 kabul için 8 üretim çağrısı,
+   * çıktı token'ının %79'u düşünme, girdi (~9.7k) her çağrıda yeniden gönderiliyor. Yani para
+   * kaliteye değil TEKRARA gidiyordu.
+   *
+   * Paralı uç SİLİNMEDİ, SONA alındı: ücretsiz kota dolunca freeBudgetOk false döner ve zincir
+   * kendiliğinden pro'ya düşer. Böylece pro "üretici" değil AÇIK KAPATICI olur — ayrı bir
+   * planlayıcı yazmaya gerek kalmadan.
+   *
+   * ⚠️ v4-flash BİLEREK YAZAR ZİNCİRİNDE DEĞİL: (1) yazar olarak kabul oranı düşük (%25, üstteki
+   * ölçüm), (2) denetçi zincirinin ikinci sırasında duruyor — yazar zincirinde de olsaydı ikisi
+   * aynı slug'a düştüğünde model KENDİ sorusunu denetlerdi (charter'ın yasağı; ölçüldü: kendini
+   * denetleyen model %92 cömertlik gösteriyor).
+   */
   generate: chainFromEnv('LLM_CHAIN_GENERATE', [
-    'deepseek/deepseek-v4-pro',
-    // Yedek — yalnız pro'nun kesicisi açılınca girer. Kalitesi düşük (yukarı bak) ama
-    // "soru yok" demektense zayıf aday üretip denetçi kapısına yollamak yeğdir.
-    'deepseek/deepseek-v4-flash',
     'nvidia/nemotron-3-super-120b-a12b:free',
-    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+    'google:gemini-2.5-flash-lite', // günde 20 istek — küçük ama bedava katkı
+    'deepseek/deepseek-v4-pro',     // AÇIK KAPATICI: yalnız ücretsiz kota bitince girer
+  ]),
+  /**
+   * ÜCRETSİZ-ÖNCE ÜRETİM — YALNIZ kolay/orta siparişi (generateQuestions zorluğa göre seçer;
+   * zor BURAYA GELMEZ, o 'generate'te kalır: v4-pro kabul-başına en ucuz + tek [TASARIM] yazan).
+   *
+   * NEDEN AYRI ZİNCİR: kolay/orta [TASARIM] planı GEREKTİRMEZ (o kapı yalnız zor, generation.ts)
+   * ve mekanizma şartı yok → free modeller bu kapıları geçer. v4-pro'ya göndermek, gereksiz yere
+   * hacmin ~%72'sine paralı yazar tutmaktı. Sıra free-önce, paralı-yedek (zincir asla "soru yok"
+   * demez): Gemini başta (ölçüldü — `[A]` biçimi doğru, Türkçesi güçlü; gemma "A)" yazıp parser'ı
+   * boşa düşürüyordu), sonra nemotron:free, EN SONDA paralı yedek (v4-flash ucuz, v4-pro son çare).
+   * Free kota dolunca freeBudgetOk false → zincir kendiliğinden paralıya düşer, üretim durmaz.
+   */
+  generateFree: chainFromEnv('LLM_CHAIN_GENERATE_FREE', [
+    // ⚠️ GOOGLE BAŞTA DEĞİL — ücretsiz katmanı MODEL BAŞINA GÜNDE 20 İSTEK (ölçüldü, canlı 429
+    // gövdesinden; flash ve flash-lite ikisi de 20). Başa koymak, her hücrenin ilk denemesini
+    // 20 çağrı sonrası 429'a çarpan bir slug'a harcamaktı; kesici üstel açılıp hattı dakikalarca
+    // öldürüyordu. Omurga OpenRouter (~1000/gün); Google küçük bir bonus olarak ikinci sırada.
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'google:gemini-2.5-flash-lite',
+    // v4-flash yazar zincirinden ÇIKARILDI (gerekçe 'generate' yorumunda: düşük kabul + denetçiyle
+    // çakışma). Paralı yedek tek: pro. Ücretsiz kota dolmadan buraya gelinmez.
+    'deepseek/deepseek-v4-pro',
+  ]),
+  /**
+   * ONARIM — ayrı rol, iki sebeple.
+   *
+   * (1) MALİYET: onarım `'generate'` rolüne gidiyordu, yani paralı v4-pro'ya. LaTeX/çeldirici/
+   *     uzunluk onarımları MEKANİK düzeltmelerdir (eleştiri metni tam olarak neyin yanlış
+   *     olduğunu söyler) — zayıf modelin en yapabileceği iş sınıfı. ÖLÇÜLDÜ (2026-07-24): tek
+   *     hücrede 2 kabul için 8 üretim çağrısı gitti ve bir bölümü onarımdı; her biri tam pro
+   *     faturası ödedi.
+   * (2) GÖRÜNÜRLÜK: onarım çağrıları logda `role:"generate"` diye görünüyordu, üretimden
+   *     AYIRT EDİLEMİYORDU. "8 çağrının kaçı onarımdı" sorusu tahminle cevaplanıyordu; artık
+   *     `role:"repair"` diye ayrı sayılır.
+   */
+  repair: chainFromEnv('LLM_CHAIN_REPAIR', [
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'google:gemini-2.5-flash-lite',
+    'deepseek/deepseek-v4-flash', // onarımda ucuz paralı yedek yeterli (yazar değil, düzeltici)
   ]),
   /**
    * DENETÇİ — v4-flash. r1'den 43× ucuz; farkı KOD KAPISI kapatıyor.
@@ -125,7 +215,13 @@ const CHAINS: Record<LlmRole, string[]> = {
     'nvidia/nemotron-3-ultra-550b-a55b:free',
     'deepseek/deepseek-v4-flash',
     'deepseek/deepseek-v3.2',
-    'nvidia/nemotron-3-super-120b-a12b:free',
+    // ⚠️ BURADA `nemotron-3-super-120b:free` VARDI — 2026-07-24'te ÇIKARILDI. O slug artık YAZAR
+    // zincirinin BAŞI (generate/generateFree/repair üçünde de birinci sırada). Denetçi buraya
+    // düşseydi model KENDİ yazdığı soruyu denetlerdi — charter'ın açık yasağı ve ölçülmüş arıza
+    // (kendini denetleyen model %92 kabul verdi, aynı hakem başkasının sorusuna %25).
+    // Yerine nano-omni: ayrı model, muhakemeye ayarlı, hiçbir yazar zincirinde yok.
+    // ⚠️ YAZAR ZİNCİRLERİNDEKİ BİR SLUG'I BURAYA EKLEME — src/scripts ile kontrol edilebilir.
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   ]),
   fast: chainFromEnv('LLM_CHAIN_FAST', [
     'deepseek/deepseek-v4-flash',             // sınıflama/özet — düşünmesiz slug tam da bu rol için
@@ -141,7 +237,8 @@ function chainFromEnv(name: string, fallback: string[]): string[] {
   return list.length ? list : fallback
 }
 
-const isFree = (entry: string): boolean => entry.endsWith(':free') || entry.startsWith('groq:')
+const isFree = (entry: string): boolean =>
+  entry.endsWith(':free') || entry.startsWith('groq:') || entry.startsWith('google:')
 /** Rol başına timeout. `generate` 60sn'ydi ve YETMİYORDU: tek çağrıda 4 tam ÖSYM sorusu
  *  + çözümleri (max_tokens 8000) yazılıyor; model bunu 60sn'de bitiremeyip abort ediliyordu.
  *  Üretim interaktif değil (P1 canlı top-up / P2 gece batch) → bekleyebilir. `chat` P0 kalır. */
@@ -158,14 +255,46 @@ const isFree = (entry: string): boolean => entry.endsWith(':free') || entry.star
  * Bu bilinçli bir takas: üretim interaktif DEĞİL (P1 top-up / P2 gece batch) → beklesin, ucuz olsun.
  * `chat` P0 kalır (45sn) — orada öğrenci ekran başında.
  */
-const TIMEOUT_MS: Record<LlmRole, number> = { chat: 45_000, generate: 300_000, verify: 240_000, fast: 30_000 }
-/** Sağlayıcı-başına dakika tavanı. */
-const MINUTE_CAP: Record<Provider, number> = { openrouter: 18, groq: 25 }
-/** Sağlayıcı-başına günlük ücretsiz tavan (env ile ezilebilir).
- *  OpenRouter kredisiz hesapta 50/gün → güvenli 45; $10 sonrası OPENROUTER_FREE_DAILY=950 yap. */
+// generateFree kolay/orta içindir → ağır [TASARIM] düşünmesi yok, 120sn yeter (generate 300sn zor için).
+// repair: max_tokens 4000 ve iş mekanik → 120sn yeter (generate 300sn zor üretimi içindir).
+const TIMEOUT_MS: Record<LlmRole, number> = { chat: 45_000, generate: 300_000, generateFree: 120_000, repair: 120_000, verify: 240_000, fast: 30_000 }
+/**
+ * Sağlayıcı-başına dakika tavanı.
+ *
+ * ⚠️ BU KAPI SAĞLAYICININ GERÇEK SINIRININ ALTINDA KALMALI — üstünde kalırsa kapı işe yaramaz,
+ * ZARAR VERİR. google 14'tü ve gemini-2.5-flash ücretsiz katmanı 10 RPM: kendi kapımız sağlayıcının
+ * izin verdiğinden fazlasını geçiriyordu. ÖLÇÜLDÜ (2026-07-24): günlük tavanın yalnız 70/170'i
+ * kullanılmışken gemini kesicisi 10 ARDIŞIK arızayla açıktı ve üstel soğuma tavana (300 sn)
+ * dayanmıştı. Yani bütçemiz boşken hat 5 dakikalık kesintiler yaşıyordu; 429'lar kotadan değil
+ * DAKİKA sınırından geliyordu ve her biri kesiciyi biraz daha uzatıyordu.
+ * 8, 10'un altında bilinçli pay: eşzamanlı hücreler aynı saniyeye denk gelince pencere kayabilir.
+ */
+const MINUTE_CAP: Record<Provider, number> = { openrouter: 18, groq: 25, google: 8 }
+/**
+ * Sağlayıcı-başına günlük ücretsiz tavan (env ile ezilebilir).
+ * OpenRouter kredisiz hesapta 50/gün → güvenli 45; $10 sonrası OPENROUTER_FREE_DAILY=950 yap.
+ *
+ * ⚠️ GOOGLE ÜCRETSİZ KATMANI TOPLU ÜRETİM İÇİN KULLANILAMAZ — MODEL BAŞINA GÜNDE 20 İSTEK.
+ * Canlı 429 gövdesinden ölçüldü (2026-07-24): quotaId
+ * `GenerateRequestsPerDayPerProjectPerModel-FreeTier`, quotaValue **20**. İKİ model de sınandı,
+ * ikisi de 20: `gemini-2.5-flash` VE `gemini-2.5-flash-lite`. Yani "lite'ın payı ~1000 RPD"
+ * varsayımı bu proje için YANLIŞ; kotayı yükseltmenin yolu model değiştirmek değil, faturalı
+ * katmana geçmektir.
+ *
+ * Buradaki tavan 200'dü — gerçeğin 10 KATI. Sonucu şuydu: sayaç "98/170, yerin var" derken
+ * sağlayıcı çoktan 429 veriyor, her ret kesiciyi üstel olarak uzatıyor (30→300 sn) ve hat
+ * dakikalarca ölüyordu. Bütçe kapısı koruma değil ZARAR üretiyordu; üstelik arıza "ücretsiz
+ * model beceriksiz" gibi görünüyordu. 20 → sayaç sağlayıcıdan ÖNCE durur, 429 hiç yenmez.
+ *
+ * Ayrıca kota MODEL başına, bu sayaç ise SAĞLAYICI başına: flash'ın yaktığı 20 istek,
+ * flash-lite'ın ayrı payını da yemiş gibi görünür. Kalıcı çözüm model-başına sayaç.
+ * TOPLU ÜRETİMİN OMURGASI OPENROUTER ÜCRETSİZ SLUG'LARIDIR (~1000/gün); Google yalnız
+ * günün ilk ~20 çağrısına yetişen bir bonustur.
+ */
 const DAY_CAP_BASE: Record<Provider, number> = {
   openrouter: Number(process.env.OPENROUTER_FREE_DAILY) || 45,
   groq: Number(process.env.GROQ_FREE_DAILY) || 900,
+  google: Number(process.env.GOOGLE_FREE_DAILY) || 20, // ÖLÇÜLDÜ: model başına 20/gün (yukarı bak)
 }
 /** Öncelik payı: P0 tam tavan, P1 %95, P2 %85 (interaktifin payı asla yenmez). */
 const PRIORITY_FACTOR: Record<LlmPriority, number> = { P0: 1, P1: 0.95, P2: 0.85 }
@@ -218,12 +347,52 @@ async function incr(key: string, ttlSec: number): Promise<number> {
   }
 }
 
-/** Ücretsiz slug için sağlayıcı-başına bütçe kapıları (aşımda false → zincirde ilerle). */
+/** Sayacı OKUR, artırmaz. Redis düşerse in-memory'den okur (incr ile aynı takas). */
+async function oku(key: string): Promise<number> {
+  if (!redis) return memGet(key)
+  try {
+    const v = await redis.get(key)
+    return v ? Number(v) : 0
+  } catch {
+    return memGet(key) // Redis yok → yaklaşık say, isteği ÖLDÜRME
+  }
+}
+
+/**
+ * Ücretsiz slug için sağlayıcı-başına bütçe kapıları (aşımda false → zincirde ilerle).
+ *
+ * ⚠️ SAYAÇLARI BURADA ARTIRMA — KAPIYI SORMAK PAY YEMEMELİ. Eski hâli `incr` ile soruyordu,
+ * yani çağrı GÖNDERİLMESE bile "gönderebilir miyim?" sorusu dakika payını tüketiyordu. Bu,
+ * kendi kendini besleyen kalıcı bir kilit üretiyor ve ÖLÇÜLDÜ (2026-07-27, kredisiz havuz koşusu):
+ * geçici bir arızayla hücreler düşmeye başlayınca kuyruk saniyeler içinde dönüyor, her dönüş
+ * sayacı birkaç kez artırıyor, sayaç bir daha MINUTE_CAP'in altına İNEMİYOR → sonraki her hücre
+ * "model zinciri boş" diye düşüyor. Kanıt: 24 ardışık düşen hücre, 0 kesici, 0 çağrı — istekler
+ * sağlayıcıya HİÇ ulaşmadı. Aynı anda doğrudan sondaj: iki ücretsiz uç da 1 sn'de cevap verdi.
+ * Yani bütçe kapısı, sağlayıcı bomboşken hattı kendi başına öldürüyordu.
+ * havuz-doldur'un 60 sn'lik freni de kurtarmıyor: iki işleyiciden yalnız biri frenler, öteki
+ * dönüp sayacı beslemeye devam eder.
+ *
+ * Pay, çağrı GERÇEKTEN gönderilecekken `freeBudgetTuket` ile düşülür (routedChat/routedStream).
+ * Oku-sonra-artır arasında yarış var (iki eşzamanlı çağrı aynı payı görebilir) — bilinçli: bu
+ * dosyanın zaten ilan ettiği takas, "bütçe hassasiyeti azalır ama servis AYAKTA kalır".
+ */
 async function freeBudgetOk(provider: Provider, priority: LlmPriority): Promise<boolean> {
-  const minute = await incr(minuteKey(provider), 120)
-  if (minute > MINUTE_CAP[provider]) return false
-  const day = await incr(dayKey(provider), 172_800)
-  return day <= Math.floor(DAY_CAP_BASE[provider] * PRIORITY_FACTOR[priority])
+  const dakika = await oku(minuteKey(provider))
+  const gunTavan = Math.floor(DAY_CAP_BASE[provider] * PRIORITY_FACTOR[priority])
+  const gun = await oku(dayKey(provider))
+  const kapali = dakika >= MINUTE_CAP[provider] ? 'dakika' : gun >= gunTavan ? 'gun' : null
+  // ⚠️ KAPI SESSİZ KAPANMASIN. Kapandığında çağıran yalnız "model zinciri boş: <rol>" görüyordu;
+  // zincirdeki HER slug bu yüzden atlandığında arıza "ücretsiz modeller çalışmıyor" gibi görünür,
+  // oysa sağlayıcıya tek istek bile gitmemiştir. ÖLÇÜLDÜ (2026-07-27): 32 ardışık düşen hücre,
+  // 0 kesici, 0 HTTP durumu — sebep bu kapıydı ve hangi sayacın dolduğu LOGDAN OKUNAMIYORDU.
+  if (kapali) logger.warn({ provider, priority, sebep: kapali, dakika, dakikaTavan: MINUTE_CAP[provider], gun, gunTavan }, 'ücretsiz bütçe kapısı kapattı')
+  return !kapali
+}
+
+/** Kapıdan geçen ve fiilen gönderilecek çağrı için payı düş (yalnız ücretsiz slug'larda). */
+async function freeBudgetTuket(provider: Provider): Promise<void> {
+  await incr(minuteKey(provider), 120)
+  await incr(dayKey(provider), 172_800)
 }
 
 async function breakerOpen(slug: string): Promise<boolean> {
@@ -484,9 +653,21 @@ export async function routedChat(
     const client = clientOf(provider)
     if (!client) continue // GROQ_API_KEY yoksa groq atlanır
     // Tavan dolduysa PARALI slug'a hiç gitme (ücretsiz slug bedava, o sürebilir).
-    if (!isFree(slug) && harcananUsd >= maliyetTavaniUsd) throw new MaliyetTavaniAsildi(harcananUsd, maliyetTavaniUsd)
+    //
+    // ⚠️ DENETİM (verify) TAVANDAN MUAF — bilerek. Tavan denetimi de kesince şu oluyordu:
+    // parası ÖDENMİŞ adaylar denetlenemiyor, `verifyQuestion` "denetçi konuşamadı" deyip REJECT
+    // veriyor ve uçuştaki tüm üretim çöpe gidiyordu. ÖLÇÜLDÜ (2026-07-24, v4-flash yazar denemesi):
+    // adaylar biçim olarak sağlam üretildi, ücretsiz hakem kotası o sırada tükendi, tavan da paralı
+    // hakemi kapattı → 0 kabul, $0.027 KARŞILIKSIZ. Tavanın amacı harcamayı sınırlamaktı; sonucu
+    // harcamayı ÇÖPE ÇEVİRMEK oldu.
+    // Muafiyetin bedeli önemsiz: denetim faturanın %8'i (ölçüldü) ve denetim başına ~$0.001.
+    // Tavan asıl kalemi (üretim, %92) kesmeye devam eder — yani sınır işlevini korur.
+    if (role !== 'verify' && !isFree(slug) && harcananUsd >= maliyetTavaniUsd) {
+      throw new MaliyetTavaniAsildi(harcananUsd, maliyetTavaniUsd)
+    }
     if (await breakerOpen(slug)) continue
     if (isFree(slug) && !(await freeBudgetOk(provider, priority))) continue // bütçe → sıradaki
+    if (isFree(slug)) await freeBudgetTuket(provider) // pay burada düşer: çağrı GİDİYOR
     try {
       // ⚠️ HTTP 200 + HATA GÖVDESİ — OpenRouter'ın SESSİZ arıza biçimi. Sağlayıcı kapasitesi
       // dolduğunda gövde `{error:{...}}` döner ve `choices` HİÇ GELMEZ. Durum kodu 200 olduğu
@@ -558,6 +739,7 @@ export async function routedStream(
     if (!client) continue
     if (await breakerOpen(slug)) continue
     if (isFree(slug) && !(await freeBudgetOk(provider, priority))) continue
+    if (isFree(slug)) await freeBudgetTuket(provider) // pay burada düşer: çağrı GİDİYOR
     try {
       // withTimeout: (1) timeout'u TimeoutError'a çevirir → zincir çökmez, sonraki sağlayıcıya
       // geçer (routedChat'teki düzeltmenin aynısı; burada eksikti — P0 sohbet yolu bu).

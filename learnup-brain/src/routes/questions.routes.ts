@@ -1,8 +1,41 @@
 import { Router } from 'express'
+import { z } from 'zod'
 import { supabase } from '../clients/supabase.js'
 import { llmChat, GEN_MODEL, GEN_MODES, buildModePromptConfig, parseTaggedQuestions } from '../lib/questions-ai.js'
 import { resolveKazanimByTopic } from '../lib/curriculum.js'
 import { buildMicroTest } from '../lib/test-modes.js'
+import { validateBody } from '../middleware/validate.js'
+
+const GenerateSchema = z.object({
+  subject: z.string().min(1),
+  topic: z.string().min(1),
+  grade: z.union([z.string(), z.number()]).optional(),
+  count: z.number().int().min(1).max(10).optional().default(5),
+  difficulty: z.enum(['kolay', 'orta', 'zor']).optional().default('orta'),
+  mode: z.string().optional(),
+  persist: z.boolean().optional(),
+})
+
+const TargetedSchema = z.object({
+  studentId: z.string().uuid(),
+  subject: z.string().min(1),
+  topic: z.string().optional().nullable(),
+  grade: z.union([z.string(), z.number()]).optional().nullable(),
+  count: z.number().int().min(1).max(10).optional().default(5),
+})
+
+const SaveSchema = z.object({
+  questions: z.array(z.record(z.unknown())).min(1),
+  meta: z.object({
+    subject: z.string().optional(),
+    topic: z.string().optional().nullable(),
+    subTopic: z.string().optional().nullable(),
+    grade: z.union([z.string(), z.number()]).optional().nullable(),
+    difficulty: z.string().optional(),
+    mode: z.string().optional().nullable(),
+    teacherId: z.string().uuid().optional(),
+  }).optional(),
+})
 
 /** AI soru üretimi + kaydı (4-şıklı app dünyası).
  *  (Edge: generate-questions, generate-targeted-set, save-ai-questions) */
@@ -64,25 +97,21 @@ function yksToLegacy(q: { id?: string; soru: string; siklar: Record<string, stri
 }
 
 // POST /api/questions/generate — çoktan seçmeli soru üretir (opsiyonel havuza yazar).
-questionsRouter.post('/generate', async (req, res, next) => {
+questionsRouter.post('/generate', validateBody(GenerateSchema), async (req, res, next) => {
   try {
     const userId = req.userId!
-    const { subject, topic, grade, count, difficulty, mode, persist } = req.body ?? {}
-    if (!subject || !topic) {
-      res.status(400).json({ error: 'subject ve topic gerekli.' })
-      return
-    }
-    const qCount = Math.min(10, Math.max(1, Number(count) || 5))
+    const { subject, topic, grade, count, difficulty, mode, persist } =
+      ((req as unknown) as { validatedBody: z.infer<typeof GenerateSchema> }).validatedBody
+    const qCount = count
     const gradeStr = grade ? String(grade) : '10'
-    const diffStr = ['kolay', 'orta', 'zor'].includes(String(difficulty)) ? String(difficulty) : 'orta'
 
     // ── HAT BİRLEŞTİRME: konu bir kazanıma çözülüyorsa DENETİMLİ hattan üret ──
     // Eski yol tek llmChat çağrısıydı: grounding yok, çıkmış soru örneği yok, doğrulama yok.
     // buildMicroTest havuzu da kullanır (ısınmışsa LLM'e hiç gitmez) ve ürettiğini havuza yazar.
-    const eslesme = await resolveKazanimByTopic(String(subject), String(topic)).catch(() => null)
+    const eslesme = await resolveKazanimByTopic(subject, topic).catch(() => null)
     if (eslesme) {
       const set = await buildMicroTest({
-        userId, kazanimId: eslesme.node.id, difficulty: diffStr, count: qCount,
+        userId, kazanimId: eslesme.node.id, difficulty, count: qCount,
       })
       if (set.length) {
         res.json({
@@ -104,7 +133,7 @@ questionsRouter.post('/generate', async (req, res, next) => {
     if (String(mode || '').toLowerCase() === GEN_MODES.ANALYZE_AND_DERIVE) {
       samples = await fetchSampleQuestions(subject, 5)
     }
-    const cfg = buildModePromptConfig(mode, { subject, topic, grade: gradeStr, difficulty: diffStr, count: qCount, samples })
+    const cfg = buildModePromptConfig(mode ?? '', { subject, topic, grade: gradeStr, difficulty, count: qCount, samples })
     const text = await llmChat([{ role: 'system', content: cfg.system }, { role: 'user', content: cfg.prompt }], {
       model: GEN_MODEL, temperature: cfg.temperature, max_tokens: 2048,
     })
@@ -117,7 +146,7 @@ questionsRouter.post('/generate', async (req, res, next) => {
     let questionIds: string[] | undefined
     if (persist) {
       const saved = await saveAIQuestions(questions, {
-        subject, topic, subTopic: topic, grade: gradeStr, difficulty: diffStr, mode: cfg.mode, teacherId: userId,
+        subject, topic, subTopic: topic, grade: gradeStr, difficulty, mode: cfg.mode, teacherId: userId,
       })
       questionIds = saved.map((s: any) => s.id)
     }
@@ -128,14 +157,11 @@ questionsRouter.post('/generate', async (req, res, next) => {
 })
 
 // POST /api/questions/targeted — öğrencinin yanlışlarına (SRS) göre kişiselleştirilmiş set.
-questionsRouter.post('/targeted', async (req, res, next) => {
+questionsRouter.post('/targeted', validateBody(TargetedSchema), async (req, res, next) => {
   try {
     const teacherId = req.userId!
-    const { studentId, subject, topic = null, grade = null, count } = req.body ?? {}
-    if (!studentId || !subject) {
-      res.status(400).json({ error: 'studentId ve subject gerekli.' })
-      return
-    }
+    const { studentId, subject, topic, grade, count } =
+      ((req as unknown) as { validatedBody: z.infer<typeof TargetedSchema> }).validatedBody
 
     // ⚠️ YETKİ: studentId GÖVDEDEN geliyor ve aşağıda o öğrencinin SRS yanlış-cevap
     // geçmişi (soru metni, şıklar, doğru cevap) çekilip LLM'e few-shot olarak veriliyor,
@@ -162,7 +188,7 @@ questionsRouter.post('/targeted', async (req, res, next) => {
       return
     }
 
-    const qCount = Math.min(10, Math.max(1, Number(count) || 5))
+    const qCount = count
     const gradeStr = grade ? String(grade) : '10'
 
     let samples = await fetchStudentWrongSamples(studentId, subject, qCount)
@@ -209,24 +235,18 @@ questionsRouter.post('/targeted', async (req, res, next) => {
 })
 
 // POST /api/questions/save — AI üretilmiş soruları questions tablosuna yazar (verified:false).
-questionsRouter.post('/save', async (req, res, next) => {
+questionsRouter.post('/save', validateBody(SaveSchema), async (req, res, next) => {
   try {
     const userId = req.userId!
-    const body = req.body ?? {}
-    const questions = Array.isArray(body?.questions) ? body.questions : []
-    const meta: any = body?.meta || {}
-    if (questions.length === 0) {
-      res.json({ savedIds: [] })
-      return
-    }
-
-    const subject = meta.subject ?? 'Genel'
-    const topic = meta.topic ?? null
-    const subTopic = meta.subTopic || topic || null
-    const grade = meta.grade != null ? String(meta.grade) : null
-    const difficulty = meta.difficulty ?? 'medium'
-    const mode = meta.mode ?? null
-    const teacherId = meta.teacherId || userId
+    const { questions, meta } =
+      ((req as unknown) as { validatedBody: z.infer<typeof SaveSchema> }).validatedBody
+    const subject = meta?.subject ?? 'Genel'
+    const topic = meta?.topic ?? null
+    const subTopic = meta?.subTopic || topic || null
+    const grade = meta?.grade != null ? String(meta.grade) : null
+    const difficulty = meta?.difficulty ?? 'medium'
+    const mode = meta?.mode ?? null
+    const teacherId = meta?.teacherId || userId
 
     const rows = questions.map((q: any) => ({
       category: subject, subject, subject_tr: subject, topic, sub_topic: subTopic,

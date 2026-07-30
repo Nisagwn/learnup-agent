@@ -1,41 +1,35 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Icon } from '../ui'
-import { cn } from '../lib/cn'
+import { useReducedMotion } from 'framer-motion'
+import { Icon, SUBJECTS } from '../ui'
 import { useAuth } from '../lib/auth'
 import { useAsync } from '../lib/useAsync'
 import { apiGet, apiPost } from '../lib/api.js'
 import { selam, dersAnahtar, sayi } from '../lib/format'
-import { TIER_TR, type ReviewYaniti, type RontgenYanit, type Nudge, type CozSpec } from '../lib/types'
-import {
-  GlassCard, GlowButton, Badge, Chip, SubjectName, SectionLabel, Skeleton,
-} from '../components/ui'
-import { GlowBorder, Reveal, WaveDivider } from '../components/fx'
-import { Lighthouse } from '../components/Lighthouse'
-import { SubjectChart } from '../components/SubjectChart'
-import { Halka, IsiHucre, Sayi } from '../components/cekirdek'
+import { kalanGun } from '../lib/hedefTarih'
+import { TIER_TR, type ReviewYaniti, type RontgenYanit, type CozSpec } from '../lib/types'
+import { CanliSayi } from '../components/cekirdek'
+import { Reveal } from '../components/fx'
+import { PlanYolu, type Durak } from '../components/PlanYolu'
+import { OdakZamanlayici, bugunkuOdakDk } from '../components/OdakZamanlayici'
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   GENEL BAKIŞ — günün güvertesi.
-   Sol: Devam Et (yarıda kalan blok) · Bugünün Rotası · sıradaki bloklar ·
-        Tekrar Zamanı (SRS).
-   Sağ: Fener/seri + lig · Günlük Hedef halkası · Görev şeridi · Isı haritası
-        mini · Ders Performansı · Koç dürtmesi.
-   Veriler gerçek: /gamification/daily · /practice/suggest · /questions/ai/topics ·
-   /mastery/rontgen (trend → hedef halkası) · /practice/review · /agents/nudges.
+   BUGÜN — onaylı v4 önizleme (`docs/design/onizleme/bugun.html`) portu.
+   Sol: günlük hedef HERO (halka + tek birincil "Soru Çöz") · Plan YOL görünümü ·
+        Ustalık özeti (tek-renk ısı şeridi). Sağ: Tekrar · Odak Zamanlayıcısı ·
+        Lig. Veri wiring KORUNDU: /gamification/daily · /practice/suggest ·
+        /questions/ai/topics · /mastery/rontgen · /practice/review.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function sonrakiMilat(seri: number) {
-  for (const mlt of [7, 14, 30, 60, 100, 200, 365]) if (seri < mlt) return mlt
-  return seri
-}
-
-const kisalt = (s: string, n = 64) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s)
+const kisalt = (s: string, n = 44) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s)
 
 const buyukHarf = (s: string) =>
   s.split(' ').map((w) => (w ? w.charAt(0).toLocaleUpperCase('tr-TR') + w.slice(1) : w)).join(' ')
 
-/** Çöz'ün yazdığı yarım-blok oturumu (localStorage) — Devam Et kartının kaynağı. */
+const AYLAR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
+const GUNLER = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi']
+
+/** Çöz'ün yazdığı yarım-blok oturumu (localStorage) — hero'daki "yarım kalan test". */
 export interface DevamKaydi {
   spec: CozSpec
   idx: number
@@ -48,7 +42,6 @@ export function devamKaydiOku(): DevamKaydi | null {
     const raw = localStorage.getItem('learnup.devam')
     if (!raw) return null
     const d = JSON.parse(raw) as DevamKaydi
-    // 24 saatten eski yarım blok bayat sayılır
     if (!d?.spec || Date.now() - (d.zaman ?? 0) > 24 * 3_600_000) return null
     if (typeof d.idx !== 'number' || d.idx <= 0 || d.idx >= (d.toplam ?? 0)) return null
     return d
@@ -62,326 +55,299 @@ export function gunlukHedef(): number {
   } catch { return 10 }
 }
 
+const dersKisa = (subject: string) => SUBJECTS[dersAnahtar(subject)]?.short ?? subject
+const dersRenk = (subject: string) => SUBJECTS[dersAnahtar(subject)]?.color ?? 'var(--vurgu)'
+
+const DERSLER: [string, string][] = [
+  ['mat', 'MAT'], ['geo', 'GEO'], ['fiz', 'FİZ'], ['kim', 'KİM'], ['bio', 'BİY'], ['trk', 'TRK'], ['tar', 'TAR'],
+]
+
 export function Bugun() {
   const nav = useNavigate()
   const { profile, user } = useAuth()
-  const ad = buyukHarf(profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Denizci')
+  const ad = buyukHarf((profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Öğrenci').split(' ')[0])
 
   const gami = useAsync<any>(() => apiPost('/gamification/daily', {}), [])
   const oneri = useAsync<any>(() => apiGet('/practice/suggest'), [])
   const konular = useAsync<any>(() => apiGet('/questions/ai/topics'), [])
-  // Bilişsel harita + trend — çürüme backend'de uygulanır; hedef halkası bugünün
-  // gerçek çözüm sayısını trend'den okur.
   const rontgen = useAsync<RontgenYanit>(() => apiGet('/mastery/rontgen'), [])
   const review = useAsync<ReviewYaniti>(() => apiGet('/practice/review'), [])
-  const nudges = useAsync<{ nudges: Nudge[] }>(() => apiGet('/agents/nudges'), [])
 
   const G = gami.data?.gamification
   const odak = oneri.data?.kazanim
   const seri = G?.streak?.count ?? 0
   const devam = useMemo(devamKaydiOku, [])
+  const hedef = gunlukHedef()
+  const odakDk = bugunkuOdakDk()
 
   const bugunCozulen = useMemo(() => {
     const bugun = new Date().toLocaleDateString('en-CA')
     return (rontgen.data?.trend ?? []).find((g) => g.date === bugun)?.solved ?? 0
   }, [rontgen.data])
-  const hedef = gunlukHedef()
 
-  const coz = (kazanimId: number, subject: string, title: string) =>
-    nav('/coz', { state: { source: 'ai', kazanimId, subject, title } })
+  const dogruluk = useMemo(() => {
+    const t = G?.totalSolved ?? 0
+    return t > 0 ? Math.round(100 * (G?.correctAnswers ?? 0) / t) : null
+  }, [G])
 
-  // Sıradaki bloklar: havuzdaki kazanımlar, odak hariç
   const siradaki = useMemo(() => {
     const hepsi: any[] = (konular.data?.subjects ?? []).flatMap((s: any) => s.topics)
-    return hepsi.filter((k) => k.kazanimId !== odak?.kazanimId).slice(0, 4)
+    return hepsi.filter((k) => k.kazanimId !== odak?.kazanimId).slice(0, 2)
   }, [konular.data, odak?.kazanimId])
 
-  const sonDurtme = nudges.data?.nudges?.[0] ?? null
   const rontgenBos = !rontgen.loading && (rontgen.data?.nodes?.length ?? 0) === 0
 
+  const isiSerit = useMemo(() => DERSLER.map(([key, kisa]) => {
+    const dn = (rontgen.data?.nodes ?? []).filter((n) => dersAnahtar(n.subject) === key)
+    if (!dn.length) return { kisa, ton: 'var(--v0)', olcumYok: true }
+    const ort = dn.reduce((s, n) => s + n.mastery, 0) / dn.length
+    const ton = ort < 0.25 ? 'var(--v1)' : ort < 0.5 ? 'var(--v2)' : ort < 0.75 ? 'var(--v3)' : 'var(--v4)'
+    return { kisa, ton, olcumYok: false }
+  }), [rontgen.data])
+
+  const soruCoz = () => {
+    if (rontgenBos) return nav('/coz', { state: { source: 'tanisma', title: 'Tanışma Sınavı' } })
+    if (odak) return nav('/coz', { state: { source: 'ai', kazanimId: odak.kazanimId, subject: odak.subject, title: odak.title } })
+    nav('/coz', { state: { source: 'ai' } })
+  }
+
+  const duraklar: Durak[] = useMemo(() => {
+    if (!odak) return []
+    const d: Durak[] = [
+      { tip: 'aktif', no: 1, dersKisa: dersKisa(odak.subject), dersRenk: dersRenk(odak.subject), baslik: kisalt(odak.title), detay: `${odak.count} soru · şimdi`, onDevam: soruCoz },
+    ]
+    siradaki.forEach((s, i) => d.push({
+      tip: 'bekle', no: i + 2, dersKisa: dersKisa(s.subject), dersRenk: dersRenk(s.subject), baslik: kisalt(s.title), detay: `${s.count} soru · sırada`,
+    }))
+    d.push({ tip: 'hedef', baslik: 'Günlük Hedef', detay: `${hedef} soru · fidanın büyür` })
+    return d
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [odak, siradaki, hedef])
+
+  const bugun = new Date()
+  const heroTamam = bugunCozulen >= hedef && bugunCozulen > 0
+
   return (
-    <div className="mx-auto max-w-7xl px-[clamp(16px,3.5vw,44px)] pb-20 pt-11">
-      {/* ── Selamlama + mini metrikler ── */}
+    <div className="mx-auto max-w-[1152px] px-[clamp(16px,3.5vw,44px)] pb-20 pt-9">
+      <style>{`
+        .bg-kart { background: var(--cam); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+          border: 1px solid var(--cam-kenar); border-radius: 20px; padding: 22px; box-shadow: var(--golge);
+          position: relative; overflow: hidden; transition: transform .2s ease, box-shadow .2s ease; }
+        .bg-kart:hover { transform: translateY(-3px); box-shadow: var(--golge-h); }
+        .bg-cip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 12px;
+          font-size: 12.5px; font-weight: 600; background: color-mix(in srgb, var(--adacayi) 18%, transparent); color: var(--vurgu); }
+        .bg-cip.sicak { background: color-mix(in srgb, var(--toprak) 22%, transparent); color: color-mix(in srgb, var(--toprak) 72%, var(--metin1)); }
+        .bg-etiket { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: .08em;
+          text-transform: uppercase; color: var(--metin3); font-weight: 500; }
+        .bg-sayi { font-family: Outfit, sans-serif; font-weight: 700; font-size: 26px; margin-top: 3px; color: var(--metin1); }
+        .bg-sayi small { font-size: 13px; color: var(--metin2); font-weight: 500; }
+        .bg-h2 { font-family: Outfit, sans-serif; font-weight: 700; font-size: 17.5px; color: var(--metin1); }
+        .bg-bikon { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; flex: 0 0 auto; }
+        .bg-bikon svg { width: 16px; height: 16px; }
+        .bg-aciklama { color: var(--metin2); font-size: 14px; }
+        .bg-cta { border: none; cursor: pointer; border-radius: 12px; padding: 12px 20px; font-family: Inter, sans-serif;
+          font-weight: 600; font-size: 14.5px; display: inline-flex; align-items: center; gap: 8px; background: var(--cta); color: #fff;
+          transition: box-shadow .2s, transform .15s; }
+        .bg-cta:hover { box-shadow: var(--parilti); transform: translateY(-1px); }
+        .bg-cta:active { transform: scale(.98); }
+        .bg-dis { border: 1px solid color-mix(in srgb, var(--vurgu) 35%, transparent); cursor: pointer; border-radius: 12px;
+          padding: 11px 16px; font-family: Inter, sans-serif; font-weight: 600; font-size: 13.5px; background: transparent; color: var(--vurgu);
+          transition: background .15s; }
+        .bg-dis:hover { background: var(--ic); }
+        .bg-mini { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0;
+          font-size: 14px; color: var(--metin2); border-top: 1px solid var(--cizgi); }
+        .bg-mini:first-of-type { border-top: none; }
+        .bg-mini b { color: var(--metin1); }
+        .bg-rozet { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .bg-rozet.dogru { background: color-mix(in srgb, var(--dogru) 14%, transparent); color: var(--dogru); }
+        .bg-ilerleme { height: 8px; border-radius: 12px; background: var(--ic); overflow: hidden; margin-top: 8px; }
+        .bg-ilerleme i { display: block; height: 100%; border-radius: 12px; background: linear-gradient(90deg, var(--adacayi), var(--yaprak)); }
+        @media (prefers-reduced-motion: no-preference) {
+          .bg-fidan { transform-origin: 50% 100%; animation: bg-salla 4s ease-in-out infinite; }
+          @keyframes bg-salla { 0%,100% { transform: rotate(-2.5deg) } 50% { transform: rotate(2.5deg) } }
+        }
+      `}</style>
+
+      {/* ── Başlık ── */}
       <Reveal>
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="text-[15px] text-slate-500 dark:text-slate-400">{selam()},</p>
-            <h1 className="mt-1 font-display text-4xl font-bold tracking-tight text-slate-800 dark:text-slate-100">{ad}</h1>
+        <header>
+          <h1 className="font-display text-[clamp(27px,3vw,33px)] font-extrabold tracking-tight" style={{ color: 'var(--metin1)' }}>
+            {selam()}, {ad}
+          </h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[14.5px]" style={{ color: 'var(--metin2)' }}>
+            <span>{GUNLER[bugun.getDay()]}, {bugun.getDate()} {AYLAR[bugun.getMonth()]}</span>
+            <span className="bg-cip">YKS'ye {kalanGun()} gün</span>
+            {seri > 0 && (
+              <span className="bg-cip sicak">
+                <svg className="bg-fidan" width="14" height="14" viewBox="0 0 24 24">
+                  <path d="M12 22v-9" stroke="#A9713F" strokeWidth="2" strokeLinecap="round" />
+                  <path d="M12 13C12 9 9 6 4 6c0 4.5 3.5 7 8 7" fill="#4FA56F" />
+                  <path d="M12 11c0-3 2-5 6.5-5C18.5 9.5 16 11.5 12 11.5" fill="#84A98C" />
+                </svg>
+                {seri} gün seri
+              </span>
+            )}
           </div>
-          {G && (
-            <div className="flex items-center gap-5 font-mono text-[12px] text-slate-500 dark:text-slate-400">
-              <span className="inline-flex items-center gap-1.5">
-                <Icon name="flame" size={14} color="#F59E0B" />{seri} gün
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Icon name="sparkle" size={14} color="currentColor" />{sayi(G.xp)} XP
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Icon name="coin" size={14} color="currentColor" />{sayi(G.coins)}
-              </span>
-            </div>
-          )}
-        </div>
+        </header>
       </Reveal>
 
-      {/* ── Koç dürtmesi — canlı ürün hissi (varsa) ── */}
-      {sonDurtme && (
-        <Reveal delay={0.03}>
-          <div className="glass-solid mt-5 flex items-start gap-3 rounded-2xl border-sky-500/20 px-5 py-3.5">
-            <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-gradient-to-br from-sky-600 to-cyan-600">
-              <Icon name="anchor" size={14} color="#fff" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <span className="font-display text-[11px] font-semibold uppercase tracking-wide text-sky-600 dark:text-sky-300">Koç'tan</span>
-              <p className="mt-0.5 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">{sonDurtme.message}</p>
-            </div>
-            <button
-              onClick={() => nav('/kaptan')}
-              className="shrink-0 cursor-pointer font-display text-[12px] font-semibold text-sky-600 hover:text-sky-500 dark:text-sky-400"
-            >
-              Yanıtla
-            </button>
+      {/* ── 4 KPI ── */}
+      <section className="mt-6 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]" aria-label="Bugünün özeti">
+        <Reveal delay={0.04}>
+          <div className="bg-kart"><div className="bg-etiket">Bugün Çözülen</div><div className="bg-sayi"><CanliSayi value={bugunCozulen} /> <small>soru</small></div></div>
+        </Reveal>
+        <Reveal delay={0.08}>
+          <div className="bg-kart">
+            <div className="bg-etiket">Doğruluk</div>
+            <div className="bg-sayi">{dogruluk != null ? <>%<CanliSayi value={dogruluk} /></> : <span style={{ color: 'var(--metin3)' }}>—</span>}</div>
           </div>
         </Reveal>
-      )}
+        <Reveal delay={0.12}>
+          <div className="bg-kart"><div className="bg-etiket">Çalışma Süresi</div><div className="bg-sayi"><CanliSayi value={odakDk} /> <small>dk</small></div></div>
+        </Reveal>
+        <Reveal delay={0.16}>
+          <div className="bg-kart"><div className="bg-etiket">Seri</div><div className="bg-sayi"><CanliSayi value={seri} /> <small>gün</small></div></div>
+        </Reveal>
+      </section>
 
-      <div className="mt-9 grid items-start gap-8 lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]">
+      <div className="mt-5 grid items-start gap-5 lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]">
         {/* ════════ SOL ════════ */}
-        <div className="min-w-0">
-          {/* Devam Et — yarıda kalan blok */}
-          {devam && (
-            <Reveal delay={0.05}>
-              <button
-                onClick={() => nav('/coz', { state: { ...devam.spec, startIndex: devam.idx } })}
-                className="glass-solid group mb-5 flex w-full cursor-pointer items-center gap-4 rounded-2xl border-amber-500/25 px-6 py-4 text-left transition-all hover:-translate-y-px hover:shadow-card"
-              >
-                <Halka oran={devam.idx / devam.toplam} boyut={44} kalinlik={4} renk="var(--color-amber-500)">
-                  <span className="font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                    {devam.idx}/{devam.toplam}
-                  </span>
-                </Halka>
-                <div className="min-w-0 flex-1">
-                  <div className="font-display text-[13.5px] font-bold text-slate-700 dark:text-slate-200">
-                    Yarıda kalan blok seni bekliyor
-                  </div>
-                  <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                    {devam.spec.title ?? devam.spec.subject ?? 'Pratik'} · kaldığın yerden sür
+        <div className="flex min-w-0 flex-col gap-5">
+          {/* Günlük hedef HERO */}
+          <Reveal delay={0.08}>
+            <section className="bg-kart" aria-label="Günlük hedef">
+              <div className="flex flex-wrap items-center gap-[26px]">
+                <HedefHalka etiket={`${bugunCozulen}/${hedef}`} oran={hedef > 0 ? bugunCozulen / hedef : 0} />
+                <div className="min-w-[220px] flex-1">
+                  <h2 className="bg-h2">
+                    {heroTamam ? 'Günlük hedef tamam 🌿' : rontgenBos ? 'Hadi başlayalım 🌱' : 'Bugün harika gidiyorsun 🌿'}
+                  </h2>
+                  <p className="bg-aciklama mt-1.5">
+                    {heroTamam
+                      ? 'Hedefi tamamladın — istersen devam et, fidanın büyüsün.'
+                      : rontgenBos
+                        ? 'Motoru tanıştır: 10 karma soruda ustalık haritan çıksın.'
+                        : odak
+                          ? `Hedefe ${Math.max(0, hedef - bugunCozulen)} soru kaldı. Planındaki ${dersKisa(odak.subject)} bloğuyla bitirebilirsin.`
+                          : `Hedefe ${Math.max(0, hedef - bugunCozulen)} soru kaldı. Soru havuzu dolunca planın belirir.`}
                   </p>
-                </div>
-                <Icon name="arrowRight" size={17} color="currentColor" style={{ opacity: 0.4 }} />
-              </button>
-            </Reveal>
-          )}
-
-          <Reveal delay={0.06}>
-            <SectionLabel action="Planın tümü" onAction={() => nav('/rota')}>Bugünün Rotası</SectionLabel>
-
-            {oneri.loading ? (
-              <Skeleton className="h-28" />
-            ) : odak ? (
-              <GlowBorder mode="always">
-                <div className="glass flex flex-wrap items-center gap-5 rounded-2xl px-7 py-6">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      {/* Ders adı TAM — kısaltma yok */}
-                      <SubjectName subject={odak.subject} anahtar={dersAnahtar(odak.subject)} className="text-[15px]" />
-                      {oneri.data?.reason === 'weak' && <Badge tone="amber">zayıf konu</Badge>}
-                      <span className="text-xs text-slate-400 dark:text-slate-500">· {odak.count} soru</span>
-                    </div>
-                    <p className="mt-2 truncate text-sm text-slate-500 dark:text-slate-400" title={odak.title}>
-                      {kisalt(odak.title)}
-                    </p>
+                  <div className="mt-3.5 flex flex-wrap gap-2.5">
+                    <button className="bg-cta" onClick={soruCoz}>
+                      <Icon name="bolt" size={16} color="#fff" /> {rontgenBos ? 'Tanışma Sınavına Başla' : 'Soru Çöz'}
+                    </button>
+                    {devam && (
+                      <button className="bg-dis" onClick={() => nav('/coz', { state: { ...devam.spec, startIndex: devam.idx } })}>
+                        Yarım kalan teste devam — {devam.idx}/{devam.toplam}
+                      </button>
+                    )}
                   </div>
-                  <GlowButton icon="arrowRight" onClick={() => coz(odak.kazanimId, odak.subject, odak.title)}>
-                    Devam Et
-                  </GlowButton>
                 </div>
-              </GlowBorder>
-            ) : (
-              <GlassCard blur={false} className="px-7 py-6 text-sm text-slate-500 dark:text-slate-400">
-                Rota henüz çizilmedi — soru havuzu dolunca bugünün rotası burada belirir.
-              </GlassCard>
-            )}
+              </div>
+            </section>
+          </Reveal>
 
-            {/* Sıradaki bloklar — buton YOK, satırın tamamı tıklanır */}
-            {siradaki.length > 0 && (
-              <div className="mt-4 space-y-2.5">
-                {siradaki.map((k) => (
-                  <button
-                    key={k.kazanimId}
-                    onClick={() => coz(k.kazanimId, k.subject, k.title)}
-                    className="glass-solid group flex w-full cursor-pointer items-center gap-4 rounded-xl px-6 py-4 text-left transition-all duration-200 hover:-translate-y-px hover:border-sky-500/30 hover:shadow-card dark:hover:border-sky-400/25"
-                  >
-                    <SubjectName subject={k.subject} anahtar={dersAnahtar(k.subject)} className="w-28 shrink-0" />
-                    <span
-                      className="min-w-0 flex-1 truncate text-[13.5px] text-slate-500 dark:text-slate-400"
-                      title={k.title}
-                    >
-                      {kisalt(k.title, 72)}
-                    </span>
-                    <span className="shrink-0 text-[11px] text-slate-400 dark:text-slate-500">{k.count} soru</span>
-                    <Icon name="chevronRight" size={16} color="currentColor" style={{ opacity: 0.45 }} />
-                  </button>
+          {/* Bugünün Planı — YOL */}
+          <Reveal delay={0.12}>
+            <section className="bg-kart" aria-label="Bugünün planı">
+              <div className="mb-1.5 flex items-center gap-2.5">
+                <span className="bg-bikon" style={{ background: 'color-mix(in srgb, var(--yaprak) 15%, transparent)' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--yaprak)" strokeWidth="2"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01" strokeLinecap="round" /></svg>
+                </span>
+                <h2 className="bg-h2">Bugünün Planı</h2>
+              </div>
+              {oneri.loading ? (
+                <div className="mt-4 h-24 motion-safe:animate-pulse rounded-xl" style={{ background: 'var(--ic)' }} />
+              ) : duraklar.length ? (
+                <>
+                  <p className="bg-aciklama">Sırayla ilerle — yol seni günlük hedefe götürür.</p>
+                  <PlanYolu duraklar={duraklar} />
+                </>
+              ) : (
+                <p className="bg-aciklama mt-2">Plan, soru havuzu dolunca burada belirir. Şimdilik "Soru Çöz" ile başlayabilirsin.</p>
+              )}
+            </section>
+          </Reveal>
+
+          {/* Ustalık Özeti — tek-renk ısı şeridi */}
+          <Reveal delay={0.16}>
+            <section className="bg-kart" aria-label="Analiz özeti">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="bg-bikon" style={{ background: 'color-mix(in srgb, var(--bilgi) 15%, transparent)' }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--bilgi)" strokeWidth="2"><path d="M3 20h18M6 16v-5M11 16V7M16 16v-8M21 16V4" strokeLinecap="round" /></svg>
+                  </span>
+                  <h2 className="bg-h2">Ustalık Özeti</h2>
+                </div>
+                <button onClick={() => nav('/harita')} className="cursor-pointer text-[13.5px] font-semibold" style={{ color: 'var(--vurgu)' }}>Analizler →</button>
+              </div>
+              <div className="mt-3.5 flex flex-wrap gap-2">
+                {isiSerit.map((s) => (
+                  <div key={s.kisa} className="min-w-[60px] flex-1 text-center">
+                    <div className="h-9 rounded-xl" style={{ background: s.ton, border: s.olcumYok ? '1px dashed var(--cam-kenar)' : undefined }} />
+                    <span className="mt-1 block text-[11px] font-medium" style={{ color: 'var(--metin3)' }}>{s.olcumYok ? `${s.kisa} · yok` : s.kisa}</span>
+                  </div>
                 ))}
               </div>
-            )}
+            </section>
           </Reveal>
-
-          {/* Tekrar Zamanı — SRS vadesi */}
-          {(review.data?.count ?? 0) > 0 && (
-            <Reveal delay={0.1}>
-              <div className="glass-solid mt-5 flex items-center gap-4 rounded-2xl border-teal-500/25 px-6 py-4">
-                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-300">
-                  <Icon name="history" size={19} color="currentColor" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="font-display text-[13.5px] font-bold text-slate-700 dark:text-slate-200">
-                    Tekrar Zamanı — <Sayi value={review.data!.count} /> kartın vadesi geldi
-                  </div>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    Aralıklı tekrar unutma eğrisini kırar; en eskisinden başla.
-                  </p>
-                </div>
-                <GlowButton
-                  variant="outline" size="sm"
-                  onClick={() => nav('/coz', {
-                    state: { source: 'review', title: 'Tekrar Zamanı', questions: review.data!.questions },
-                  })}
-                >
-                  Tekrarla
-                </GlowButton>
-              </div>
-            </Reveal>
-          )}
-
-          {/* Tanışma daveti — röntgen boşsa */}
-          {rontgenBos && (
-            <Reveal delay={0.12}>
-              <div className="glass-solid mt-5 flex items-center gap-4 rounded-2xl border-sky-500/25 px-6 py-4">
-                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-sky-500/12 text-sky-600 dark:text-sky-300">
-                  <Icon name="scan" size={19} color="currentColor" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="font-display text-[13.5px] font-bold text-slate-700 dark:text-slate-200">
-                    Tanışma Sınavı — röntgenini 10 soruda çek
-                  </div>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    Karma sorularla motor seni hızlı tanır; Analiz haritan anında belirir.
-                  </p>
-                </div>
-                <GlowButton size="sm" onClick={() => nav('/coz', { state: { source: 'tanisma', title: 'Tanışma Sınavı' } })}>
-                  Başla
-                </GlowButton>
-              </div>
-            </Reveal>
-          )}
-
-          <WaveDivider className="mt-9" />
         </div>
 
-        {/* ════════ SAĞ PANEL ════════ */}
-        <div className="min-w-0 space-y-7">
-          {/* Fener (seri) + lig şeridi */}
-          <Reveal delay={0.14}>
-            {gami.loading ? (
-              <Skeleton className="h-36" />
-            ) : (
-              <GlassCard className="px-6 py-5">
-                <div className="flex items-center gap-5">
-                  <Lighthouse size={60} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className={cn('font-display text-4xl font-bold text-slate-800 dark:text-slate-100', seri > 0 && 'text-glow')}>
-                        {seri}
-                      </span>
-                      <span className="text-sm text-slate-500 dark:text-slate-400">gün</span>
-                    </div>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {seri > 0 ? 'Fener yanık — seyir sürüyor' : 'Fener sönük — bir blokla yak'}
-                    </p>
-                    <div className="mt-3 h-1 overflow-hidden rounded-full bg-shore-200 dark:bg-ocean-800">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-sky-600 to-cyan-400"
-                        style={{ width: `${Math.min(100, (seri / sonrakiMilat(seri)) * 100)}%` }}
-                      />
-                    </div>
-                    <p className="mt-1.5 font-mono text-[10.5px] text-slate-400 dark:text-slate-500">
-                      {sonrakiMilat(seri) - seri} gün → {sonrakiMilat(seri)}. gün feneri
-                    </p>
-                  </div>
+        {/* ════════ SAĞ ════════ */}
+        <div className="flex min-w-0 flex-col gap-5">
+          {/* Bugünün Tekrarı */}
+          {(review.data?.count ?? 0) > 0 && (
+            <Reveal delay={0.12}>
+              <section className="bg-kart" aria-label="Bugünün tekrarı">
+                <div className="mb-1.5 flex items-center gap-2.5">
+                  <span className="bg-bikon" style={{ background: 'color-mix(in srgb, var(--adacayi) 20%, transparent)' }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--vurgu)" strokeWidth="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </span>
+                  <h2 className="bg-h2">Bugünün Tekrarı</h2>
                 </div>
+                <p className="bg-aciklama">{review.data!.count} kazanımın tekrar vakti geldi — unutmadan pekiştir, fidanın büyüsün.</p>
+                <button className="bg-dis mt-3" onClick={() => nav('/coz', { state: { source: 'review', title: 'Tekrar Zamanı', questions: review.data!.questions } })}>
+                  10 soruluk tekrar başlat
+                </button>
+              </section>
+            </Reveal>
+          )}
 
-                {G?.league && (
-                  <div className="mt-5 flex items-center justify-between border-t border-slate-500/10 pt-4 dark:border-sky-500/10">
-                    <Chip tone="brass">{TIER_TR[G.league.tier] ?? G.league.tier}</Chip>
-                    <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">
-                      bu hafta {sayi(G.league.weeklyXP)} XP
-                    </span>
-                  </div>
-                )}
-              </GlassCard>
-            )}
-          </Reveal>
-
-          {/* Günlük hedef halkası — gerçek çözüm sayısı (trend) + yerel hedef */}
-          <Reveal delay={0.18}>
-            <GlassCard blur={false} className="flex items-center gap-4 px-5 py-4">
-              <Halka oran={Math.min(1, bugunCozulen / hedef)} boyut={56} kalinlik={5}
-                renk={bugunCozulen >= hedef ? 'var(--color-emerald-500)' : undefined}>
-                <span className="font-mono text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                  {bugunCozulen}/{hedef}
+          {/* Odak Zamanlayıcısı */}
+          <Reveal delay={0.16}>
+            <section className="bg-kart" aria-label="Odak zamanlayıcısı">
+              <div className="mb-1.5 flex items-center gap-2.5">
+                <span className="bg-bikon" style={{ background: 'color-mix(in srgb, var(--toprak) 22%, transparent)' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--toprak)" strokeWidth="2"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2.5M9 2h6" strokeLinecap="round" /></svg>
                 </span>
-              </Halka>
-              <div className="min-w-0 flex-1">
-                <div className="font-display text-[13px] font-bold text-slate-700 dark:text-slate-200">
-                  Günlük Hedef
-                </div>
-                <p className="mt-0.5 text-[11.5px] leading-snug text-slate-400 dark:text-slate-500">
-                  {bugunCozulen >= hedef
-                    ? 'Hedef tamam — istersen açık denize devam.'
-                    : `Bugün ${hedef - bugunCozulen} soru kaldı. Hedefi Planım'dan ayarla.`}
-                </p>
+                <h2 className="bg-h2">Odak Zamanlayıcısı</h2>
               </div>
-              {bugunCozulen >= hedef && <Icon name="check" size={18} color="#10B981" strokeWidth={2.4} />}
-            </GlassCard>
+              <OdakZamanlayici />
+            </section>
           </Reveal>
 
-          {/* Görev şeridi */}
-          {G?.dailyQuests?.quests?.length > 0 && (
+          {/* Lig */}
+          {G?.league && (
             <Reveal delay={0.2}>
-              <GorevSeridi
-                quests={G.dailyQuests.quests}
-                onGit={() => nav('/ben')}
-              />
+              <section className="bg-kart" aria-label="Lig durumu">
+                <div className="mb-1.5 flex items-center gap-2.5">
+                  <span className="bg-bikon" style={{ background: 'color-mix(in srgb, var(--toprak) 22%, transparent)' }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--toprak)" strokeWidth="2"><path d="M8 21h8M12 17v4M17 4H7v5a5 5 0 0 0 10 0V4ZM17 6h3v2a3 3 0 0 1-3 3M7 6H4v2a3 3 0 0 0 3 3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </span>
+                  <h2 className="bg-h2">{TIER_TR[G.league.tier] ?? G.league.tier} Ligi</h2>
+                </div>
+                <div className="bg-mini"><span>Bu hafta</span><b>{sayi(G.league.weeklyXP)} XP</b></div>
+                <div className="bg-mini"><span>Sıralama</span><span className="bg-rozet dogru">canlı</span></div>
+              </section>
             </Reveal>
           )}
 
-          {/* Kazanım Isı Haritası */}
-          <Reveal delay={0.22}>
-            <SectionLabel action="Analize git" onAction={() => nav('/harita')}>Kazanım Isı Haritası</SectionLabel>
-            <GlassCard blur={false} className="px-5 py-4">
-              <KazanimHeatmap rontgen={rontgen.data} loading={rontgen.loading} />
-            </GlassCard>
-          </Reveal>
-
-          {/* Ders Performansı — gerçek subjects verisi */}
-          {G && Object.values(G.subjects ?? {}).some((s: any) => (s?.solved ?? 0) > 0) && (
-            <Reveal delay={0.3}>
-              <SectionLabel>Ders Performansı</SectionLabel>
-              <GlassCard blur={false} className="px-4 py-4">
-                <SubjectChart subjects={G.subjects} />
-              </GlassCard>
-            </Reveal>
-          )}
-
+          {/* Hata durumu */}
           {(gami.error || oneri.error || rontgen.error) && (
-            <GlassCard blur={false} className="flex items-center gap-3 border-rose-500/25 px-4 py-3">
-              <Icon name="bolt" size={16} color="#E11D48" />
-              <span className="flex-1 text-xs text-slate-500 dark:text-slate-400">Sunucuya ulaşılamadı</span>
-              <GlowButton variant="outline" size="sm" onClick={() => { gami.reload(); oneri.reload(); konular.reload(); rontgen.reload() }}>
-                Tekrar dene
-              </GlowButton>
-            </GlassCard>
+            <div className="bg-kart flex items-center gap-3" style={{ borderColor: 'color-mix(in srgb, var(--yanlis) 30%, transparent)' }}>
+              <Icon name="bolt" size={16} color="var(--yanlis)" />
+              <span className="flex-1 text-xs" style={{ color: 'var(--metin2)' }}>Sunucuya ulaşılamadı</span>
+              <button className="bg-dis" onClick={() => { gami.reload(); oneri.reload(); konular.reload(); rontgen.reload() }}>Tekrar dene</button>
+            </div>
           )}
         </div>
       </div>
@@ -389,103 +355,40 @@ export function Bugun() {
   )
 }
 
-/* ── Görev şeridi — tamamlanan/toplam + Profil köprüsü ─────────────────────── */
-function GorevSeridi({ quests, onGit }: { quests: any[]; onGit: () => void }) {
-  const biten = quests.filter((q) => q.progress >= q.target).length
-  const alinmamis = quests.filter((q) => q.progress >= q.target && !q.claimed).length
+/* ── Günlük hedef halkası — adaçayı→yaprak gradyan, mount'ta dolar (0.9s) ──── */
+function HedefHalka({ oran, etiket }: { oran: number; etiket: string }) {
+  const azalt = useReducedMotion()
+  const [dolu, setDolu] = useState(!!azalt)
+  useEffect(() => {
+    if (azalt) return
+    const id = requestAnimationFrame(() => setDolu(true))
+    return () => cancelAnimationFrame(id)
+  }, [azalt])
+  const r = 56
+  const cevre = 2 * Math.PI * r
+  const hedefOffset = cevre * (1 - Math.min(1, Math.max(0, oran)))
   return (
-    <button
-      onClick={onGit}
-      className="glass-solid flex w-full cursor-pointer items-center gap-4 rounded-2xl px-5 py-4 text-left transition-all hover:-translate-y-px hover:border-sky-500/30 hover:shadow-card dark:hover:border-sky-400/25"
-    >
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-300">
-        <Icon name="gift" size={19} color="currentColor" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="font-display text-[13px] font-bold text-slate-700 dark:text-slate-200">
-          Günlük Görevler · {biten}/{quests.length}
-        </div>
-        <div className="mt-1.5 flex gap-1">
-          {quests.map((q) => (
-            <span
-              key={q.id}
-              className={cn(
-                'h-1.5 flex-1 rounded-full',
-                q.progress >= q.target ? 'bg-amber-500/80' : 'bg-shore-200 dark:bg-ocean-800',
-              )}
-            />
-          ))}
-        </div>
-      </div>
-      {alinmamis > 0 && <Badge tone="amber">{alinmamis} ödül hazır</Badge>}
-      <Icon name="chevronRight" size={15} color="currentColor" style={{ opacity: 0.4 }} />
-    </button>
-  )
-}
-
-/* ── Isı haritası mini — Analiz'in özeti (yalnız DOKUNULMUŞ kazanımlar) ────── */
-function KazanimHeatmap({ rontgen, loading }: { rontgen: RontgenYanit | null; loading: boolean }) {
-  const nodes = rontgen?.nodes ?? []
-  const gruplar = useMemo(() => {
-    const map = new Map<string, typeof nodes>()
-    for (const n of nodes) {
-      const dizi = map.get(n.subject)
-      if (dizi) dizi.push(n)
-      else map.set(n.subject, [n])
-    }
-    // Çok kazanımlı ders üstte — en yoğun çalışılan alan önce okunur.
-    return [...map.entries()].sort((a, b) => b[1].length - a[1].length)
-  }, [nodes])
-
-  if (loading) return <div className="h-16 animate-pulse rounded-lg bg-shore-100 dark:bg-ocean-800/60" />
-
-  if (!gruplar.length) {
-    return (
-      <p className="py-3 text-center text-xs leading-relaxed text-slate-400 dark:text-slate-500">
-        Harita soru çözdükçe belirir —<br />her kazanım bir yakamoz karesi.
-      </p>
-    )
-  }
-
-  let sira = 0 // stagger sayacı — gruplar arası sürekli aksın
-  return (
-    <div>
-      <div className="space-y-3">
-        {gruplar.map(([ders, kazanimlar]) => (
-          <div key={ders}>
-            <SubjectName subject={ders} anahtar={dersAnahtar(ders)} className="mb-1.5 text-[11px]" />
-            <div className="flex flex-wrap gap-1.5">
-              {kazanimlar.map((k) => {
-                const i = sira++
-                return (
-                  <IsiHucre
-                    key={k.kazanimId}
-                    deger={k.mastery}
-                    uyari={k.openMisconceptions > 0}
-                    gecikmeMs={i * 22}
-                    tip={
-                      <div>
-                        <div className="font-display font-semibold">{k.title}</div>
-                        <div className="mt-0.5 font-mono text-[11px]">
-                          %{Math.round(k.mastery * 100)}{k.openMisconceptions > 0 ? ' · üzerinde çalışılıyor' : ''}
-                        </div>
-                      </div>
-                    }
-                  />
-                )
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-3.5 flex items-center gap-2">
-        <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">az</span>
-        <span
-          className="h-1.5 w-16 rounded-full"
-          style={{ background: 'linear-gradient(90deg, var(--heat-zero), var(--data-hue))' }}
+    <div className="relative" style={{ width: 130, height: 130 }}>
+      <svg width="130" height="130" viewBox="0 0 130 130">
+        <defs>
+          <linearGradient id="bg-halka" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="var(--adacayi)" />
+            <stop offset="1" stopColor="var(--yaprak)" />
+          </linearGradient>
+        </defs>
+        <circle cx="65" cy="65" r={r} fill="none" stroke="var(--ic)" strokeWidth="9" />
+        <circle
+          cx="65" cy="65" r={r} fill="none" stroke="url(#bg-halka)" strokeWidth="9" strokeLinecap="round"
+          strokeDasharray={cevre} strokeDashoffset={dolu ? hedefOffset : cevre}
+          transform="rotate(-90 65 65)"
+          style={{ transition: azalt ? undefined : 'stroke-dashoffset 0.9s cubic-bezier(.4,0,.2,1)' }}
         />
-        <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">usta</span>
+      </svg>
+      <div className="absolute inset-0 grid place-items-center text-center">
+        <div>
+          <b className="block font-display text-[24px] font-extrabold leading-none" style={{ color: 'var(--metin1)' }}>{etiket}</b>
+          <span className="text-[11px]" style={{ color: 'var(--metin3)' }}>günlük hedef</span>
+        </div>
       </div>
     </div>
   )

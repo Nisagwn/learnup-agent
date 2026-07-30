@@ -172,7 +172,7 @@ export function Arsiv() {
           </div>
         ) : matris.error ? (
           <GlassCard blur={false} className="mt-6 px-6 py-6 text-center text-sm text-slate-500">
-            Arşiv yüklenemedi: {matris.error}
+            Çıkmış sorular yüklenemedi: {matris.error}
             <div className="mt-3"><GlowButton variant="outline" size="sm" onClick={() => matris.reload()}>Tekrar dene</GlowButton></div>
           </GlassCard>
         ) : (

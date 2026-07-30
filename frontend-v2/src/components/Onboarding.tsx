@@ -19,17 +19,17 @@ export function turGerekli(): boolean {
 const DURAKLAR: Array<{ icon: IconName; baslik: string; metin: string }> = [
   {
     icon: 'today',
-    baslik: 'Genel Bakış — günün güvertesi',
-    metin: 'Bugünün rotası, serin, günlük hedefin ve yarıda kalan bloğun tek ekranda. Her sabah buradan denize açıl.',
+    baslik: 'Genel Bakış — bugünün özeti',
+    metin: 'Bugünün planı, serin, günlük hedefin ve yarıda kalan bloğun tek ekranda. Her sabah buradan başla.',
   },
   {
     icon: 'scan',
-    baslik: 'Analiz — bilişsel röntgenin',
+    baslik: 'Analiz — ustalık haritan',
     metin: 'Her cevabın, kazanım başına ustalık tahminini güncelleyen bir motoru besler. Zayıf noktaların, trendin ve çalışma takvimin burada canlı.',
   },
   {
     icon: 'anchor',
-    baslik: 'Koç — yanındaki kaptan',
+    baslik: 'Koç — yanındaki rehber',
     metin: 'Plan çıkarır, zayıf konundan soru hazırlar, formül anlatır. Sohbet kaldığın yerden sürer.',
   },
   {

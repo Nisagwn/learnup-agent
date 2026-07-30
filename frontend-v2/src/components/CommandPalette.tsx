@@ -19,7 +19,6 @@ const SAYFALAR: Array<{ to: string; ad: string; icon: IconName }> = [
   { to: '/harita', ad: 'Analiz — Bilişsel Röntgen', icon: 'scan' },
   { to: '/rota', ad: 'Çalışma Planı', icon: 'route' },
   { to: '/kaptan', ad: 'Koç', icon: 'anchor' },
-  { to: '/arsiv', ad: 'Çıkmış Sorular', icon: 'seal' },
   { to: '/bahce', ad: 'Bahçem', icon: 'sprout' },
   { to: '/ben', ad: 'Profil', icon: 'chart' },
 ]
@@ -89,8 +88,10 @@ export function CommandPalette() {
           </Command.Empty>
 
           {/* Rol grupları ÖNCE: öğretmen/admin en çok bunları arar.
-              Sınıf grubu YALNIZ öğretmende: admin /teacher/* uçlarından 403 alır,
-              onu oraya götüren bir palet satırı çalışmayan bir kısayol olurdu. */}
+              ⚠️ Sınıf grubu HÂLÂ yalnız öğretmende ama gerekçesi değişti (0025): admin
+              artık /teacher/* uçlarına girebiliyor, fakat KAPSAM SEÇEREK (?ogretmenId).
+              Kapsamsız bir "/sinif" satırı yöneticiyi "önce bir sınıf seç" ekranına
+              düşürürdü — doğru kısayol Kule grubundaki "Sınıflar"dır. */}
           {rol === 'teacher' && (
             <Command.Group heading="Sınıf">
               {NAV_OGRETMEN.map((n) => (
@@ -100,7 +101,7 @@ export function CommandPalette() {
           )}
 
           {rol === 'admin' && (
-            <Command.Group heading="Kule">
+            <Command.Group heading="Yönetim">
               {NAV_YONETIM.map((n) => (
                 <Satir key={n.to} onSelect={() => git(() => nav(n.to))} icon={n.icon}>{n.label}</Satir>
               ))}
@@ -117,7 +118,7 @@ export function CommandPalette() {
 
           <Command.Group heading="Eylemler">
             <Satir icon={theme === 'light' ? 'moon' : 'sun'} onSelect={() => git(toggle)}>
-              Temayı değiştir — {theme === 'light' ? 'Gece Vardiyası' : 'Güverte'}
+              Temayı değiştir — {theme === 'light' ? 'Koyu tema' : 'Açık tema'}
             </Satir>
           </Command.Group>
 

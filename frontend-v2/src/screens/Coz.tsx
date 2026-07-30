@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { AnimatePresence, m } from 'framer-motion'
+import { AnimatePresence, m, useReducedMotion } from 'framer-motion'
+import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '../lib/cn'
 import { Icon } from '../ui'
 import { MathMarkdown } from '../components/MathMarkdown'
 import { MotionRoot } from '../components/fx'
-import { GlowButton, Chip, Badge } from '../components/ui'
-import { Halka } from '../components/cekirdek'
 import { apiGet, apiPost } from '../lib/api.js'
 import { sesAcikMi, sesToggle, sesDogru, sesYanlis, sesFanfar } from '../lib/ses'
 import type { CozSpec, HavuzSoru } from '../lib/types'
@@ -14,15 +13,15 @@ import type { CozSpec, HavuzSoru } from '../lib/types'
 const HARFLER = ['A', 'B', 'C', 'D', 'E'] as const
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   ÇÖZ — odak modu. Her zaman KOYU "Gece Vardiyası" (kök .dark sarmalı).
+   ÇÖZ — odak modu (FİDAN, nav'sız, TEMAYI İZLER — eski "her zaman koyu" KALKTI).
    Kaynaklar:
      ai        → havuzdan kazanım/öneri seti (10)
-     osym      → çıkmış sorular (state listesi ya da ders/yıl)
-     review    → SRS vadesi gelen kartlar (state ya da /practice/review)
+     osym      → çıkmış sorular (TEST modu: geri bildirim sona kadar SESSİZ)
+     review    → SRS vadesi gelen kartlar (pratik: anlık geri bildirim)
      tanisma   → karma yerleştirme seti (placement:true → K=0.3 hızlı yakınsama)
      antrenman → adaptif /practice/next döngüsü (zorluk merdiveni + pedagojik ipucu)
    Sunucu-otoriter puanlama: /answers havuzdan okur; istemci iddiası bağlayıcı değil.
-   Klavye: A–E şık seçer · Enter kontrol/devam.
+   Klavye: A–E şık seçer · Enter/→ kontrol/devam. Ambiyans SAKİN: yaprak yok, tek güneş lekesi.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export function Coz() {
@@ -31,22 +30,49 @@ export function Coz() {
   const spec = (loc.state as CozSpec | null) ?? null
   const kaynak = spec?.source ?? 'ai'
 
+  // loc.key her gezinmede değişir → köprüden ("tekrar önerilir") yeni set gelince remount.
   if (kaynak === 'antrenman') {
-    return <Kabuk><Antrenman spec={spec} cikis={() => nav('/rota')} /></Kabuk>
+    return <Kabuk><Antrenman key={loc.key} spec={spec} cikis={() => nav('/rota')} /></Kabuk>
   }
-  return <Kabuk><SetCozumu spec={spec} kaynak={kaynak} /></Kabuk>
+  return <Kabuk><SetCozumu key={loc.key} spec={spec} kaynak={kaynak} /></Kabuk>
 }
 
-/** Zorunlu koyu kabuk — Tailwind dark varyantı :where(.dark, .dark *) ile açılır. */
+/** FİDAN kabuk — uygulama temasını İZLER (koyu zorlaması yok); tek silik güneş lekesi. */
 function Kabuk({ children }: { children: React.ReactNode }) {
   return (
     <MotionRoot>
-      <div className="dark">
-        <div className="min-h-screen bg-ocean-900 font-sans text-slate-200">
-          {children}
-        </div>
+      <div className="cz min-h-screen font-sans" style={{ background: 'var(--page-bg)', color: 'var(--metin1)' }}>
+        <CozStil />
+        <div className="cz-gunes" aria-hidden />
+        {children}
       </div>
     </MotionRoot>
+  )
+}
+
+/** Çıkış onayı — Radix Dialog (frontend.md-6: yıkıcı eylem asla window.confirm). */
+function CikisOnay({ onCik, children }: { onCik: () => void; children: React.ReactNode }) {
+  return (
+    <Dialog.Root>
+      <Dialog.Trigger asChild>{children}</Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="cz-overlay" />
+        <Dialog.Content className="cz-modal" aria-describedby="cz-cik-aciklama">
+          <Dialog.Title className="cz-modal-baslik">Testten çık?</Dialog.Title>
+          <Dialog.Description id="cz-cik-aciklama" className="cz-modal-metin">
+            Bu oturumdaki ilerlemen kaydedilmez. Çıkmak istediğine emin misin?
+          </Dialog.Description>
+          <div className="cz-modal-aksiyon">
+            <Dialog.Close asChild>
+              <button type="button" className="cz-btn dis">Devam et</button>
+            </Dialog.Close>
+            <Dialog.Close asChild>
+              <button type="button" className="cz-btn tehlike" onClick={onCik}>Çık</button>
+            </Dialog.Close>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 
@@ -54,6 +80,7 @@ function Kabuk({ children }: { children: React.ReactNode }) {
 
 function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
   const nav = useNavigate()
+  const azalt = useReducedMotion()
   const [sorular, setSorular] = useState<HavuzSoru[]>([])
   const [yukleniyor, setYukleniyor] = useState(true)
   const [hata, setHata] = useState('')
@@ -66,6 +93,10 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
   const [sesli, setSesli] = useState(sesAcikMi)
   const basladi = useRef(Date.now())
   const [gecen, setGecen] = useState(0)
+  // Per-ders döküm — GERÇEK cevaplardan biriktirilir (özet ekranı); uydurma yok.
+  const dersDurum = useRef<Map<string, { dogru: number; toplam: number }>>(new Map())
+
+  const testModu = kaynak === 'osym' // ÖSYM = test: geri bildirim sona kadar SESSİZ
 
   // Soru kronometresi — mono sayaç (saniyede bir)
   useEffect(() => {
@@ -84,6 +115,13 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
         const r = await apiGet('/questions/osym', {
           subject: spec?.subject, year: spec?.year, label: spec?.label, limit: 10,
         })
+        return r.questions ?? []
+      }
+      // Konular ekranından gelen seçim: konu → kazanımlar → sorular (sunucu çözer).
+      // subject GÖNDERİLMEZ: konu zaten tek derse ait; ders adında harf farkı olursa
+      // AND filtresi havuzu sessizce boşaltırdı (aynı tuzak kazanimId dalında da var).
+      if (kaynak === 'konu' && spec?.konuId) {
+        const r = await apiGet('/questions/ai', { konuId: spec.konuId, limit: 20 })
         return r.questions ?? []
       }
       if (kaynak === 'review') {
@@ -133,7 +171,7 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
   const soru = sorular[idx]
   const geri = asama === 'geri'
 
-  // Yarım blok kaydı — Genel Bakış'taki "Devam Et" kartının kaynağı
+  // Yarım blok kaydı — Bugün'deki "Devam Et" kartının kaynağı
   useEffect(() => {
     try {
       if (!sorular.length) return
@@ -148,29 +186,47 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
     } catch { /* yut */ }
   }, [idx, sorular.length, spec, kaynak])
 
-  const kontrol = async () => {
-    if (!secili || !soru || geri) return
-    const dogru = secili === soru.correct_option
-    setDogruMu(dogru)
-    setAsama('geri')
-    setSonXp(0)
-    setIstatistik((s) => ({ ...s, dogru: s.dogru + (dogru ? 1 : 0), toplam: s.toplam + 1 }))
-    if (dogru) sesDogru(); else sesYanlis()
-    // Sunucu-otoriter puanlama (havuzdan okur, LLM yok). Anlık geri bildirim client'tan.
+  // Sunucu-otoriter puanlama (havuzdan okur, LLM yok). xpGained döner ya da null.
+  const puanla = async (q: HavuzSoru, sik: string): Promise<number | null> => {
     try {
       const r = await apiPost('/answers', {
-        questionId: soru.id,
-        subject: soru.subject,
-        kazanimId: soru.kazanim_id ?? null,
-        selectedOption: secili,
+        questionId: q.id,
+        subject: q.subject,
+        kazanimId: q.kazanim_id ?? null,
+        selectedOption: sik,
         attemptNumber: 1,
         durationSec: Math.round((Date.now() - basladi.current) / 1000),
-        difficulty: soru.difficulty ?? null,
+        difficulty: q.difficulty ?? null,
         // Tanışma = yerleştirme: BKT K=0.3 (hızlı yakınsama) — harita ilk setten belirir
         placement: kaynak === 'tanisma' || undefined,
       })
-      if (typeof r?.xpGained === 'number') { setSonXp(r.xpGained); setIstatistik((s) => ({ ...s, xp: s.xp + r.xpGained })) }
-    } catch { /* puanlama sessizce başarısız olabilir; geri bildirim yine gösterilir */ }
+      return typeof r?.xpGained === 'number' ? r.xpGained : null
+    } catch { return null } // puanlama sessizce başarısız olabilir; akış sürer
+  }
+
+  const dersEkle = (q: HavuzSoru, dogru: boolean) => {
+    const dm = dersDurum.current
+    const cur = dm.get(q.subject) ?? { dogru: 0, toplam: 0 }
+    dm.set(q.subject, { dogru: cur.dogru + (dogru ? 1 : 0), toplam: cur.toplam + 1 })
+  }
+
+  const kontrol = async () => {
+    if (!secili || !soru || geri) return
+    const dogru = secili === soru.correct_option
+    setIstatistik((s) => ({ ...s, dogru: s.dogru + (dogru ? 1 : 0), toplam: s.toplam + 1 }))
+    dersEkle(soru, dogru)
+
+    if (testModu) {
+      // TEST modu: ses YOK, şık rengi YOK, açıklama YOK — sessizce kaydet ve ilerle.
+      void puanla(soru, secili).then((xp) => { if (xp != null) setIstatistik((s) => ({ ...s, xp: s.xp + xp })) })
+      ilerle()
+      return
+    }
+    // PRATİK modu: anlık geri bildirim
+    setDogruMu(dogru); setAsama('geri'); setSonXp(0)
+    if (dogru) sesDogru(); else sesYanlis()
+    const xp = await puanla(soru, secili)
+    if (xp != null) { setSonXp(xp); setIstatistik((s) => ({ ...s, xp: s.xp + xp })) }
   }
 
   const ilerle = () => {
@@ -181,13 +237,16 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
 
   const cikis = () => nav(kaynak === 'osym' ? '/arsiv' : kaynak === 'tanisma' ? '/harita' : '/')
 
-  // Klavye: A–E seç · Enter kontrol/devam
+  // Klavye: A–E seç · Enter/→ kontrol/devam (input yok — köşe durumları için yine korunur)
   useEffect(() => {
     const dinle = (e: KeyboardEvent) => {
       if (yukleniyor || !soru || idx >= sorular.length) return
+      const hedef = e.target as HTMLElement | null
+      if (hedef && (hedef.tagName === 'INPUT' || hedef.tagName === 'TEXTAREA')) return
       const k = e.key.toUpperCase()
-      if (!geri && (HARFLER as readonly string[]).includes(k) && soru.options?.[k] != null) setSecili(k)
-      else if (e.key === 'Enter') { e.preventDefault(); geri ? ilerle() : void kontrol() }
+      if (!geri && (HARFLER as readonly string[]).includes(k) && soru.options?.[k] != null) { setSecili(k); return }
+      if (e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); geri ? ilerle() : void kontrol() }
+      // ArrowLeft: doğrusal set akışında geri-düzenleme yok — bilinçli olarak devre dışı.
     }
     window.addEventListener('keydown', dinle)
     return () => window.removeEventListener('keydown', dinle)
@@ -195,29 +254,31 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
   }, [yukleniyor, soru, geri, secili, idx, sorular.length])
 
   /* ── Durumlar ── */
-  if (yukleniyor) return <Merkez><Spinner /><p className="mt-3.5 text-[13px] text-slate-400">Sorular hazırlanıyor…</p></Merkez>
+  if (yukleniyor) return <Merkez><Spinner /><p className="mt-3.5 text-[13px]" style={{ color: 'var(--metin3)' }}>Sorular hazırlanıyor…</p></Merkez>
   if (hata) return (
     <Merkez>
-      <Icon name="waves" size={40} color="#64748B" />
-      <p className="mt-3 text-sm font-semibold text-slate-200">{hata}</p>
-      <GlowButton className="mt-5" onClick={cikis}>Geri dön</GlowButton>
+      <span className="grid size-13 place-items-center rounded-2xl" style={{ background: 'color-mix(in srgb, var(--yanlis) 12%, transparent)' }}>
+        <Icon name="refresh" size={26} color="var(--yanlis)" />
+      </span>
+      <p className="mt-3.5 text-sm font-semibold" style={{ color: 'var(--metin1)' }}>{hata}</p>
+      <button type="button" className="cz-btn dis mt-5" onClick={cikis}>Geri dön</button>
     </Merkez>
   )
   if (!sorular.length) return (
     <Merkez>
-      <span className="grid size-13 place-items-center rounded-2xl bg-sky-400/15">
-        <Icon name="waves" size={26} color="#38BDF8" />
+      <span className="grid size-13 place-items-center rounded-2xl" style={{ background: 'color-mix(in srgb, var(--yaprak) 15%, transparent)' }}>
+        <Icon name="sprout" size={26} color="var(--yaprak)" />
       </span>
-      <p className="mt-3.5 font-display text-[15px] font-bold text-slate-100">
+      <p className="mt-3.5 font-display text-[15px] font-bold" style={{ color: 'var(--metin1)' }}>
         {kaynak === 'review' ? 'Vadesi gelen kart yok' : 'Bu konuda soru bulunamadı'}
       </p>
-      <p className="mt-1.5 max-w-70 text-center text-xs leading-relaxed text-slate-400">
+      <p className="mt-1.5 max-w-70 text-center text-xs leading-relaxed" style={{ color: 'var(--metin3)' }}>
         {kaynak === 'ai' ? 'Havuz bu kazanım için henüz boş. Koç doldurunca burada belirir.'
           : kaynak === 'review' ? 'Aralıklı tekrar motoru kartların vadesini bekliyor — çözmeye devam.'
           : kaynak === 'tanisma' ? 'Havuz henüz boş — Koç doldurunca tanışma sınavı açılır.'
           : 'Bu derste çıkmış soru bulunamadı.'}
       </p>
-      <GlowButton className="mt-5" onClick={cikis}>Geri dön</GlowButton>
+      <button type="button" className="cz-btn dis mt-5" onClick={cikis}>Geri dön</button>
     </Merkez>
   )
 
@@ -227,167 +288,168 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
       <Ozet
         istatistik={istatistik}
         kaynak={kaynak}
-        onTekrar={() => { setIdx(0); setSecili(null); setAsama('soru'); setIstatistik({ dogru: 0, toplam: 0, xp: 0 }); basladi.current = Date.now() }}
+        dokum={[...dersDurum.current.entries()].map(([subject, s]) => ({ subject, ...s }))}
+        onTekrar={() => { setIdx(0); setSecili(null); setAsama('soru'); setIstatistik({ dogru: 0, toplam: 0, xp: 0 }); dersDurum.current = new Map(); basladi.current = Date.now() }}
         onBitir={cikis}
+        onDersTekrar={(subject) => nav('/coz', { state: { source: 'ai', subject, title: subject } })}
       />
     )
   }
 
+  const yuzdeIlerleme = ((idx + (geri ? 1 : 0)) / sorular.length) * 100
+
   return (
     <div className="flex min-h-screen flex-col">
-      {/* Üst bar: çık + cam ilerleme + sayaçlar */}
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 pb-3 pt-4">
-        <button onClick={cikis} className="glass-solid grid size-9 cursor-pointer place-items-center rounded-xl text-slate-400 transition-colors hover:text-slate-200">
-          <Icon name="close" size={17} color="currentColor" />
-        </button>
-        <div className="glass-solid h-2 flex-1 overflow-hidden rounded-full">
-          <m.div
-            className="h-full rounded-full bg-gradient-to-r from-sky-500 to-cyan-400"
-            animate={{ width: `${((idx + (geri ? 1 : 0)) / sorular.length) * 100}%` }}
-            transition={{ duration: 0.35, ease: 'easeOut' }}
-          />
-        </div>
-        <span className="font-mono text-[11.5px] text-slate-400">{idx + 1}/{sorular.length}</span>
-        <span className="w-11 text-right font-mono text-[11.5px] tabular-nums text-slate-500">
-          {Math.floor(gecen / 60)}:{String(gecen % 60).padStart(2, '0')}
-        </span>
-        <button
-          onClick={() => setSesli(sesToggle())}
-          title={sesli ? 'Sesi kapat' : 'Sesi aç'}
-          className="grid size-9 cursor-pointer place-items-center rounded-xl text-slate-500 transition-colors hover:text-slate-300"
-        >
-          <Icon name={sesli ? 'volume' : 'volumeOff'} size={16} color="currentColor" />
-        </button>
-      </div>
-
-      <div className="mx-auto w-full max-w-3xl flex-1 px-4 pb-6">
-        {/* Kaynak kimliği — ÖSYM: brass mühür; diğerleri mütevazı çip (asla karışmaz) */}
-        {kaynak === 'osym' ? (
-          <div className="mb-4 inline-flex items-center gap-2.5 rounded-xl border border-brass-500 bg-gradient-to-br from-[#2A1E08] to-[#191204] px-3.5 py-2">
-            <Icon name="seal" size={18} color="#C99A4A" />
-            <div>
-              <div className="font-display text-[11.5px] font-extrabold tracking-wider text-brass-400">ÖSYM · ÇIKMIŞ SORU</div>
-              {(soru.exam_label || soru.exam_year) && (
-                <div className="text-[10.5px] text-brass-700">{soru.exam_label || soru.exam_year}</div>
-              )}
+      {/* Üst ince cam şerit: çık(onay) + ilerleme + süre + ses */}
+      <div className="cz-serit">
+        <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4" style={{ height: 56 }}>
+          <CikisOnay onCik={cikis}>
+            <button type="button" className="cz-cik grid size-9 cursor-pointer place-items-center rounded-xl" title="Testten çık" aria-label="Çık">
+              <Icon name="close" size={17} color="currentColor" />
+            </button>
+          </CikisOnay>
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <span className="shrink-0 font-mono text-[11.5px]" style={{ color: 'var(--metin2)' }}>SORU {idx + 1}/{sorular.length}</span>
+            <div className="cz-ilerleme flex-1" role="progressbar" aria-valuenow={idx + 1} aria-valuemin={0} aria-valuemax={sorular.length}>
+              <i style={{ width: `${yuzdeIlerleme}%` }} />
             </div>
           </div>
-        ) : (
-          <div className="mb-4">
-            <Chip tone={kaynak === 'review' ? 'teal' : 'sky'} icon={kaynak === 'review' ? 'history' : kaynak === 'tanisma' ? 'scan' : 'sparkle'}>
-              {kaynak === 'review' ? 'TEKRAR · aralıklı hafıza'
-                : kaynak === 'tanisma' ? 'TANIŞMA SINAVI · yerleştirme'
-                : 'KOÇ PRATİĞİ · adaptif'}
-            </Chip>
-          </div>
-        )}
+          <span className="cz-sure shrink-0 rounded-xl px-3 py-1.5 text-[12.5px] tabular-nums">
+            {Math.floor(gecen / 60)}:{String(gecen % 60).padStart(2, '0')}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSesli(sesToggle())}
+            title={sesli ? 'Sesi kapat' : 'Sesi aç'}
+            className="cz-cik grid size-9 cursor-pointer place-items-center rounded-xl"
+          >
+            <Icon name={sesli ? 'volume' : 'volumeOff'} size={16} color="currentColor" />
+          </button>
+        </div>
+      </div>
 
-        {/* Soru kartı */}
+      <div className="relative z-[1] mx-auto w-full max-w-3xl flex-1 px-4 pb-6 pt-6">
+        {/* Kaynak kimliği — ÖSYM: kehribar mühür (sayfadaki TEK kehribar); diğerleri sakin çip */}
+        <div className="mb-4 flex flex-wrap items-center gap-2.5">
+          {testModu ? (
+            <span className="cz-muhur">
+              <Icon name="seal" size={15} color="currentColor" />
+              ÖSYM ÇIKMIŞ SORU{(soru.exam_label || soru.exam_year) ? ` · ${soru.exam_label || soru.exam_year}` : ''}
+            </span>
+          ) : (
+            <span className="cz-kazanim" style={{ background: 'color-mix(in srgb, var(--adacayi) 20%, transparent)', color: 'var(--vurgu)' }}>
+              <Icon name={kaynak === 'review' ? 'history' : kaynak === 'tanisma' ? 'scan' : 'sparkle'} size={14} color="currentColor" />
+              {kaynak === 'review' ? 'Tekrar · aralıklı hafıza' : kaynak === 'tanisma' ? 'Tanışma sınavı · yerleştirme' : 'Koç pratiği · adaptif'}
+            </span>
+          )}
+          {soru.subject && (
+            <span className="cz-kazanim" style={{ background: 'var(--ic)', color: 'var(--metin2)' }}>
+              {soru.subject}{soru.topic ? ` · ${soru.topic}` : ''}
+            </span>
+          )}
+        </div>
+
+        {/* Soru kartı + şıklar */}
         <AnimatePresence mode="wait">
           <m.div
             key={idx}
-            initial={{ opacity: 0, x: 24 }}
+            initial={azalt ? false : { opacity: 0, x: 24 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -18 }}
-            transition={{ duration: 0.22, ease: [0.21, 0.65, 0.32, 1] }}
+            exit={azalt ? { opacity: 0 } : { opacity: 0, x: -18 }}
+            transition={{ duration: azalt ? 0 : 0.22, ease: [0.21, 0.65, 0.32, 1] }}
           >
-            <div className="glass-solid rounded-2xl px-5 py-4.5">
-              <div className="text-[15.5px] leading-relaxed text-slate-100">
+            <div className={cn('cz-kart px-5 py-5', testModu && 'cz-osym')}>
+              <div className="text-[16px] leading-relaxed" style={{ color: 'var(--metin1)' }}>
                 <span className="font-display font-bold">Soru {idx + 1}.</span>{' '}
                 <MathMarkdown inline>{soru.question_text}</MathMarkdown>
               </div>
             </div>
 
-            {/* Şıklar */}
             <div className="mt-3.5 space-y-2.5">
               {HARFLER.filter((L) => soru.options?.[L] != null).map((L) => {
                 const dogruSik = L === soru.correct_option
                 const secildi = secili === L
+                const durum = geri
+                  ? (dogruSik ? 'dogru' : secildi ? 'yanlis' : 'soluk')
+                  : (secildi ? 'secili' : '')
                 return (
-                  <m.button
+                  <button
                     key={L}
+                    type="button"
                     onClick={() => !geri && setSecili(L)}
-                    whileTap={!geri ? { scale: 0.985 } : undefined}
-                    className={cn(
-                      'flex w-full items-center gap-3.5 rounded-2xl border px-4 py-3 text-left transition-colors duration-150',
-                      geri && dogruSik && 'border-emerald-400/70 bg-emerald-400/10',
-                      geri && secildi && !dogruSik && 'border-rose-400/70 bg-rose-400/10',
-                      !geri && secildi && 'border-sky-400/80 bg-sky-400/10',
-                      !geri && !secildi && 'glass-solid cursor-pointer hover:border-sky-400/40',
-                      geri && !dogruSik && !secildi && 'glass-solid opacity-55',
-                    )}
+                    disabled={geri}
+                    className={cn('cz-sik', !geri && 'cz-sik-secilebilir', durum)}
                   >
-                    <span className={cn(
-                      'grid size-8 shrink-0 place-items-center rounded-full font-display text-[13px] font-extrabold transition-colors',
-                      geri && dogruSik ? 'bg-emerald-400 text-ocean-950'
-                        : geri && secildi && !dogruSik ? 'bg-rose-400 text-ocean-950'
-                        : secildi ? 'bg-sky-400 text-ocean-950'
-                        : 'bg-ocean-700 text-slate-300',
-                    )}>
+                    <span className="cz-harf">
                       {geri && dogruSik ? <Icon name="check" size={16} color="currentColor" strokeWidth={2.6} />
                         : geri && secildi && !dogruSik ? <Icon name="close" size={15} color="currentColor" strokeWidth={2.6} />
                         : L}
                     </span>
                     {/* Şık metni KaTeX'ten geçer — havuz "$12$" yazar, ham basılmaz */}
-                    <span className={cn(
-                      'text-[14.5px] font-medium leading-normal',
-                      geri && dogruSik ? 'text-emerald-300'
-                        : geri && secildi && !dogruSik ? 'text-rose-300'
-                        : secildi ? 'text-sky-200' : 'text-slate-300',
-                    )}>
+                    <span className="text-[14.5px] font-medium leading-normal">
                       <MathMarkdown inline>{soru.options[L]}</MathMarkdown>
                     </span>
-                  </m.button>
+                    {geri && dogruSik && <span className="cz-durum-yazi" style={{ color: 'var(--dogru)' }}>Doğru</span>}
+                    {geri && secildi && !dogruSik && <span className="cz-durum-yazi" style={{ color: 'var(--yanlis)' }}>Yanlış</span>}
+                  </button>
                 )
               })}
             </div>
+
+            {/* "Neden?" açıklama kutusu — yalnız pratik geri bildiriminde (motive dil, teşhis yok) */}
+            {geri && (
+              <div className="cz-aciklama">
+                <div className="mb-2 flex items-center gap-2">
+                  <span
+                    className="grid size-6 place-items-center rounded-full"
+                    style={{ background: dogruMu ? 'color-mix(in srgb, var(--dogru) 20%, transparent)' : 'color-mix(in srgb, var(--yanlis) 20%, transparent)', color: dogruMu ? 'var(--dogru)' : 'var(--yanlis)' }}
+                  >
+                    <Icon name={dogruMu ? 'check' : 'close'} size={14} color="currentColor" strokeWidth={2.6} />
+                  </span>
+                  <b style={{ color: dogruMu ? 'var(--dogru)' : 'var(--yanlis)' }}>
+                    {dogruMu ? 'Doğru!' : `Doğru cevap: ${soru.correct_option}`}
+                  </b>
+                  {dogruMu && sonXp > 0 && (
+                    <m.span
+                      className="cz-odul ml-auto"
+                      style={{ padding: '4px 11px', fontSize: 12.5 }}
+                      initial={azalt ? false : { scale: 0.6, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                    >
+                      <Icon name="sparkle" size={13} color="currentColor" /> +{sonXp} XP
+                    </m.span>
+                  )}
+                </div>
+                {soru.solution ? (
+                  <>
+                    <b>Neden?</b>
+                    <div className="mt-1 max-h-56 overflow-y-auto">
+                      <MathMarkdown>{soru.solution}</MathMarkdown>
+                    </div>
+                  </>
+                ) : (
+                  <span>{dogruMu ? 'Güzel — bu kazanımı bir adım daha pekiştirdin 🌱' : 'Sorun değil, yanlıştan öğrenilir — çözmeye devam et.'}</span>
+                )}
+              </div>
+            )}
           </m.div>
         </AnimatePresence>
       </div>
 
-      {/* Alt bar */}
-      {!geri ? (
-        <div className="mx-auto w-full max-w-3xl px-4 pb-6">
-          <GlowButton full size="lg" disabled={!secili} onClick={kontrol}>
-            Kontrol Et <span className="ml-1 font-mono text-[11px] opacity-60">↵</span>
-          </GlowButton>
-        </div>
-      ) : (
-        <m.div
-          initial={{ y: 40, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.28, ease: [0.21, 0.65, 0.32, 1] }}
-          className="glass rounded-t-3xl border-x-0 border-b-0"
-        >
-          <div className="mx-auto w-full max-w-3xl px-5 pb-6 pt-4">
-            <div className="flex items-center gap-2.5">
-              <span className={cn(
-                'grid size-7 place-items-center rounded-full',
-                dogruMu ? 'bg-emerald-400/20 text-emerald-300' : 'bg-rose-400/20 text-rose-300',
-              )}>
-                <Icon name={dogruMu ? 'check' : 'close'} size={15} color="currentColor" strokeWidth={2.6} />
-              </span>
-              <span className={cn('font-display text-[15px] font-extrabold', dogruMu ? 'text-emerald-300' : 'text-rose-300')}>
-                {dogruMu ? 'Doğru!' : `Doğru cevap ${soru.correct_option}`}
-              </span>
-              {dogruMu && sonXp > 0 && (
-                <m.span initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="ml-auto">
-                  <Chip tone="amber" icon="sparkle">+{sonXp} XP</Chip>
-                </m.span>
-              )}
-            </div>
-            {/* Çözüm — EN FORMÜL-YOĞUN alan; yanlış yapanın gördüğü tek şey */}
-            {soru.solution && (
-              <div className="mt-3 max-h-56 overflow-y-auto text-[13.5px] leading-relaxed text-slate-300">
-                <MathMarkdown>{soru.solution}</MathMarkdown>
-              </div>
-            )}
-            <GlowButton full size="lg" icon="arrowRight" className="mt-4" onClick={ilerle}>
-              {idx + 1 >= sorular.length ? 'Bitir' : 'Devam'} <span className="ml-1 font-mono text-[11px] opacity-60">↵</span>
-            </GlowButton>
-          </div>
-        </m.div>
-      )}
+      {/* Alt eylem barı — görünüm başına TEK birincil buton */}
+      <div className="relative z-[1] mx-auto w-full max-w-3xl px-4 pb-6">
+        {!geri ? (
+          <button type="button" className="cz-btn birincil cz-btn-full" disabled={!secili} onClick={kontrol}>
+            {testModu ? (idx + 1 >= sorular.length ? 'Cevapla ve bitir' : 'Cevapla') : 'Kontrol Et'}
+            <span className="font-mono text-[11px] opacity-60">↵</span>
+          </button>
+        ) : (
+          <button type="button" className="cz-btn birincil cz-btn-full" onClick={ilerle}>
+            {idx + 1 >= sorular.length ? 'Bitir' : 'Sonraki Soru'}
+            <Icon name="arrowRight" size={16} color="currentColor" />
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -406,6 +468,7 @@ interface AntrenmanSoru {
 }
 
 function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void }) {
+  const azalt = useReducedMotion()
   const [soru, setSoru] = useState<AntrenmanSoru | null>(null)
   const [seviye, setSeviye] = useState(2)
   const [ipucu, setIpucu] = useState<string | null>(null)
@@ -483,9 +546,11 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
   if (hata && !aktifSoru) {
     return (
       <Merkez>
-        <Icon name="waves" size={40} color="#64748B" />
-        <p className="mt-3 max-w-75 text-center text-sm font-semibold text-slate-200">{hata}</p>
-        <GlowButton className="mt-5" onClick={cikis}>Geri dön</GlowButton>
+        <span className="grid size-13 place-items-center rounded-2xl" style={{ background: 'color-mix(in srgb, var(--yaprak) 15%, transparent)' }}>
+          <Icon name="sprout" size={26} color="var(--yaprak)" />
+        </span>
+        <p className="mt-3.5 max-w-75 text-center text-sm font-semibold" style={{ color: 'var(--metin1)' }}>{hata}</p>
+        <button type="button" className="cz-btn dis mt-5" onClick={cikis}>Geri dön</button>
       </Merkez>
     )
   }
@@ -495,38 +560,41 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
 
   return (
     <div className="flex min-h-screen flex-col">
-      {/* Üst bar: çık + zorluk merdiveni + doğruluk */}
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 pb-3 pt-4">
-        <button onClick={cikis} className="glass-solid grid size-9 cursor-pointer place-items-center rounded-xl text-slate-400 transition-colors hover:text-slate-200">
-          <Icon name="close" size={17} color="currentColor" />
-        </button>
-        <Chip tone="sky" icon="bolt">ANTRENMAN · adaptif</Chip>
-        <div className="ml-auto flex items-center gap-1.5" title={`Zorluk kademesi ${seviye}/3`}>
-          <span className="font-mono text-[10.5px] text-slate-500">zorluk</span>
-          {[1, 2, 3].map((s) => (
-            <span key={s} className={cn(
-              'h-2 w-5 rounded-full transition-colors',
-              s <= seviye ? 'bg-sky-400' : 'bg-ocean-700',
-            )} />
-          ))}
+      {/* Üst şerit: çık(onay) + kimlik + zorluk merdiveni + doğruluk */}
+      <div className="cz-serit">
+        <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4" style={{ height: 56 }}>
+          <CikisOnay onCik={cikis}>
+            <button type="button" className="cz-cik grid size-9 cursor-pointer place-items-center rounded-xl" title="Antrenmandan çık" aria-label="Çık">
+              <Icon name="close" size={17} color="currentColor" />
+            </button>
+          </CikisOnay>
+          <span className="cz-kazanim shrink-0" style={{ background: 'color-mix(in srgb, var(--adacayi) 20%, transparent)', color: 'var(--vurgu)' }}>
+            <Icon name="bolt" size={14} color="currentColor" /> Antrenman · adaptif
+          </span>
+          <div className="ml-auto flex items-center gap-1.5" title={`Zorluk kademesi ${seviye}/3`}>
+            <span className="font-mono text-[10.5px]" style={{ color: 'var(--metin3)' }}>zorluk</span>
+            {[1, 2, 3].map((s) => (
+              <span key={s} className="h-2 w-5 rounded-full" style={{ background: s <= seviye ? 'var(--yaprak)' : 'var(--ic)' }} />
+            ))}
+          </div>
+          <span className="font-mono text-[11.5px]" style={{ color: 'var(--metin2)' }}>
+            {istatistik.dogru}/{istatistik.toplam}
+          </span>
         </div>
-        <span className="font-mono text-[11.5px] text-slate-400">
-          {istatistik.dogru}/{istatistik.toplam}
-        </span>
       </div>
 
-      <div className="mx-auto w-full max-w-3xl flex-1 px-4 pb-6">
+      <div className="relative z-[1] mx-auto w-full max-w-3xl flex-1 px-4 pb-6 pt-6">
         {asama === 'yukleniyor' && !gosterilen ? (
           <div className="grid min-h-60 place-items-center">
             <div className="text-center">
               <Spinner />
-              <p className="mt-3.5 text-[13px] text-slate-400">Koç soru hazırlıyor…</p>
+              <p className="mt-3.5 text-[13px]" style={{ color: 'var(--metin3)' }}>Koç soru hazırlıyor…</p>
             </div>
           </div>
         ) : gosterilen ? (
           <>
-            <div className="glass-solid rounded-2xl px-5 py-4.5">
-              <div className="text-[15.5px] leading-relaxed text-slate-100">
+            <div className="cz-kart px-5 py-5">
+              <div className="text-[16px] leading-relaxed" style={{ color: 'var(--metin1)' }}>
                 <MathMarkdown inline>{gosterilen.question_text}</MathMarkdown>
               </div>
             </div>
@@ -534,28 +602,17 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
               {gosterilen.options.map((secenek, i) => {
                 const dogruSik = geri && String(secenek) === String(gosterilen.correct_answer)
                 const secildi = secili === i
+                const durum = dogruSik ? 'dogru' : (geri && secildi && !dogruSik) ? 'yanlis' : (geri && !secildi) ? 'soluk' : secildi ? 'secili' : ''
                 return (
                   <button
                     key={i}
+                    type="button"
                     onClick={() => !geri && setSecili(i)}
-                    className={cn(
-                      'flex w-full items-center gap-3.5 rounded-2xl border px-4 py-3 text-left transition-colors',
-                      dogruSik && 'border-emerald-400/70 bg-emerald-400/10',
-                      geri && secildi && !dogruSik && 'border-rose-400/70 bg-rose-400/10',
-                      !geri && secildi && 'border-sky-400/80 bg-sky-400/10',
-                      !geri && !secildi && 'glass-solid cursor-pointer hover:border-sky-400/40',
-                      geri && !dogruSik && !secildi && 'glass-solid opacity-55',
-                    )}
+                    disabled={geri}
+                    className={cn('cz-sik', !geri && 'cz-sik-secilebilir', durum)}
                   >
-                    <span className={cn(
-                      'grid size-8 shrink-0 place-items-center rounded-full font-display text-[13px] font-extrabold',
-                      dogruSik ? 'bg-emerald-400 text-ocean-950'
-                        : geri && secildi ? 'bg-rose-400 text-ocean-950'
-                        : secildi ? 'bg-sky-400 text-ocean-950' : 'bg-ocean-700 text-slate-300',
-                    )}>
-                      {HARFLER[i] ?? i + 1}
-                    </span>
-                    <span className="text-[14.5px] font-medium text-slate-300">
+                    <span className="cz-harf">{HARFLER[i] ?? i + 1}</span>
+                    <span className="text-[14.5px] font-medium">
                       <MathMarkdown inline>{String(secenek)}</MathMarkdown>
                     </span>
                   </button>
@@ -566,35 +623,37 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
             {/* Pedagojik ipucu balonu — yanlışta Koç'tan gelir */}
             {geri && ipucu && (
               <m.div
-                initial={{ opacity: 0, y: 10 }}
+                initial={azalt ? false : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-4 flex items-start gap-2.5 rounded-2xl border border-sky-400/25 bg-sky-400/8 px-4 py-3"
+                className="cz-ipucu mt-4 flex items-start gap-2.5 rounded-xl px-4 py-3"
               >
-                <Icon name="lightbulb" size={16} color="#38BDF8" style={{ marginTop: 2, flexShrink: 0 }} />
-                <p className="text-[13px] leading-relaxed text-sky-200">{ipucu}</p>
+                <Icon name="lightbulb" size={16} color="var(--bilgi)" style={{ marginTop: 2, flexShrink: 0 }} />
+                <p className="text-[13px] leading-relaxed" style={{ color: 'var(--metin2)' }}>{ipucu}</p>
               </m.div>
             )}
 
             {geri && gosterilen.explanation && (
-              <div className="mt-3 text-[13px] leading-relaxed text-slate-400">
-                <MathMarkdown>{gosterilen.explanation}</MathMarkdown>
+              <div className="cz-aciklama">
+                <b>Neden?</b>
+                <div className="mt-1"><MathMarkdown>{gosterilen.explanation}</MathMarkdown></div>
               </div>
             )}
           </>
         ) : null}
       </div>
 
-      <div className="mx-auto w-full max-w-3xl px-4 pb-6">
+      <div className="relative z-[1] mx-auto w-full max-w-3xl px-4 pb-6">
         {!geri ? (
-          <GlowButton full size="lg" disabled={secili == null || asama === 'yukleniyor'} onClick={kontrol}>
+          <button type="button" className="cz-btn birincil cz-btn-full" disabled={secili == null || asama === 'yukleniyor'} onClick={kontrol}>
             Kontrol Et
-          </GlowButton>
+          </button>
         ) : (
           <div className="flex gap-2.5">
-            <GlowButton variant="outline" size="lg" onClick={cikis}>Bitir</GlowButton>
-            <GlowButton full size="lg" icon="arrowRight" disabled={asama !== 'geri' && !soru} onClick={devamEt}>
+            <button type="button" className="cz-btn dis" onClick={cikis}>Bitir</button>
+            <button type="button" className="cz-btn birincil cz-btn-full" disabled={asama !== 'geri' && !soru} onClick={devamEt}>
               {dogruMu ? 'Devam — zorluk artıyor' : 'Devam'}
-            </GlowButton>
+              <Icon name="arrowRight" size={16} color="currentColor" />
+            </button>
           </div>
         )}
       </div>
@@ -604,72 +663,229 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
 
 /* ═══ ÖZET ═══════════════════════════════════════════════════════════════════ */
 
-function Ozet({ istatistik, kaynak, onTekrar, onBitir }: {
+const KAYNAK_ETIKET: Record<string, string> = {
+  ai: 'Koç pratiği', osym: 'ÖSYM çıkmış soru', review: 'Tekrar seti', tanisma: 'Tanışma sınavı',
+}
+
+function Ozet({ istatistik, kaynak, dokum, onTekrar, onBitir, onDersTekrar }: {
   istatistik: { dogru: number; toplam: number; xp: number }
   kaynak: string
+  dokum: { subject: string; dogru: number; toplam: number }[]
   onTekrar: () => void
   onBitir: () => void
+  onDersTekrar: (subject: string) => void
 }) {
+  const azalt = useReducedMotion()
   const yuzde = istatistik.toplam ? Math.round((istatistik.dogru / istatistik.toplam) * 100) : 0
+  const [doldur, setDoldur] = useState(false)
 
   useEffect(() => {
     sesFanfar()
-    if (yuzde >= 70) {
-      // Konfeti — dinamik import (ana bundle'a girmez), reduced-motion'da atlanır
-      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    // Yaprak konfetisi — v1.2 renkleri (adaçayı/yaprak/toprak); hareket-azalt'ta atlanır.
+    if (yuzde >= 70 && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       void import('canvas-confetti').then(({ default: confetti }) => {
-        confetti({ particleCount: 90, spread: 75, origin: { y: 0.6 }, colors: ['#38BDF8', '#22D3EE', '#FBBF24', '#F4FAFF'] })
+        confetti({ particleCount: 90, spread: 75, origin: { y: 0.6 }, colors: ['#84A98C', '#4FA56F', '#D4A373', '#6FA57F'] })
       })
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    const id = requestAnimationFrame(() => setDoldur(true))
+    return () => cancelAnimationFrame(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const circ = 402.1 // 2π·64
+  const offset = doldur ? circ * (1 - yuzde / 100) : circ
 
   return (
     <Merkez>
-      <m.div
-        initial={{ scale: 0.85, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: 'spring', stiffness: 260, damping: 22 }}
-        className="text-center"
-      >
-        <div className="mx-auto w-fit">
-          <Halka oran={yuzde / 100} boyut={104} kalinlik={8}
-            renk={yuzde >= 70 ? 'var(--color-emerald-400)' : yuzde >= 40 ? 'var(--color-amber-400)' : 'var(--color-rose-400)'}>
-            <span className="font-display text-[26px] font-extrabold text-slate-100">%{yuzde}</span>
-          </Halka>
-        </div>
-        <h2 className="mt-5 font-display text-[22px] font-extrabold text-slate-100">
-          {kaynak === 'tanisma' ? 'Röntgenin çekildi' : 'Blok tamam'}
+      <div className={cn('cz-kart relative z-[1] w-full max-w-md px-6 py-7 text-center', !azalt && 'cz-canlan')}>
+        <h2 className="font-display text-[22px] font-extrabold" style={{ color: 'var(--metin1)' }}>
+          {kaynak === 'tanisma' ? 'Analizin hazır 🌿' : 'Test bitti — güzel iş 🌿'}
         </h2>
-        <p className="mt-1.5 text-[13.5px] text-slate-400">
-          {istatistik.dogru}/{istatistik.toplam} doğru
-          {istatistik.xp > 0 && <> · <span className="font-semibold text-amber-300">+{istatistik.xp} XP</span></>}
+        <p className="mt-1 text-[13.5px]" style={{ color: 'var(--metin2)' }}>
+          {KAYNAK_ETIKET[kaynak] ?? 'Pratik'} · {istatistik.toplam} soru
         </p>
+
+        {/* Dolarak canlanan skor halkası (adaçayı→yaprak) */}
+        <div className="relative mx-auto my-4" style={{ width: 150, height: 150 }}>
+          <svg width="150" height="150" viewBox="0 0 150 150">
+            <defs>
+              <linearGradient id="cz-sg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stopColor="var(--adacayi)" />
+                <stop offset="1" stopColor="var(--yaprak)" />
+              </linearGradient>
+            </defs>
+            <circle cx="75" cy="75" r="64" fill="none" stroke="var(--ic)" strokeWidth="10" />
+            <circle
+              cx="75" cy="75" r="64" fill="none" stroke="url(#cz-sg)" strokeWidth="10" strokeLinecap="round"
+              strokeDasharray={circ} strokeDashoffset={offset} transform="rotate(-90 75 75)"
+              style={{ transition: azalt ? 'none' : 'stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)' }}
+            />
+          </svg>
+          <div className="absolute inset-0 grid place-items-center">
+            <div>
+              <b className="block font-display text-[30px] font-extrabold leading-none" style={{ color: 'var(--metin1)' }}>{istatistik.dogru}/{istatistik.toplam}</b>
+              <span className="text-[11.5px]" style={{ color: 'var(--metin3)' }}>doğru</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Ödül — yalnız GERÇEK veri: XP (coin/seri /answers yanıtında yok → uydurulmaz) */}
+        {istatistik.xp > 0 && (
+          <div className="mt-1 flex flex-wrap justify-center gap-2.5">
+            <span className="cz-odul"><Icon name="sparkle" size={15} color="currentColor" /> +{istatistik.xp} XP</span>
+          </div>
+        )}
+
+        {/* Kazanım/ders dökümü — kelimeli rozet; "tekrar önerilir" o dersten pratiğe köprü */}
+        {dokum.length > 0 && (
+          <div className="mx-auto mt-4 max-w-sm text-left">
+            {dokum.map((d) => {
+              const oran = d.toplam ? d.dogru / d.toplam : 0
+              const zayif = oran < 0.7
+              return (
+                <div key={d.subject} className="cz-dokum-satir">
+                  <span style={{ color: 'var(--metin1)' }}>{d.subject}</span>
+                  {zayif ? (
+                    <button type="button" className="cz-rozet uyari" onClick={() => onDersTekrar(d.subject)} title="Bu dersten tekrar pratiği başlat">
+                      <Icon name="refresh" size={12} color="currentColor" /> {d.dogru}/{d.toplam} — tekrar önerilir
+                    </button>
+                  ) : (
+                    <span className="cz-rozet dogru"><Icon name="check" size={12} color="currentColor" strokeWidth={2.6} /> {d.dogru}/{d.toplam} doğru</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         {kaynak === 'tanisma' && (
-          <p className="mx-auto mt-2 max-w-70 text-xs leading-relaxed text-slate-500">
-            Motor seni tanıdı — Analiz'de ustalık haritan artık canlı.
+          <p className="mx-auto mt-3 max-w-xs text-xs leading-relaxed" style={{ color: 'var(--metin3)' }}>
+            Motor seni tanıdı — Analizler'de ustalık haritan artık canlı.
           </p>
         )}
-        <div className="mt-7 flex justify-center gap-2.5">
+
+        {/* Görünüm başına TEK birincil eylem */}
+        <div className="mt-6 flex flex-wrap justify-center gap-2.5">
           {kaynak !== 'tanisma' && (
-            <GlowButton variant="outline" onClick={onTekrar}>Tekrar</GlowButton>
+            <button type="button" className="cz-btn dis" onClick={onTekrar}>Tekrar çöz</button>
           )}
-          <GlowButton icon="arrowRight" onClick={onBitir}>
-            {kaynak === 'tanisma' ? 'Analize git' : 'Bitir'}
-          </GlowButton>
+          <button type="button" className="cz-btn birincil" onClick={onBitir}>
+            {kaynak === 'tanisma' ? 'Analizlere git' : 'Bugüne dön'}
+            <Icon name="arrowRight" size={16} color="currentColor" />
+          </button>
         </div>
-      </m.div>
+      </div>
     </Merkez>
   )
 }
 
 function Merkez({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-6">
+    <div className="relative z-[1] flex min-h-screen flex-col items-center justify-center px-6">
       {children}
     </div>
   )
 }
 
 function Spinner() {
-  return <div className="mx-auto size-9 animate-spin rounded-full border-[3px] border-sky-400/20 border-t-sky-400" />
+  return (
+    <div
+      className="mx-auto size-9 animate-spin rounded-full border-[3px]"
+      style={{ borderColor: 'color-mix(in srgb, var(--yaprak) 22%, transparent)', borderTopColor: 'var(--yaprak)' }}
+    />
+  )
+}
+
+/* ═══ FİDAN stil bloğu — .cz-* (önizleme soru-coz.html v1 portu; animasyonlar hareket-azalt kapılı) ═══ */
+
+function CozStil() {
+  return (
+    <style>{`
+      .cz { --kehribar: #B8863B; }
+      .dark .cz { --kehribar: #D9B267; }
+
+      /* Odak modunda ambiyans SAKİN: yaprak yok, tek silik güneş lekesi */
+      .cz-gunes { position: fixed; pointer-events: none; z-index: 0; border-radius: 50%; filter: blur(70px);
+        width: 640px; height: 420px; top: -160px; left: 50%; transform: translateX(-50%); background: rgba(132,169,140,0.14); }
+      .dark .cz-gunes { background: rgba(132,169,140,0.10); }
+
+      .cz-serit { position: sticky; top: 0; z-index: 10; background: var(--cam);
+        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid var(--cizgi); }
+      .cz-cik { border: 1px solid var(--cam-kenar); background: transparent; color: var(--metin2); transition: background .15s; }
+      .cz-cik:hover { background: var(--ic); }
+      .cz-ilerleme { height: 7px; border-radius: 12px; background: var(--ic); overflow: hidden; }
+      .cz-ilerleme > i { display: block; height: 100%; border-radius: 12px; background: linear-gradient(90deg, var(--adacayi), var(--yaprak)); }
+      .cz-sure { font-family: var(--font-mono); background: var(--ic); color: var(--metin2); font-weight: 500; }
+
+      .cz-kart { background: var(--cam); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--cam-kenar); border-radius: 20px; box-shadow: var(--golge); }
+
+      .cz-kazanim { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 12px; font-size: 12.5px; font-weight: 600; }
+
+      .cz-sik { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 13px 16px;
+        border-radius: 12px; border: 1.5px solid var(--cam-kenar); background: transparent; color: var(--metin1);
+        transition: border-color .15s, background .15s, transform .12s; }
+      .cz-sik-secilebilir { cursor: pointer; }
+      .cz-sik-secilebilir:hover { border-color: color-mix(in srgb, var(--vurgu) 40%, transparent); background: var(--ic); }
+      .cz-sik .cz-harf { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: 0 0 auto;
+        font-family: var(--font-display); font-weight: 700; font-size: 14px; background: var(--ic); color: var(--metin2); transition: background .15s, color .15s; }
+      .cz-sik.secili { border-color: var(--vurgu); background: color-mix(in srgb, var(--vurgu) 7%, transparent); }
+      .cz-sik.secili .cz-harf { background: var(--vurgu); color: #fff; }
+      .cz-sik.dogru { border-color: var(--dogru); background: color-mix(in srgb, var(--dogru) 8%, transparent); }
+      .cz-sik.dogru .cz-harf { background: var(--dogru); color: #fff; }
+      .cz-sik.yanlis { border-color: var(--yanlis); background: color-mix(in srgb, var(--yanlis) 7%, transparent); }
+      .cz-sik.yanlis .cz-harf { background: var(--yanlis); color: #fff; }
+      .cz-sik.soluk { opacity: .5; }
+      .cz-durum-yazi { margin-left: auto; font-size: 12.5px; font-weight: 700; }
+
+      .cz-aciklama { margin-top: 16px; padding: 15px 18px; border-radius: 12px; background: var(--ic);
+        border-left: 3px solid var(--yaprak); font-size: 14px; color: var(--metin2); line-height: 1.6; }
+      .cz-aciklama b { color: var(--metin1); }
+
+      .cz-ipucu { border: 1px solid color-mix(in srgb, var(--bilgi) 30%, transparent); background: color-mix(in srgb, var(--bilgi) 8%, transparent); }
+
+      .cz-btn { border: none; cursor: pointer; border-radius: 12px; padding: 12px 22px; font-family: var(--font-sans);
+        font-weight: 600; font-size: 14.5px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        transition: box-shadow .2s, background .15s, transform .12s; }
+      .cz-btn:active:not(:disabled) { transform: scale(.97); }
+      .cz-btn.birincil { background: var(--cta); color: #fff; }
+      .cz-btn.birincil:hover:not(:disabled) { box-shadow: var(--parilti); transform: translateY(-1px); }
+      .cz-btn.dis { background: transparent; color: var(--vurgu); border: 1px solid color-mix(in srgb, var(--vurgu) 35%, transparent); }
+      .cz-btn.dis:hover:not(:disabled) { background: var(--ic); }
+      .cz-btn.tehlike { background: color-mix(in srgb, var(--yanlis) 14%, transparent); color: var(--yanlis); }
+      .cz-btn.tehlike:hover:not(:disabled) { background: color-mix(in srgb, var(--yanlis) 22%, transparent); }
+      .cz-btn:disabled { opacity: .5; cursor: default; }
+      .cz-btn-full { width: 100%; }
+
+      .cz-muhur { display: inline-flex; align-items: center; gap: 8px; padding: 5px 13px; border-radius: 12px;
+        font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; font-weight: 500;
+        background: color-mix(in srgb, var(--kehribar) 14%, transparent); color: var(--kehribar);
+        border: 1px solid color-mix(in srgb, var(--kehribar) 35%, transparent); }
+      .cz-osym { border-color: color-mix(in srgb, var(--kehribar) 45%, transparent) !important; }
+
+      .cz-odul { display: inline-flex; align-items: center; gap: 7px; padding: 7px 15px; border-radius: 12px; font-weight: 700; font-size: 14px;
+        background: color-mix(in srgb, var(--toprak) 18%, transparent); color: color-mix(in srgb, var(--toprak) 75%, var(--metin1)); }
+      .cz-dokum-satir { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--cizgi); font-size: 14px; }
+      .cz-dokum-satir:first-child { border-top: none; }
+      .cz-rozet { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; border: none; }
+      .cz-rozet.dogru { background: color-mix(in srgb, var(--dogru) 14%, transparent); color: var(--dogru); }
+      .cz-rozet.uyari { background: color-mix(in srgb, var(--uyari) 16%, transparent); color: var(--uyari); cursor: pointer; }
+
+      .cz-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(12,18,14,0.45); }
+      .cz-modal { position: fixed; z-index: 61; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        width: min(400px, calc(100vw - 32px)); background: var(--cam); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--cam-kenar); border-radius: 20px; box-shadow: var(--golge); padding: 22px; }
+      .cz-modal-baslik { font-family: var(--font-display); font-weight: 800; font-size: 18px; color: var(--metin1); }
+      .cz-modal-metin { margin-top: 8px; font-size: 14px; color: var(--metin2); line-height: 1.6; }
+      .cz-modal-aksiyon { margin-top: 18px; display: flex; gap: 10px; justify-content: flex-end; }
+
+      @media (prefers-reduced-motion: no-preference) {
+        .cz-ilerleme > i { transition: width .4s ease; }
+        .cz-sik.dogru { animation: cz-onay .35s ease; }
+        @keyframes cz-onay { 0% { transform: scale(1) } 40% { transform: scale(1.015) } 100% { transform: scale(1) } }
+        .cz-canlan { opacity: 0; transform: translateY(14px); animation: cz-belir .45s ease-out forwards; }
+        @keyframes cz-belir { to { opacity: 1; transform: none } }
+      }
+    `}</style>
+  )
 }

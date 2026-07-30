@@ -4,12 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- theme-color: tarayıcı çubuğu sayfa zeminiyle aynı tonda — tema başına ayrı -->
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F3F7FC" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B1520" />
-    <meta name="description" content="LearnUp — YKS yolculuğunda bilişsel röntgenin, adaptif pratiğin ve Koç'un tek güvertesi." />
-    <title>LearnUp — YKS Güvertesi</title>
-    <!-- Favicon: çapa, sky→cyan gradyan mühür (kod-içi SVG, dosya yok) -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230284C7'/%3E%3Cstop offset='1' stop-color='%2306B6D4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cg fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='16' cy='9' r='2.6'/%3E%3Cpath d='M16 11.6V25'/%3E%3Cpath d='M8.5 17.5a7.5 7.5 0 0 0 15 0'/%3E%3Cpath d='M6 18.5h3M23 18.5h3'/%3E%3C/g%3E%3C/svg%3E" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F7F4" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0C120E" />
+    <meta name="description" content="LearnUp — YKS hazırlığında analizler, adaptif pratik ve Koç tek ekranda." />
+    <title>LearnUp — YKS Hazırlık</title>
+    <!-- Favicon: filiz, orman→yaprak yeşil gradyan (kod-içi SVG, dosya yok — iki temada okunur) -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231E4620'/%3E%3Cstop offset='1' stop-color='%234FA56F'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cg fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 25V15'/%3E%3Cpath d='M16 17c0-3.4-2.8-5.6-6.6-5.6 0 3.4 2.8 5.6 6.6 5.6Z'/%3E%3Cpath d='M16 15.5c0-2.9 2.3-4.9 5.8-4.9 0 2.9-2.3 4.9-5.8 4.9Z'/%3E%3C/g%3E%3C/svg%3E" />
     <script>
       // FOUC ÖNLEME — tema sınıfı React'ten ÖNCE basılır. Aksi hâlde koyu temalı kullanıcı
       // her açılışta bir kare beyaz "çakma" görür (theme.tsx useEffect'i ilk boyadan sonra koşar).
@@ -17,12 +17,10 @@
       (function () {
         try {
           var t = localStorage.getItem('learnup.theme');
-          if (t !== 'light' && t !== 'dark') {
-            t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-          }
+          if (t !== 'light' && t !== 'dark') t = 'light'; // VARSAYILAN AÇIK (Gün Işığı); OS tercihi yok sayılır
           if (t === 'dark') document.documentElement.classList.add('dark');
           document.documentElement.style.colorScheme = t;
-          document.documentElement.style.background = t === 'dark' ? '#0B1520' : '#F3F7FC';
+          document.documentElement.style.background = t === 'dark' ? '#0C120E' : '#F4F7F4';
         } catch (e) { /* localStorage kapalıysa varsayılan açık */ }
       })();
     </script>
@@ -37,9 +35,12 @@
       ::-webkit-scrollbar { width: 10px; height: 10px; }
       ::-webkit-scrollbar-thumb { background: rgba(125,136,153,0.35); border-radius: 6px; }
       ::-webkit-scrollbar-track { background: transparent; }
-      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-      @keyframes ping { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(1.6); opacity: 0; } }
-      @keyframes flicker { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+      /* Hareket-azalt: motion tercihini kapatan kullanıcıda animasyon çalışmasın (keyframe tanımsız kalır). */
+      @media (prefers-reduced-motion: no-preference) {
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        @keyframes ping { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(1.6); opacity: 0; } }
+        @keyframes flicker { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+      }
       @media (max-width: 620px) { .lu-hide-narrow { display: none !important; } }
     </style>
   </head>
