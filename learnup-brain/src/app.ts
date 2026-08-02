@@ -73,8 +73,12 @@ export function createApp(): Express {
   app.use('/health', healthRouter)
 
   // Eski (v1-öncesi) /api/* yüzeyi cutover boyunca çalışır ama deprecated işaretlenir.
-  app.use('/api', (req, res, nextFn) => {
-    if (!req.path.startsWith('/v1/')) res.setHeader('Deprecation', 'true')
+  // Uyarı middleware'i artık top-level: app.use('/api', ...) şeklinde mount etmek
+  // Express'in iç-yol (mounted path) davranışını değiştirip sonraki route mount'larını
+  // bozabiliyordu. Burada sadece gelen path'i kontrol edip header ekliyoruz — req.url
+  // değişmeden kalır.
+  app.use((req, res, nextFn) => {
+    if (req.path.startsWith('/api') && !req.path.startsWith('/api/v1')) res.setHeader('Deprecation', 'true')
     nextFn()
   })
 
