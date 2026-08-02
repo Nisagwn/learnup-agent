@@ -138,6 +138,10 @@ export function createApp(): Express {
     app.use(`${base}/admin`, kimlikli, standardLimiter, requireRole('admin'), adminRouter)
   }
 
+  app.get('/__dbg', (req, res) => {
+    res.json({ originalUrl: req.originalUrl, url: req.url, path: req.path, headers: req.headers })
+  })
+
   app.use(notFound)
   app.use(errorHandler)
 
