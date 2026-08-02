@@ -19,10 +19,22 @@ services:
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
         VITE_EDGE_FUNCTIONS_BASE_URL: ${VITE_EDGE_FUNCTIONS_BASE_URL:-}
     image: learnup-frontend
-    ports:
-      - "3000:80"          # http://localhost:3000
+    # Port mapping removed: nginx will serve the frontend on host port 3000
     depends_on:
       - brain
+    restart: unless-stopped
+
+  # ── Nginx: reverse proxy + static server (serves frontend dist) ──
+  nginx:
+    image: nginx:1.23-alpine
+    depends_on:
+      - frontend
+      - brain
+    ports:
+      - "3000:80"    # Host port 3000 -> nginx:80
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend-v2/dist:/usr/share/nginx/html:ro
     restart: unless-stopped
 
   # ── Brain: Bun API (:8080) ──
