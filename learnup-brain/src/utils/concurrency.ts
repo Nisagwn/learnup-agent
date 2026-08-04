@@ -26,9 +26,7 @@ export async function mapLimit<T, R>(
   const results = new Array<R>(n)
   if (n === 0) return results
 
-  // CI DENEMESİ — KASITLI HATA (bir sonraki commit'te geri alınacak):
-  // number → string ataması. `tsc --noEmit` bunu yakalamalı.
-  const cap: string = Math.max(1, Math.min(Math.floor(limit) || 1, n))
+  const cap = Math.max(1, Math.min(Math.floor(limit) || 1, n))
   let next = 0
 
   async function worker(): Promise<void> {

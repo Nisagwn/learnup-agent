@@ -25,9 +25,7 @@ async function authHeader() {
 }
 
 function clearToken() {
-  // CI DENEMESİ — KASITLI SÖZDİZİMİ HATASI (bir sonraki commit'te geri alınacak):
-  // çift '=' → vite/rolldown build'i burada patlamalı.
-  cachedToken = = null
+  cachedToken = null
   cachedAt = 0
 }
 
