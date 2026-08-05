@@ -1,0 +1,111 @@
+# LearnUp — Sürekli Entegrasyon (CI)
+#
+# NE YAPAR: her push'ta iki işi paralel çalıştırır ve biri bile kırmızıysa commit'i
+# işaretler — böylece "bende çalışıyordu" ile "ana dalda bozuk" arasındaki mesafe kapanır.
+#   • beyin    → bağımlılık kurulumu, tip denetimi, lint, 152 test
+#   • arayuz   → bağımlılık kurulumu, üretim build'i (vite)
+#
+# ⚠️ DEPLOY ADIMI YOK — bilinçli. Ortada henüz bir sunucu yok; deploy'u sunucu
+#    ve domain hazır olduğunda ayrı bir workflow olarak ekleriz. Bu dosyanın tek
+#    işi KAPI olmak: bozuk kod sessizce geçmesin.
+#
+# ⚠️ TOOLCHAIN = BUN, npm DEĞİL. İki Dockerfile da `bun install --frozen-lockfile`
+#    kullanıyor (learnup-brain/Dockerfile, frontend-v2/Dockerfile). CI'ın üretimle
+#    aynı yoldan gitmesi için burada da bun kullanılıyor; frontend-v2'deki
+#    package-lock.json artık ikincil, build onu okumuyor.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']       # her dal — main'e girmeden önce kırılsın
+  pull_request:
+  workflow_dispatch:       # Actions sekmesinden elle tetikleme
+
+# Aynı dala arka arkaya push atılırsa eskisini iptal et; son commit'in sonucu geçerli.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Beyin (API): tip + lint + test ───────────────────────────────────
+  beyin:
+    name: Beyin (API)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: learnup-brain
+
+    # ⚠️ src/config/env.ts fail-fast: bu üç değişken yoksa süreç process.exit(1)
+    #    yapar ve TEK BİR test bile çalışmadan iş kırmızı döner. Değerler SAHTE ve
+    #    öyle kalmalı — testler Supabase/OpenRouter istemcilerini mock'luyor, ağa
+    #    çıkmıyor. Buraya gerçek anahtar YAZMA: repo public, log'lar herkese açık.
+    #    REDIS_URL / SESSION_REDIS_URL bilerek YOK: ikisi de opsiyonel ve yokluğunda
+    #    ilgili katman fail-open çalışıyor — CI tam da bu yolu test etmeli.
+    env:
+      SUPABASE_URL: https://ci.example.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ci-sahte-service-role
+      OPENROUTER_API_KEY: ci-sahte-openrouter
+
+    steps:
+      - name: Kaynağı çek
+        uses: actions/checkout@v4
+
+      - name: Bun kur
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Yerel geliştirme ve Dockerfile ile aynı sürüm hattı. Bun'ı yükseltirken
+          # burayı da yükselt, yoksa CI ile üretim sessizce ayrışır.
+          bun-version: '1.3.14'
+
+      - name: Bağımlılıklar
+        # --frozen-lockfile: bun.lock ile birebir. Biri package.json'ı değiştirip
+        # lockfile'ı commit etmeyi unutursa burada patlar — istediğimiz de bu.
+        run: bun install --frozen-lockfile
+
+      - name: Tip denetimi
+        run: bun run typecheck
+
+      - name: Lint
+        # eslint.config.js 0 hata / 11 uyarı ile geçiyor. Uyarılar bilinçli olarak
+        # kapı değil: sıfırlamak istersen `--max-warnings 0` ekle, ama önce temizle.
+        run: bun run lint
+
+      - name: Testler
+        run: bun test src
+
+  # ── Arayüz: üretim build'i ───────────────────────────────────────────
+  arayuz:
+    name: Arayüz (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-v2
+
+    # ⚠️ Vite VITE_* değerlerini BUILD anında bundle'a gömer. Buradaki sahte
+    #    değerler yalnız build'in tamamlanması için var; bu çıktı DEPLOY EDİLMİYOR.
+    #    Gerçek değerler üretimde docker build ARG'ları ile geliyor (Dockerfile).
+    env:
+      VITE_SUPABASE_URL: https://ci.example.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-sahte-anon-key
+
+    steps:
+      - name: Kaynağı çek
+        uses: actions/checkout@v4
+
+      - name: Bun kur
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+
+      - name: Bağımlılıklar
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        # Asıl kazanç burada: chunk yapılandırması, import hatası, kırık tip —
+        # hepsi tarayıcıda değil burada yakalanır.
+        run: bun run build
+
+      # NOT: `bun run lint` burada YOK — frontend-v2'de eslint kurulu değil
+      # (package.json devDependencies'te yok), script çağrılırsa "command not found"
+      # ile kırılır. Lint istiyorsan önce eslint'i bağımlılık olarak ekle.
