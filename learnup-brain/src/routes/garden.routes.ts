@@ -138,10 +138,7 @@ gardenRouter.post('/move', async (req, res, next) => {
       .eq('id', plantId)
       .eq('user_id', userId)
       .select('id')
-    if (error) {
-      res.status(500).json({ error: error.message })
-      return
-    }
+    if (error) throw error   // error.message dışarı verilmez (şema keşfi)
     if (!updated || updated.length === 0) {
       res.status(404).json({ error: 'Bitki bulunamadı.' })
       return

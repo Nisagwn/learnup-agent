@@ -80,11 +80,31 @@ export function xpForAnswer({ isCorrect, isSkipped, attemptNumber }:
 }
 
 // ─── TARİH ──────────────────────────────────────────────────────────────────
+/**
+ * ÖĞRENCİ GÜNÜ — Europe/Istanbul.
+ *
+ * ⚠️ Eskiden `date.getFullYear()/getMonth()/getDate()` ile SÜRECİN YEREL saati okunuyordu.
+ * docker-compose'da hiçbir servise TZ verilmiyor → konteyner UTC. Sonuç: Türkiye'de
+ * 00:00–03:00 arası çözülen her soru BİR ÖNCEKİ güne yazılıyordu. Gece çalışan öğrencinin
+ * serisi kopuyor, günlük görevleri geç yenileniyor, istemcinin "bugün tamamlandı" rozeti
+ * hiç çıkmıyor ve öğrenci o gün için boşuna seri-dondurma hakkı harcıyordu.
+ *
+ * Aynı dosyanın komşuları (lib/rontgen.ts:175, teacher.routes.ts:200, atolye.worker.ts:139)
+ * gün anahtarını ZATEN 'Europe/Istanbul' ile üretiyordu — yani öğrencinin gördüğü trend
+ * grafiği ile serisi farklı gün sınırları kullanıyordu. Kanonik sınır artık tek yerde.
+ *
+ * Türkiye 2016'dan beri kalıcı UTC+3 (yaz saati YOK) → sabit ofset güvenli.
+ */
+export const OGRENCI_TZ = 'Europe/Istanbul'
+export const OGRENCI_TZ_OFSET = '+03:00'
+
 export function todayISO(date = new Date()): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+  return date.toLocaleDateString('en-CA', { timeZone: OGRENCI_TZ })   // YYYY-MM-DD
+}
+
+/** Öğrenci gününün başlangıcı, MUTLAK an olarak (Postgres timestamptz karşılaştırması için). */
+export function gunBaslangiciISO(gunIso: string): string {
+  return `${gunIso}T00:00:00.000${OGRENCI_TZ_OFSET}`
 }
 
 export function daysBetween(isoA: string | null, isoB: string): number {
@@ -266,10 +286,20 @@ export const promoteTier = (t: string) => TIERS[Math.min(TIERS.length - 1, tierI
 export const relegateTier = (t: string) => TIERS[Math.max(0, tierIndex(t) - 1)]
 export function resolveTierWeek(entries: LeagueEntry[], tier: string) {
   const sorted = [...entries].sort((a, b) => (b.weekly_xp ?? b.weeklyXP ?? 0) - (a.weekly_xp ?? a.weeklyXP ?? 0))
+  /**
+   * ⚠️ KÜÇÜK LİGDE KİMSE DÜŞMÜYORDU. `idx < PROMOTE_COUNT` dalı `idx >= n - RELEGATE_COUNT`
+   * dalından ÖNCE geliyor; 12'den az üyeli bir ligde (7 + 5) iki aralık ÇAKIŞIYOR ve alt
+   * sıradaki oyuncular da `idx < 7` koşulunu sağlayıp TERFİ ediyordu — düşme hiç gerçekleşmiyor,
+   * herkes yukarı akıyordu. Lig dolmadan terfi/düşme bantları oransal daraltılır: bantlar
+   * asla kesişemez, sıralamanın ortası "kal" olarak korunur.
+   */
+  const n = sorted.length
+  const terfi = Math.min(PROMOTE_COUNT, Math.floor(n / 2))
+  const dusme = Math.min(RELEGATE_COUNT, n - terfi)
   return sorted.map((e, idx) => {
     let outcome = 'stay', newTier = tier
-    if (idx < PROMOTE_COUNT && tier !== 'diamond') { outcome = 'promote'; newTier = promoteTier(tier) }
-    else if (idx >= sorted.length - RELEGATE_COUNT && tier !== 'bronze') { outcome = 'relegate'; newTier = relegateTier(tier) }
+    if (idx < terfi && tier !== 'diamond') { outcome = 'promote'; newTier = promoteTier(tier) }
+    else if (idx >= n - dusme && tier !== 'bronze') { outcome = 'relegate'; newTier = relegateTier(tier) }
     return { uid: e.uid, oldTier: tier, newTier, outcome, rank: idx + 1 }
   })
 }

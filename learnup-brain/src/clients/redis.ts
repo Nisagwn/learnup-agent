@@ -78,6 +78,22 @@ export const redisLimiter: Redis | null = env.REDIS_URL
   : null
 
 /**
+ * OTURUM DEPOSU — AYRI Redis DB'si (SESSION_REDIS_URL, örn. …/2).
+ *
+ * ⚠️ Neden yukarıdakilerden ayrı bir BAĞLANTI ve ayrı bir DB: yukarıdaki üçü db 1'de
+ * ATILABİLİR veri taşır (cache, sayaç, kuyruk) — operasyonda tereddütsüz `FLUSHDB` edilir.
+ * Oturum kaydı atılabilir değildir: iptal kaydını silmek, çıkış yaptırdığın cihazı geri
+ * içeri almaktır. Ayrıca aynı istemciyi paylaşmak, oturum okumasını cache trafiğinin
+ * gecikme kuyruğuna sokardı.
+ *
+ * Profil 'hot': oturum kapısı istek yolundadır → Redis kapalıyken komut ASILMAMALI, anında
+ * reddedilmeli. Reddi `redisSessionTry` yutar → fail-open (bkz. middleware/oturum.ts).
+ */
+export const redisSession: Redis | null = env.SESSION_REDIS_URL
+  ? createConnection(env.SESSION_REDIS_URL, 'redisSession', 'hot')
+  : null
+
+/**
  * HOT-PATH REDIS — arıza HİÇBİR ZAMAN isteği öldürmez.
  *
  * İstek yolundaki her Redis dokunuşu bundan geçmeli. `enableOfflineQueue:false` sayesinde
@@ -91,11 +107,33 @@ export const redisLimiter: Redis | null = env.REDIS_URL
  * Worker'lar bunu KULLANMAZ: onlar için Redis zorunlu (Streams) ve arıza görünür olmalı.
  */
 export async function redisTry<T>(fn: (r: Redis) => Promise<T>, fallback: T): Promise<T> {
-  if (!redis) return fallback
+  return denemeliCalistir(redis, 'redis', fn, fallback)
+}
+
+/**
+ * OTURUM DEPOSU için aynı sözleşme — arıza isteği öldürmez, oturum katmanını devre dışı bırakır.
+ *
+ * ⚠️ Bu FAIL-OPEN'dır ve bilinçlidir: SESSION_REDIS_URL tanımsız ya da depo erişilemezken
+ * oturum iptali uygulanamaz, istek salt-JWT ile geçer. Fail-closed alternatifi (Redis yoksa
+ * 401) bir hız katmanı arızasını tüm API'nin kapanmasına çevirirdi — rateLimit'in
+ * `passOnStoreError` kararıyla aynı çizgi. Bedeli yorumda değil, KODDA görünür kalsın diye
+ * ayrı bir fonksiyon: `redisTry` ile karıştırılamaz.
+ */
+export async function redisSessionTry<T>(fn: (r: Redis) => Promise<T>, fallback: T): Promise<T> {
+  return denemeliCalistir(redisSession, 'redisSession', fn, fallback)
+}
+
+async function denemeliCalistir<T>(
+  client: Redis | null,
+  label: string,
+  fn: (r: Redis) => Promise<T>,
+  fallback: T,
+): Promise<T> {
+  if (!client) return fallback
   try {
-    return await fn(redis)
+    return await fn(client)
   } catch (err) {
-    logger.debug({ err }, 'redis hot-path atlandı — Redis\'siz devam')
+    logger.debug({ err, label }, 'redis hot-path atlandı — Redis\'siz devam')
     return fallback
   }
 }
@@ -140,9 +178,18 @@ export function requireRedis(): Redis {
  *  - `error`    → yapılandırılmış ama erişilemiyor
  */
 export async function pingRedis(): Promise<'ok' | 'disabled' | 'error'> {
-  if (!redis) return 'disabled'
+  return pingEt(redis)
+}
+
+/** Oturum deposunun (ayrı DB) erişilebilirliği — /health/ready ayrı satırda gösterir. */
+export async function pingSessionRedis(): Promise<'ok' | 'disabled' | 'error'> {
+  return pingEt(redisSession)
+}
+
+async function pingEt(client: Redis | null): Promise<'ok' | 'disabled' | 'error'> {
+  if (!client) return 'disabled'
   try {
-    return (await redis.ping()) === 'PONG' ? 'ok' : 'error'
+    return (await client.ping()) === 'PONG' ? 'ok' : 'error'
   } catch {
     return 'error'
   }

@@ -28,6 +28,8 @@ export type DenetimEylemi =
   | 'soru_dogrulama' | 'soru_karantina' | 'soru_etiket' | 'uretim_tetik'
   // ── 0025: ops ──
   | 'esik_degis' | 'eval_tetik' | 'onbellek_dus' | 'gorev_iptal'
+  // ── Oturum yönetimi: yöneticinin bir kullanıcıyı tüm cihazlarından atması ──
+  | 'oturum_kapat'
   // ── 0025: vekil kapsam (yönetici, öğretmenin sınıfında ONUN ADINA) ──
   | 'ogretmen_adina_odev' | 'ogretmen_adina_ogrenci'
 

@@ -78,7 +78,11 @@ export type IsiHaritasiHucresi = {
 export type IsiHaritasiYaniti = {
   cells: IsiHaritasiHucresi[]
   subjects: string[]
+  /** SINIF MEVCUDU (sinif_mevcudu). Haritada ölçümü olan öğrenci sayısı DEĞİL. */
   ogrenciSayisi: number
+  /** Haritanın kapsadığı öğrenci: en kalabalık hücrenin ölçüm sayısı. `ogrenciSayisi`
+   *  ile birlikte okunur — "30 öğrencinin 9'u ölçüldü". */
+  olculenOgrenci: number
   /** İstemci renk skalasını buradan kurar — eşik backend'de TEK kaynakta. */
   esik: { zayif: number }
   olcumZamani: string
@@ -96,7 +100,12 @@ export type SinifZayifKazanim = {
   weakStudentCount: number
   attempts: number
   /** Havuzda kaç soru var → "bu kazanımdan ödev kurabilir miyim". 0 ise UI butonu kapatır. */
-  havuzdaSoru: { osym: number; ai: number }
+  /**
+   * Ödeve DERLENEBİLİR stok. `osym` alanı bilerek yok (0038 · havuz_stok): telif kararı
+   * gereği çıkmış ÖSYM sorusu ödeve giremiyor, o sayıyı taşımak arayüze "havuz dolu"
+   * dedirtip boş bir ödev derleme yolculuğuna çıkarıyordu.
+   */
+  havuzdaSoru: { ai: number }
 }
 
 /** GET /api/v1/teacher/sinif/zayif-kazanimlar */
@@ -590,6 +599,32 @@ export type AskiYanit = {
   id: string
   askidaMi: boolean
   neden: string | null
+  /** Askıyla birlikte kapatılan açık oturum sayısı (askı kaldırılırken 0). */
+  kapatilanOturum: number
+  denetimYazildi: boolean
+}
+
+/** Yönetici panelinde bir kullanıcının açık cihazı. */
+export type AdminOturumSatiri = {
+  sid: string
+  cihaz: string | null
+  ip: string | null
+  ilkGiris: string | null
+  sonGorulme: string | null
+}
+
+/** GET /api/v1/admin/kullanici/:id/oturumlar */
+export type AdminOturumlarYaniti = {
+  id: string
+  /** SESSION_REDIS_URL yoksa false — boş liste "cihaz yok" DEĞİL, "defter kapalı" demektir. */
+  katmanAcik: boolean
+  oturumlar: AdminOturumSatiri[]
+}
+
+/** POST /api/v1/admin/kullanici/:id/oturum-kapat */
+export type AdminOturumKapatYanit = {
+  id: string
+  kapatilan: number
   denetimYazildi: boolean
 }
 

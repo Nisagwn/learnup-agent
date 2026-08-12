@@ -15,13 +15,14 @@ if (!isProd) {
 import { notFound, errorHandler } from './middleware/error.js'
 import { requireAuth } from './middleware/auth.js'
 import { requireAktifHesap } from './middleware/requireAktifHesap.js'
+import { oturumKapisi } from './middleware/oturum.js'
 import { standardLimiter, chatLimiter, llmLimiter } from './middleware/rateLimit.js'
 import { healthRouter } from './routes/health.routes.js'
 import { chatRouter } from './routes/chat.routes.js'
 import { testsRouter } from './routes/tests.routes.js'
 import { telemetryRouter } from './routes/telemetry.routes.js'
 import { questionStateRouter } from './routes/questionState.routes.js'
-import { agentsRouter } from './routes/agents.routes.js'
+import { agentsRouter, agentsStatusRouter } from './routes/agents.routes.js'
 // ── Migrasyon (Edge Functions → route) ──
 import { questionsRouter } from './routes/questions.routes.js'
 import { practiceRouter } from './routes/practice.routes.js'
@@ -30,6 +31,7 @@ import { gamificationRouter } from './routes/gamification.routes.js'
 import { gardenRouter } from './routes/garden.routes.js'
 import { aiRouter } from './routes/ai.routes.js'
 import { accountRouter } from './routes/account.routes.js'
+import { oturumRouter } from './routes/oturum.routes.js'
 // ── v1 (master plan Faz 1) ──
 import { answersRouter } from './routes/answers.routes.js'
 import { aiQuestionsRouter } from './routes/aiquestions.routes.js'
@@ -85,12 +87,17 @@ export function createApp(): Express {
   /**
    * KİMLİK ZİNCİRİ — tek yerde kurulur, her yola aynı biçimde takılır.
    *
-   * `requireAuth` "sen kimsin?"i, `requireAktifHesap` "hesabın açık mı?"yı yanıtlar.
-   * İkincisi rol kapılarından ÖNCE gelmek zorunda: askı bir yetki sorunu değil,
-   * erişimin tümden kesilmesidir (0025). Diziyi tek sabitte tutmak, yeni bir router
-   * eklerken kapılardan birinin sessizce unutulmasını imkânsız kılar.
+   * `requireAuth` "sen kimsin?"i, `oturumKapisi` "bu oturum hâlâ açık mı?"yı,
+   * `requireAktifHesap` "hesabın açık mı?"yı yanıtlar. Sıra rastgele değil:
+   *  1) Kimlik kanıtlanmadan oturum sorusunun konusu yoktur.
+   *  2) Oturum kapısı TEK Redis okumasıdır; askı kapısı soğuk önbellekte DB'ye gider —
+   *     sonlandırılmış oturuma profil sorgusu ödetmenin anlamı yok.
+   *  3) Askı rol kapılarından ÖNCE gelmek zorunda: askı bir yetki sorunu değil, erişimin
+   *     tümden kesilmesidir (0025).
+   * Diziyi tek sabitte tutmak, yeni bir router eklerken kapılardan birinin sessizce
+   * unutulmasını imkânsız kılar.
    */
-  const kimlikli = [requireAuth, requireAktifHesap]
+  const kimlikli = [requireAuth, oturumKapisi, requireAktifHesap]
 
   // Aynı router setini hem /api (legacy alias) hem /api/v1 (kanonik) altına bağlar.
   for (const base of ['/api', '/api/v1']) {
@@ -99,6 +106,10 @@ export function createApp(): Express {
     // LLM ÇAĞIRAN rotalar: dar limit (10/dk/kullanıcı). Tek istek onlarca LLM çağrısı
     // tetikleyebiliyor → burada sınır hız değil, FATURA meselesi.
     app.use(`${base}/tests`, kimlikli, llmLimiter, testsRouter)
+    // Görev durumu YOKLAMA ucu — /agents'tan ÖNCE (Express sıralı eşleşir, V§3.5.8).
+    // llmLimiter DEĞİL standardLimiter: tek SELECT, sıfır LLM. 10/dk kovasına konması
+    // yoklamayı imkânsız kılıyordu (3 sn'de bir = 20 istek/dk → 429).
+    app.use(`${base}/agents/status`, kimlikli, standardLimiter, agentsStatusRouter)
     app.use(`${base}/agents`, kimlikli, llmLimiter, agentsRouter)
     // Mutating rotalar: kimlik zinciri + standardLimiter
     app.use(`${base}/telemetry`, kimlikli, standardLimiter, telemetryRouter)
@@ -112,7 +123,12 @@ export function createApp(): Express {
     // AI üretimi havuz görüntüleyici (salt-okunur) — /questions'tan ÖNCE (Express sıralı eşleşir, V§3.5.8)
     app.use(`${base}/questions/ai`, kimlikli, standardLimiter, aiQuestionsRouter)
     // Migrasyon rotaları (Edge Functions → Express) — LLM çağıranlar llmLimiter'da
-    app.use(`${base}/questions`, kimlikli, llmLimiter, questionsRouter)
+    // ⚠️ ROL KAPISI: bu router'ın üç ucu da (generate/targeted/save) ÖĞRETMEN aracıdır ve
+    // üçü de paylaşılan `questions` havuzuna YAZAR. Kapı yokken herhangi bir öğrenci hesabı
+    // havuza satır basabiliyor, /targeted ile başka bir öğrencinin SRS yanlış-cevap
+    // geçmişini çekebiliyordu. requireRole ayrıca öğretmenin onayını da doğrular
+    // (is_approved) → onayı iptal edilmiş öğretmenin kalıcı erişim penceresi de kapanır.
+    app.use(`${base}/questions`, kimlikli, llmLimiter, requireRole('teacher', 'admin'), questionsRouter)
     app.use(`${base}/ai`, kimlikli, llmLimiter, aiRouter)
     app.use(`${base}/practice`, kimlikli, standardLimiter, practiceRouter)
     // Bilişsel harita (salt-okunur) — çürüme-farkındalıklı ustalık; LLM yok
@@ -123,6 +139,9 @@ export function createApp(): Express {
     // ⚠️ /account/delete askı kapısının ARDINDA: askıdaki hesap kendini silerek
     // askıdan kaçamaz. KVKK talebi askı kalktıktan sonra ya da yönetici eliyle işler.
     app.use(`${base}/account`, kimlikli, standardLimiter, accountRouter)
+    // Oturum yönetimi (kendi cihazların): listele · bu cihazdan çık · her yerden çık.
+    // Kapının ARDINDA olması kasıtlı: sonlandırılmış bir oturum kendi listesini de göremez.
+    app.use(`${base}/oturum`, kimlikli, standardLimiter, oturumRouter)
     // Öğretmen paneli — LLM çağrısı YOK. standardLimiter kapıdan ÖNCE: rol yoklayan
     // döngü de sınırlansın.
     //

@@ -116,13 +116,21 @@ export async function apiDelete(path, opts = {}) {
 
 /**
  * POST /api/v1/chat — SSE akışı. `onEvent(type, data)` her olayda çağrılır
- * (type: 'token' | 'tool' | 'done' | 'error'). Kaptan sohbeti için (2. faz).
+ * (type: 'token' | 'tool' | 'eylem' | 'done' | 'error'). Kaptan sohbeti için.
+ *
+ * `testOzeti` (opsiyonel): Çöz ekranından dönen YAPISAL sonuç. Sunucu bundan gizli bir
+ * tur bağlamı kurar — modele gider, öğrenciye görünmez, geçmişe yazılmaz. Sohbette
+ * yalnız `message` (kısa "Çözdüklerimi analiz et") görünür.
+ *
+ * ⚠️ BURADAN SERBEST METİN GÖNDERİLMEZ. Analiz cümlelerini sunucu kurar
+ * (persona/kaptan.charter.ts); istemci yalnız veri taşır. Aksi hâlde istemci system
+ * katmanına istediğini yazabilirdi.
  */
-export async function streamChat({ sessionId, message }, onEvent, signal) {
+export async function streamChat({ sessionId, message, testOzeti }, onEvent, signal) {
   const res = await fetch(`${API_BASE}/v1/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-    body: JSON.stringify({ sessionId, message }),
+    body: JSON.stringify(testOzeti ? { sessionId, message, testOzeti } : { sessionId, message }),
     signal,
   })
   if (!res.ok || !res.body) throw new Error(`sohbet başlatılamadı (${res.status})`)

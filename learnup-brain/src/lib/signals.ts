@@ -89,7 +89,16 @@ export function computeSessionFeatures(signals: AnswerSignal[], now = Date.now()
   }
 
   const lastSig = signals[0]
-  const hour = new Date(lastSig?.t ?? now).getHours()
+  // ⚠️ SAAT ÖĞRENCİNİN SAATİ (Europe/Istanbul), sürecinki DEĞİL.
+  // `getHours()` konteynerin yerel saatini okuyor, docker-compose'da TZ verilmediği için
+  // de UTC dönüyordu. Yani `hour >= 23 || hour < 5` kuralı fiilen 02:00–08:00 TSİ aralığını
+  // kapsıyordu: Nabız'ın "gece geç saat + yüksek hata" kuralı gerçek gece saatlerinde
+  // (23:00–02:00) HİÇ ateşlenmiyor, sabah 05:00–08:00'de gereksiz ateşleniyordu.
+  const hour = Number(
+    new Date(lastSig?.t ?? now).toLocaleString('en-GB', {
+      timeZone: 'Europe/Istanbul', hour: '2-digit', hour12: false,
+    }),
+  )
 
   return {
     n,

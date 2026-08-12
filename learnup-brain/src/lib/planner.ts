@@ -32,7 +32,7 @@ type ScoredNode = {
 
 export async function buildPlan(userId: string): Promise<Plan> {
   // ── Girdiler ──
-  const [{ data: mastery }, { data: blueprint }, { data: mem }, srsDue, loadCap] = await Promise.all([
+  const [{ data: mastery, error: masteryHata }, { data: blueprint }, { data: mem }, srsDue, loadCap] = await Promise.all([
     supabase
       .from('user_mastery')
       .select('node_id, mastery, stability, attempts, misconceptions, updated_at, curriculum_nodes(id, title, subject, path)')
@@ -44,6 +44,12 @@ export async function buildPlan(userId: string): Promise<Plan> {
     countSrsDue(userId),
     readLoadCap(userId),
   ])
+
+  // ⚠️ ustalık okumasının HATASI YUTULMAZ. Promise.all yalnız `{ data }` destructure ediyordu:
+  // `user_mastery` okuması geçici olarak düşerse mastery=null → scored=[] → BOŞ PLAN üretilip
+  // `roadmaps`'e UPSERT ediliyordu, yani öğrencinin mevcut sağlam planının üzerine yazılıyordu.
+  // Bir okuma arızası kalıcı veri kaybına dönüşmemeli: hatalı girdiyle plan YAZILMAZ.
+  if (masteryHata) throw masteryHata
 
   // Blueprint ağırlığı (TYT+AYT toplamı, ders bazında normalize)
   const bpBySubject = new Map<string, number>()
@@ -90,10 +96,18 @@ export async function buildPlan(userId: string): Promise<Plan> {
     const date = new Date(+today + d * 86_400_000).toISOString().slice(0, 10)
     const blocks: PlanBlock[] = []
 
-    // 1) SRS hasadı her gün önce (vadesi gelen varsa)
+    // 1) Vadesi gelen tekrarların hasadı her gün önce
+    //
+    // ⚠️ `title` ÖĞRENCİYE GÖRÜNEN METİNDİR — teknik terim yazılmaz. Eskiden
+    // 'SRS tekrar destesi' idi ve bu dize üç durak sonra öğrencinin ekranına düşüyordu:
+    //   planner → roadmaps.steps → Pusula brief'i → Koç Masası → Kaptan'ın cümlesi
+    // Kaptan da doğal olarak "SRS destesinden 5 soru atayım mı?" diyordu. Arayüzün geri
+    // kalanı ZATEN Türkçe konuşuyor ("Tekrar Zamanı", "Aralıklı tekrar", çipte "tekrar");
+    // yalnız bu dize İngilizce kısaltma sızdırıyordu. `kind: 'srs'` iç sözleşmedir, kalır —
+    // görünen ad ile makine adını ayırmak, ikisini de kendi işinde doğru tutar.
     if (srsDue.count > 0 && d < srsDue.count / 5 + 1) {
       blocks.push({
-        kazanim_id: 0, title: 'SRS tekrar destesi', subject: 'tekrar',
+        kazanim_id: 0, title: 'Tekrar destesi', subject: 'tekrar',
         kind: 'srs', count: Math.min(10, srsDue.count), difficulty: 'orta',
       })
     }
@@ -113,7 +127,14 @@ export async function buildPlan(userId: string): Promise<Plan> {
     if (loadCap === 'micro') notes.push('Bugün hafif gün: kısa bloklar, yeni konu yok.')
     if (examDays < 60) notes.push('Sınav yaklaşıyor: süre tut — soru başına 90 saniye kuralı.')
     days.push({ day: date, blocks, tactic_notes: notes })
-    if (queue.length === 0) break
+    // ⚠️ "Kuyruk boşaldı" TEK BAŞINA bitiş sebebi DEĞİL.
+    // Eskiden `if (queue.length === 0) break` idi. Hiç `user_mastery` satırı olmayan
+    // (tanışma testini henüz bitirmemiş) öğrencide `scored` boş → `queue` daha İLK turda
+    // boş → d=0 günü çoğu zaman `blocks: []` ile eklenip döngü kırılıyordu. Sonuç: 7 günlük
+    // plan yerine TEK BOŞ GÜN `roadmaps.steps`'e yazılıyor, Pusula brief'i "planlanmış blok
+    // yok" diyor ve Kaptan'ın masasına boş rota gidiyordu.
+    // SRS destesi kuyruktan bağımsız doluyor; o varken günler üretilmeye devam etmeli.
+    if (queue.length === 0 && blocks.length === 0) break
   }
 
   const plan: Plan = {
@@ -131,14 +152,18 @@ export async function buildPlan(userId: string): Promise<Plan> {
 }
 
 async function countSrsDue(userId: string): Promise<{ count: number; subjects: Set<string> }> {
-  const { data } = await supabase
+  // count:'exact' → gerçek vadeli kart sayısı, limit'ten BAĞIMSIZ. Eskiden `.limit(100)`
+  // sonrası `data.length` sayılıyordu: sayı 100'de DOYUYOR ve plan bunu gerçek sanıyordu
+  // (`d < srsDue.count / 5 + 1` ve `Math.min(10, srsDue.count)` bu doymuş sayıyla çalışır).
+  // Ders kümesi için satırlar hâlâ gerekli, o yüzden limit kalıyor — yalnız SAYI ayrıldı.
+  const { data, count } = await supabase
     .from('srs_cards')
-    .select('subject')
+    .select('subject', { count: 'exact' })
     .eq('user_id', userId)
     .lte('next_review_at', new Date().toISOString())
     .limit(100)
   const subjects = new Set((data ?? []).map((r) => String(r.subject ?? '').toLowerCase()).filter(Boolean))
-  return { count: (data ?? []).length, subjects }
+  return { count: count ?? (data ?? []).length, subjects }
 }
 
 async function readLoadCap(userId: string): Promise<'micro' | 'normal'> {
@@ -153,16 +178,22 @@ async function readLoadCap(userId: string): Promise<'micro' | 'normal'> {
   }
 }
 
+/**
+ * Sınava kalan gün. `null` = "veri yok" (çağıran 200 varsayar).
+ *
+ * ⚠️ SINIR KOŞULU TERSTİ. Eskiden yalnız `days > 0` iken değer dönüyordu: sınav BUGÜN ya da
+ * GEÇMİŞSE null dönüyor → çağıran `examDays = 200` varsayıyor → `urgency = 1 + (180-200)/180
+ * ≈ 0.89`, yani mümkün olan EN DÜŞÜK aciliyete yakın. Sınava 0 gün kalan öğrenci, sınava
+ * 200 gün kalandan daha düşük aciliyet katsayısı alıyordu — aciliyet mantığı tam da en çok
+ * gerektiği yerde ters çalışıyordu. Artık geçmiş/bugün → 0 gün (maksimum aciliyet).
+ */
 function parseExamDays(semantic: Record<string, unknown>): number | null {
   for (const key of ['sinav_tarihi', 'exam_date', 'sinava_kalan_gun']) {
     const v = semantic[key]
-    if (typeof v === 'number' && v > 0) return Math.round(v)
+    if (typeof v === 'number') return Math.max(0, Math.round(v))
     if (typeof v === 'string') {
       const d = new Date(v)
-      if (!Number.isNaN(+d)) {
-        const days = Math.round((+d - Date.now()) / 86_400_000)
-        if (days > 0) return days
-      }
+      if (!Number.isNaN(+d)) return Math.max(0, Math.round((+d - Date.now()) / 86_400_000))
     }
   }
   logger.debug('sınav tarihi semantikte yok — 200 gün varsayıldı')

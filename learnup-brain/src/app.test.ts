@@ -10,21 +10,34 @@ mock.module('./clients/redis.js', () => ({
   redis: null,
   redisBlocking: null,
   redisLimiter: null,
+  redisSession: null,
   redisTry: async (_fn: unknown, fallback: unknown) => fallback,
+  redisSessionTry: async (_fn: unknown, fallback: unknown) => fallback,
   redisReady: async () => false,
   requireRedis: () => {
     throw new Error('test: redis yok')
   },
   pingRedis: async () => 'disabled',
+  pingSessionRedis: async () => 'disabled',
 }))
 const { createApp } = await import('./app.js')
 
-type Katman = { regexp?: RegExp }
+type Katman = { regexp?: RegExp; name?: string }
 
-/** Express 4 iç yüzeyi: mount edilmiş her katmanın yol deseni (kaynak sırasıyla). */
+/**
+ * Express 4 iç yüzeyi: mount edilmiş her katmanın yol deseni (kaynak sırasıyla).
+ *
+ * ⚠️ `app.use(yol, mw1, mw2, router)` katman başına BİR giriş yazar — yani aynı yol
+ * handler sayısı kadar tekrar eder. Yol varlığını sayıyla ölçme, `some/findIndex` kullan.
+ */
 function mountDesenleri(app: unknown): string[] {
-  const stack = (app as { _router?: { stack?: Katman[] } })._router?.stack ?? []
-  return stack.map((k) => String(k.regexp ?? '')).filter((s) => s !== '')
+  return katmanlar(app)
+    .map((k) => String(k.regexp ?? ''))
+    .filter((s) => s !== '')
+}
+
+function katmanlar(app: unknown): Katman[] {
+  return (app as { _router?: { stack?: Katman[] } })._router?.stack ?? []
 }
 
 describe('app rota yüzeyi — telif kararı (2026-07-22)', () => {
@@ -41,5 +54,31 @@ describe('app rota yüzeyi — telif kararı (2026-07-22)', () => {
     const govdeIdx = desenler.findIndex((d) => d.includes('questions\\/?') && !d.includes('questions\\/ai'))
     expect(aiIdx).toBeGreaterThanOrEqual(0)
     expect(govdeIdx).toBeGreaterThan(aiIdx)
+  })
+
+  test('oturum uçları hem /api hem /api/v1 altında mount edilir', () => {
+    const yollar = new Set(desenler.filter((d) => d.includes('oturum')))
+    expect(yollar.size).toBe(2) // /api/oturum + /api/v1/oturum
+  })
+})
+
+describe('kimlik zinciri — oturum kapısı (GOREV: Redis oturum yönetimi)', () => {
+  /**
+   * Zincirin SIRASI sözleşmedir: requireAuth → oturumKapisi → requireAktifHesap.
+   * Kapı listeden düşerse iptal edilen oturumlar yaşamaya devam eder; askı kapısının
+   * ARDINA kayarsa sonlandırılmış bir oturum önce profil sorgusu ödetir. Test tam olarak
+   * bu sıranın kazara bozulmamasını ölçer (app.ts `kimlikli` sabiti).
+   */
+  const zincir = katmanlar(createApp())
+    .filter((k) => String(k.regexp ?? '').includes('chat'))
+    .map((k) => k.name ?? '')
+
+  test('kapı zincirde ve sırası doğru', () => {
+    const auth = zincir.indexOf('requireAuth')
+    const oturum = zincir.indexOf('oturumKapisi')
+    const aski = zincir.indexOf('requireAktifHesap')
+    expect(auth).toBeGreaterThanOrEqual(0)
+    expect(oturum).toBeGreaterThan(auth)
+    expect(aski).toBeGreaterThan(oturum)
   })
 })

@@ -224,10 +224,21 @@ export async function ackTask(streamId: string): Promise<void> {
 
 /** Ritim: ilerleme/sonuç olayı yayınla (Redis events stream) + terminal durumu Postgres'e yansıt. */
 export async function publishEvent(taskId: string, event: AgentEvent): Promise<void> {
-  const r = requireRedis()
+  // ⚠️ REDIS ZORUNLU DEĞİL. Eskiden ilk satır `requireRedis()` idi ve Redis yokken
+  // FIRLATIYORDU. Bu, belgelenen "Redis yoksa in-process kuyruğa düş" zarif düşüşünü
+  // tümüyle ÖLDÜRÜYORDU: pumpInproc'un ilk işi `publishEvent(RUNNING)` olduğu için
+  // handler hiç çalışmıyor, catch içindeki FAILED yayını da aynı sebeple fırlayıp
+  // `.catch(()=>{})` ile yutuluyordu. Sonuç: görev sonsuza dek PENDING, hata da görünmez —
+  // sistem "kuyruğa alındı" deyip orada bitiyordu. (Bekçi de yok: worker Redis'siz
+  // process.exit(1) yapıyor.)
+  //
+  // Postgres HAKİKAT katmanıdır; olay yayını yalnız canlı ilerleme içindir. Redis yoksa
+  // yayını atlar, durum yansımasını yaparız — akış çalışmaya devam eder.
   const key = eventsKey(taskId)
-  await r.call('XADD', key, '*', 'event', JSON.stringify(event))
-  await r.call('EXPIRE', key, EVENTS_TTL_SEC)
+  if (redis) {
+    await redis.call('XADD', key, '*', 'event', JSON.stringify(event))
+    await redis.call('EXPIRE', key, EVENTS_TTL_SEC)
+  }
 
   if (event.status === 'RUNNING' || event.status === 'COMPLETED' || event.status === 'FAILED') {
     const patch: Record<string, unknown> = { status: event.status }
@@ -252,6 +263,19 @@ export async function delegateAndAwait(
   const key = eventsKey(task.id)
   const sub = requireRedis().duplicate()
   try {
+    // ⚠️ HAZIR OLMADAN KOMUT GÖNDERİLMEZ. `duplicate()` 'hot' profilinin
+    // `enableOfflineQueue:false` ayarını miras alır (clients/redis.ts): soket daha
+    // bağlanmadan gönderilen XREAD ioredis tarafından ANINDA reddedilir
+    // ("Stream isn't writeable"). Bu, redisReady()'nin worker açılışı için çözdüğü
+    // arızanın birebir aynısıydı; burada beklenmemişti — Pusula'nın delegate_session
+    // aracı çağrıldığı anda fırlıyordu.
+    if (sub.status !== 'ready') {
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error('redis duplicate hazır olmadı')), 10_000)
+        sub.once('ready', () => { clearTimeout(t); resolve() })
+        sub.once('error', (e) => { clearTimeout(t); reject(e) })
+      })
+    }
     const deadline = Date.now() + timeoutMs
     let lastId = '0'
     for (;;) {

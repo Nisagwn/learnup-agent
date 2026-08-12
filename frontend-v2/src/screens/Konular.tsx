@@ -54,6 +54,9 @@ export function Konular() {
   const [dersAdi, setDersAdi] = useState<string | null>(null)
   const [uniteAnahtari, setUniteAnahtari] = useState<string | null>(null)
   const [alanYaziliyor, setAlanYaziliyor] = useState(false)
+  /** Bu oturumda talebi alınan boş konular — satırda anında geri bildirim için.
+   *  Sunucu tarafı kişi başı tek satır (PK konu_id+user_id), tekrar tık sessizce yutulur. */
+  const [talepEdilen, setTalepEdilen] = useState<Set<number>>(() => new Set())
 
   // ⚠️ MÜFREDATIN TAMAMI HER ZAMAN GÖRÜNÜR (`tumu: 1` sabit).
   // Önce sorusu olmayan konular gizleniyor, bir düğmeyle açılıyordu. Sözlük 813 konuya
@@ -90,8 +93,22 @@ export function Konular() {
     }
   }
 
+  /**
+   * ⚠️ BOŞ KONU TIKLANABİLİR OLMALI — yukarıdaki yorum bunu ZATEN vaat ediyordu ("boş konuya
+   * tıklamak talep kaydı düşürür") ama kod tam tersini yapıyordu: `soruSayisi === 0` daha ilk
+   * satırda `return` ediyor, düğme de `disabled` idi. Yani üretim önceliğini belirlemesi
+   * beklenen sinyal (0028 konu_talep) TAM DA en çok ihtiyaç duyulan yerde — hiç sorusu olmayan
+   * konuda — hiç yazılmıyordu; talep yalnız 0 < soru < 10 aralığında kaydediliyordu.
+   * Sonuç sessizdi: yönetici kapsama ekranında "kimse istemiyor" görüyordu, oysa istek
+   * ekranda yapılıyor ama kaydedilmiyordu.
+   */
   const coz = (k: KonuOgesi) => {
-    if (k.soruSayisi === 0 || !ders) return
+    if (!ders) return
+    if (k.soruSayisi === 0) {
+      setTalepEdilen((s) => new Set(s).add(k.konuId))
+      void apiPost('/questions/ai/konu-talep', { konuId: k.konuId }).catch(() => {})
+      return // gidecek soru yok — çözme ekranını boş açmak yanlış olurdu
+    }
     if (k.soruSayisi < SEYREK_ESIK) {
       void apiPost('/questions/ai/konu-talep', { konuId: k.konuId }).catch(() => {})
     }
@@ -254,38 +271,42 @@ export function Konular() {
           <div className="flex flex-col gap-1.5">
             {unite.konular.map((k) => {
               const bos = k.soruSayisi === 0
+              const talepli = talepEdilen.has(k.konuId)
               return (
                 <button
                   key={k.konuId}
                   type="button"
-                  disabled={bos}
                   onClick={() => coz(k)}
                   className={cn(
                     'flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-colors',
-                    bos ? 'cursor-default' : 'cursor-pointer hover:brightness-[0.98]',
+                    'cursor-pointer hover:brightness-[0.98]',
                   )}
                   style={{
                     background: 'var(--cam)',
                     border: '1px solid var(--cam-kenar)',
-                    opacity: bos ? 0.55 : 1,
+                    opacity: bos ? 0.62 : 1,
                   }}
                 >
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate text-[14px] font-semibold" style={{ color: 'var(--metin1)' }}>
                       {k.ad}
                     </span>
-                    {k.soruSayisi > 0 && (
+                    {k.soruSayisi > 0 ? (
                       <span className="mt-0.5 text-[11px]" style={{ color: 'var(--metin3)' }}>
                         {k.kolay} kolay · {k.orta} orta · {k.zor} zor
                         {k.cozulen > 0 && ` — ${k.cozulen} çözdün`}
+                      </span>
+                    ) : (
+                      <span className="mt-0.5 text-[11px]" style={{ color: 'var(--metin3)' }}>
+                        {talepli ? 'talebin alındı — üretim sırasına eklendi' : 'dokun, üretim sırasına eklensin'}
                       </span>
                     )}
                   </span>
                   <span
                     className="shrink-0 text-[12.5px] font-semibold"
-                    style={{ color: bos ? 'var(--metin3)' : 'var(--yaprak)' }}
+                    style={{ color: bos ? (talepli ? 'var(--yaprak)' : 'var(--metin3)') : 'var(--yaprak)' }}
                   >
-                    {bos ? 'yakında' : `${k.soruSayisi} soru`}
+                    {bos ? (talepli ? 'istendi' : 'yakında') : `${k.soruSayisi} soru`}
                   </span>
                 </button>
               )

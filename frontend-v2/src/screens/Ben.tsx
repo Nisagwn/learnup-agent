@@ -18,6 +18,7 @@ import { TIER_TR, type LigYaniti } from '../lib/types'
 import { rolBul, ROL_ADI } from '../lib/rol'
 import { Reveal } from '../components/fx'
 import { SeriFidani, seriSonrakiKademe } from '../components/SeriFidani'
+import { OturumlarKarti } from '../components/oturumlar'
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PROFİLİM — onaylı önizleme portu (`docs/design/onizleme/profilim.html`).
@@ -47,8 +48,17 @@ const TIER_EMOJI: Record<string, string> = {
   bronze: '🥉', silver: '🥈', gold: '🥇', sapphire: '💠', diamond: '💎',
 }
 
-/** Bugün (yerel) ISO gün anahtarı — streak alanlarıyla aynı biçim. */
-const bugunIso = () => new Date().toLocaleDateString('en-CA')
+/**
+ * Bugünün ISO gün anahtarı — ÖĞRENCİ GÜNÜ (Europe/Istanbul).
+ *
+ * ⚠️ Eskiden TARAYICI YERELİ kullanılıyordu ve sunucu `todayISO()` ile karşılaştırılıyordu.
+ * Sunucu tarafı UTC olduğu için gece 00:00–03:00 arasında iki taraf farklı gün üretiyordu:
+ * "bugün tamamlandı ✓" rozeti çıkmıyor, yerine "Bugünü dondur" butonu beliriyor ve öğrenci
+ * basarsa sunucunun "dünü" için bir dondurma hakkını BOŞA harcıyordu (o gün zaten aktifti).
+ * Sunucu artık Europe/Istanbul kullanıyor (lib/gamification.ts); istemci de aynı sınırda
+ * olmalı — yurt dışındaki bir kullanıcının tarayıcı saati bu kararı değiştirmemeli.
+ */
+const bugunIso = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' })
 
 export function Ben() {
   const nav = useNavigate()
@@ -75,6 +85,18 @@ export function Ben() {
   // Oyunlaştırma bölümleri (seviye, seri, lig, görev, rozet) ÖĞRENCİYE özgüdür.
   // Öğretmen/yönetici için bu veriler hiç üretilmez — onlara yalnız Ayarlar kalır.
   const ogrenci = rolBul(profile) === 'student'
+
+  /**
+   * "Tüm cihazlardan çık" — sunucudaki oturum defteri kapatılır, SONRA yerel çıkış.
+   *
+   * ⚠️ SIRA ÖNEMLİ: `signOut()` önce çağrılsaydı token silinir ve `/oturum/cikis-hepsi`
+   * isteği kimliksiz gider (401) — diğer cihazlar açık kalırdı. Kullanıcı "her yerden
+   * çıktım" sanırken kaybettiği telefonu hâlâ içeride olurdu.
+   */
+  const hepsindenCik = async (): Promise<void> => {
+    await apiPost('/oturum/cikis-hepsi', {})
+    await signOut()
+  }
 
   // Sayfanın TEK birincil eylemi: ilk talep edilebilir "Ödülü al" (FİDAN anayasa §1).
   const quests: any[] = ogrenci ? (G?.dailyQuests?.quests ?? []) : []
@@ -323,6 +345,11 @@ export function Ben() {
               <AyarlarKarti ogrenci />
             </Reveal>
 
+            {/* Cihazlarım — Ayarlar'daki "Çıkış yap"ın karşılığı: BURASI diğer cihazları görür */}
+            <Reveal delay={0.3}>
+              <OturumlarKarti onHepsindenCik={hepsindenCik} />
+            </Reveal>
+
             {/* Hata durumu */}
             {(gami.error || lig.error) && (
               <div className="pf-kart flex items-center gap-3" style={{ borderColor: 'color-mix(in srgb, var(--yanlis) 30%, transparent)' }}>
@@ -334,10 +361,15 @@ export function Ben() {
           </div>
         </div>
       ) : (
-        /* Öğretmen / yönetici: oyunlaştırma yok — yalnız Ayarlar (mevcut davranış) */
-        <div className="mt-5 max-w-xl">
+        /* Öğretmen / yönetici: oyunlaştırma yok — Ayarlar + Cihazlarım.
+           Cihaz listesi role bağlı DEĞİL: öğretmenin hesabı sınıf verisine erişiyor,
+           orada çalınan bir oturum öğrencininkinden daha pahalıdır. */
+        <div className="mt-5 max-w-xl space-y-4">
           <Reveal delay={0.06}>
             <AyarlarKarti ogrenci={false} />
+          </Reveal>
+          <Reveal delay={0.12}>
+            <OturumlarKarti onHepsindenCik={hepsindenCik} />
           </Reveal>
         </div>
       )}
@@ -608,10 +640,21 @@ type SinifDurumu = {
 
 function SinifKarti() {
   const durum = useAsync<SinifDurumu>(() => apiGet('/sinif'), [])
+  const { refreshProfile } = useAuth()
   const [kod, setKod] = useState('')
   const [mesgul, setMesgul] = useState(false)
   const [onayAcik, setOnayAcik] = useState(false)
 
+  /**
+   * ⚠️ PROFİL DE TAZELENİR — yalnız `durum.reload()` YETMEZ.
+   *
+   * `profile.teacher_id` istemci belleğinde eski değeriyle kalıyordu ve App.tsx "Ödevler"
+   * sekmesini TAM OLARAK o alana bakarak ekliyor. Sonuç: öğrenci sınıf koduyla katılıyor,
+   * "…sınıfına katıldın" toast'ını görüyor, ama Ödevler sekmesi belirmiyordu — öğretmeninin
+   * gönderdiği ödevlere hiçbir yerden ulaşamıyordu; tek çare tam sayfa yenilemeydi.
+   * Ters yönde de aynısı: ayrıldıktan sonra sekme duruyor ve boş liste açıyordu.
+   * (OtomatikKatilim.tsx aynı durumda refreshProfile'ı zaten doğru çağırıyor.)
+   */
   const katil = async () => {
     const temiz = kod.trim().toUpperCase()
     if (!temiz) return
@@ -621,6 +664,7 @@ function SinifKarti() {
       toast.success(y.degisti ? `${y.ogretmen?.name ?? 'Öğretmenin'} sınıfına katıldın` : 'Zaten bu sınıftasın')
       setKod('')
       durum.reload()
+      await refreshProfile()
     } catch (e: any) {
       toast.error(e?.message ?? 'Sınıfa katılınamadı')
     } finally {
@@ -635,6 +679,7 @@ function SinifKarti() {
       toast.success('Sınıftan ayrıldın')
       setOnayAcik(false)
       durum.reload()
+      await refreshProfile()
     } catch (e: any) {
       toast.error(e?.message ?? 'Ayrılma başarısız')
     } finally {
@@ -717,6 +762,29 @@ function AyarlarKarti({ ogrenci }: { ogrenci: boolean }) {
   const { profile, user, signOut, refreshProfile } = useAuth()
   const [sesli, setSesli] = useState(sesAcikMi)
   const [bilBusy, setBilBusy] = useState(false)
+  const [cikisBusy, setCikisBusy] = useState(false)
+
+  /**
+   * Çıkış artık SUNUCUYA DA söyleniyor: `/oturum/cikis` bu cihazın oturumunu deftere
+   * kapalı yazar ve Supabase refresh token'ını öldürür.
+   *
+   * ⚠️ Bu olmadan "çıkış", token'ı yalnız tarayıcıdan silmekti — sunucu tarafında hiçbir
+   * şey değişmez, aynı token başka bir yerden çalışmaya devam ederdi.
+   *
+   * ⚠️ SUNUCU HATASI ÇIKIŞI ENGELLEMEZ: istek başarısız olsa da yerel çıkış yapılır.
+   * Aksi hâlde Redis arızası kullanıcıyı kendi hesabından çıkamaz hâle getirirdi.
+   */
+  const cikisYap = async (): Promise<void> => {
+    if (cikisBusy) return
+    setCikisBusy(true)
+    try {
+      await apiPost('/oturum/cikis', {})
+    } catch {
+      /* yut — yerel çıkış her hâlükârda yapılır */
+    }
+    await signOut()
+    setCikisBusy(false)
+  }
 
   const bildirimAcik = (profile?.notifications_enabled ?? true) as boolean
 
@@ -785,7 +853,9 @@ function AyarlarKarti({ ogrenci }: { ogrenci: boolean }) {
 
       <div className="pf-ayar">
         <span>Oturum</span>
-        <button className="pf-dis pf-kucuk" onClick={() => signOut()}>Çıkış yap</button>
+        <button className="pf-dis pf-kucuk" disabled={cikisBusy} onClick={cikisYap}>
+          {cikisBusy ? 'Çıkılıyor…' : 'Çıkış yap'}
+        </button>
       </div>
 
       <TehlikeBolgesi onSil={async () => {

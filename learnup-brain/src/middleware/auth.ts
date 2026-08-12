@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express'
 import { createRemoteJWKSet, jwtVerify, errors } from 'jose'
 import { logger } from '../utils/logger.js'
 import { env } from '../config/env.js'
+import { sidCikar, type OturumBilgisi } from '../lib/oturum.js'
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -9,6 +10,13 @@ declare global {
     interface Request {
       /** requireAuth başarılıysa doğrulanan Supabase kullanıcı kimliği (JWT `sub`). */
       userId?: string
+      /**
+       * Token'ın oturum kimliği (`session_id`) + basım anı. `oturumKapisi` bunu okur.
+       *
+       * ⚠️ Talepleri BURADA okuyoruz çünkü doğrulanmış payload yalnız burada var. Aşağı
+       * katmanların token'ı yeniden çözmesi, imzası doğrulanmamış veriye bakma riskidir.
+       */
+      oturum?: OturumBilgisi
     }
   }
 }
@@ -37,6 +45,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return
     }
     req.userId = payload.sub
+    req.oturum = {
+      sid: sidCikar(payload),
+      userId: payload.sub,
+      // `iat` saniye cinsindendir; kesim damgası ms tutulur (Date.now() ile aynı birim).
+      iatMs: typeof payload.iat === 'number' ? payload.iat * 1000 : 0,
+    }
     next()
   } catch (err) {
     // İstemciye detay sızdırmadan log'a ayrım yaz (debug/izleme).

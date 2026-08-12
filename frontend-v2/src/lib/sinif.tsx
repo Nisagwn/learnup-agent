@@ -28,13 +28,52 @@ interface SinifDeger {
 
 const SinifCtx = createContext<SinifDeger | null>(null)
 
+/** Sunucunun tek istekte verdiği en büyük sayfa (teacher.routes.ts · sayiParam(…, 200, 500)). */
+const SAYFA = 500
+/** Güvenlik freni: bir öğretmenin sınıfı bunu geçiyorsa sorun sayfalamada değil veridedir. */
+const TAVAN = 5000
+
+/**
+ * ROSTER'IN TAMAMI — sayfalayarak.
+ *
+ * Eskiden tek parametresiz istek atılıyordu ve sunucunun varsayılanı 200'dü; sınıf daha
+ * kalabalıksa liste SESSİZCE kesiliyordu. Roster bu panelin TEK öğrenci kaynağı: tablo,
+ * triyaj listesi, Karşılaştır seçicisi, Ödev Atölyesi "Kime" listesi ve Röntgen'deki
+ * ← / → gezinmesi hep buradan besleniyor. Sonuç: üst şerit "240 öğrenci kayıtlı" derken
+ * (o sayı /teacher/ozet'ten, gerçek) filtre çipi "Tümü (200)" diyordu ve 40 öğrenci
+ * hiçbir yüzeyde görünmüyordu — onlara ulaşmanın tek yolu URL'i elle yazmaktı.
+ *
+ * Sayfalama arayüzü YERİNE tam çekim: roster paylaşılan bir bağlam ve tüketicilerinin
+ * çoğu (komşu gezinmesi, "Kime" listesi, karşılaştırma seçicisi) yarım listeyle DOĞRU
+ * çalışamaz — sayfa düğmesi eklemek sorunu ekranlara dağıtırdı.
+ */
+async function rosterCek(signal: AbortSignal): Promise<SinifRosterYaniti> {
+  const ilk = await tGet<SinifRosterYaniti>('/teacher/sinif', { limit: SAYFA }, { signal })
+  const toplam = Math.min(ilk.total ?? ilk.students.length, TAVAN)
+  const students = [...ilk.students]
+
+  while (students.length < toplam) {
+    const sayfa = await tGet<SinifRosterYaniti>(
+      '/teacher/sinif',
+      { limit: SAYFA, offset: students.length },
+      { signal },
+    )
+    // Boş sayfa = sunucu daha fazlasını vermiyor. `total` ile students arasındaki farkı
+    // sonsuz döngüye çevirmemek için burada kesilir.
+    if (!sayfa.students.length) break
+    students.push(...sayfa.students)
+  }
+
+  return { ...ilk, students, limit: students.length, offset: 0 }
+}
+
 export function SinifSaglayici({ children }: { children: ReactNode }) {
   // ⚠️ KAPSAM BAĞIMLILIK DİZİSİNDE (0025): yönetici Sınıflar ekranından başka bir
   // öğretmene geçtiğinde bileşen ağacı aynı kalır — kapsam değişimini bağımlılık
   // olarak yazmazsak sağlayıcı ÖNCEKİ öğretmenin verisini göstermeye devam eder.
   const kapsam = kapsamOku()
-  const ozet = useAsync<OgretmenOzeti>(() => tGet('/teacher/ozet'), [kapsam])
-  const roster = useAsync<SinifRosterYaniti>(() => tGet('/teacher/sinif'), [kapsam])
+  const ozet = useAsync<OgretmenOzeti>((signal) => tGet('/teacher/ozet', {}, { signal }), [kapsam])
+  const roster = useAsync<SinifRosterYaniti>((signal) => rosterCek(signal), [kapsam])
 
   const ogrenciler = useMemo(() => roster.data?.students ?? [], [roster.data])
 

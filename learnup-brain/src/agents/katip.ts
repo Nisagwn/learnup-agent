@@ -36,7 +36,21 @@ export async function compactSweep(): Promise<void> {
     const seen = await lastSeenAt(userId)
     const idle = seen ? now - seen : Infinity
     if (idle < IDLE_MIN_MS) continue // hâlâ oturumda
-    await redis.srem(ACTIVE_SET, userId)
+
+    /**
+     * ⚠️ SREM'İN DÖNÜŞÜ SAHİPLİK KANITIDIR — göz ardı edilemez.
+     *
+     * Bu tarama artık BİRDEN ÇOK worker'da koşabiliyor (docker-compose: worker + worker2)
+     * ve turlar üst üste binebiliyor. SMEMBERS → SREM → enqueue sırasında dönüş değeri
+     * atılırsa iki tarama aynı kullanıcıyı listede görür, ikisi de enqueue eder: bir oturum
+     * için İKİ compact + İKİ affect görevi, yani iki kat LLM özeti.
+     *
+     * SREM atomiktir ve yalnız üyeyi GERÇEKTEN kaldırana 1 döner. Kaybeden tur sessizce
+     * geçer. Ek kilit gerekmez — kümenin kendisi kilittir.
+     */
+    const alindi = await redis.srem(ACTIVE_SET, userId)
+    if (alindi !== 1) continue // başka bir tarama bu kullanıcıyı üstlendi
+
     if (idle > IDLE_MAX_MS * 24) continue // çok bayat — özetlenecek taze şey yok
     await enqueueTask({ userId, kind: 'compact', payload: {} }).catch((err) =>
       logger.warn({ err, userId }, 'compact görevi kuyruğa alınamadı'),

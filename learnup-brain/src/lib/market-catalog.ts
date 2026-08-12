@@ -50,8 +50,12 @@ export function getCatalogItem(itemId: string): CatItem | null {
     if (itemId === `${plantType}_seed`) return { price: base, kind: 'seed', unlockBadge: def.unlockBadge }
     if (itemId === `${plantType}_mature`) return { price: base * 5, kind: 'tree', unlockBadge: def.unlockBadge }
   }
-  if (itemId in DECOR) return { price: DECOR[itemId], kind: 'decor', unlockBadge: null }
-  if (itemId in SPECIAL) return { price: SPECIAL[itemId], kind: 'special', unlockBadge: null }
+  // ⚠️ `in` PROTOTİP ZİNCİRİNE BAKAR: 'constructor' / 'toString' / 'valueOf' için true döner
+  // ve `price` alanına bir FONKSİYON konurdu. İstemci `POST /garden/buy {"itemId":"toString"}`
+  // gönderdiğinde bu fonksiyon null yerine bozuk bir kayıt döndürüyor, `satin_al` RPC'sine
+  // `p_price` JSON'da hiç gitmiyor ve uç 500 veriyordu. Object.hasOwn yalnız kendi anahtarına bakar.
+  if (Object.hasOwn(DECOR, itemId)) return { price: DECOR[itemId], kind: 'decor', unlockBadge: null }
+  if (Object.hasOwn(SPECIAL, itemId)) return { price: SPECIAL[itemId], kind: 'special', unlockBadge: null }
   return null
 }
 

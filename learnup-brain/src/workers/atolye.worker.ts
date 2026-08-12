@@ -82,29 +82,80 @@ async function janitor(): Promise<void> {
 }
 
 // ── Zamanlayıcı (leader-lock'lu): bekçi 5 dk · gece demirhanesi 02–06 TSİ ──
-let lastForgeDay = ''
+
+/**
+ * GECE İŞLERİNİN GÜN KİLİDİ — Redis'te, süreç belleğinde DEĞİL.
+ *
+ * ⚠️ BU KİLİT OLMADAN İKİNCİ WORKER GECE İŞLERİNİ İKİYE KATLIYORDU. Sebep, tur kilidinin
+ * (SCHEDULER_LOCK) ne koruyup ne korumadığında:
+ *   · Tur kilidi TTL'i 90 sn, zamanlayıcı aralığı ise 300 sn (tick % 5 × 60 sn).
+ *     90 < 300 → kilit her turda çoktan düşmüş olur; liderlik turlar arasında SERBESTÇE
+ *     el değiştirir. Bu tur başına doğrudur (her turun tam bir kazananı var) ama
+ *     "günde bir kez" garantisi vermez.
+ *   · Günlük tekrarı engelleyen bayrak `lastForgeDay` SÜREÇ-YERELDİ. Gerçek akış:
+ *         02:00 turu → worker A kazanır → gece işleri koşar, A.lastForgeDay = bugün
+ *         02:05 turu → worker B kazanır → B.lastForgeDay BOŞ → gece işleri TEKRAR koşar
+ *     4 saatlik pencerede her worker bir kez kazandığı için iş worker sayısı kadar tekrarlar.
+ *   · Bedeli teorik değil: runNightlyFold aktif kullanıcı başına bir LLM çağrısı yapar
+ *     (200 kullanıcıya kadar) ve student_memory.semantic'i ZATEN katlanmış veri üzerine
+ *     ikinci kez katlar. runNightlyForge şu an NIGHTLY_FORGE=off ile kapalı, katlama DEĞİL.
+ *
+ * ⚠️ KİLİT 24 SAAT YAŞAR VE BİLEREK SERBEST BIRAKILMAZ. Kazanan worker gece işlerinin
+ * ortasında ölürse o gece iş yapılmamış olur. Takas bilinçli: katlama ertelenebilir bir
+ * bakım işidir, iki kez koşmak ise geri alınamaz LLM harcaması ve bozulmuş hafızadır.
+ */
+const GECE_KILIDI = (gun: string): string => `lb:lock:gece:${gun}`
+
+/**
+ * TUR YENİDEN-GİRİŞ KİLİDİ (süreç-yerel, kasıtlı).
+ *
+ * `void schedulerTick()` ateşle-unut çağrılır. Gece işleri dakikalarca sürebilir ve
+ * 300 sn'lik tick bu sırada bir kez daha ateşler → AYNI süreçte iki janitor/compactSweep
+ * üst üste biner. Süreçler ARASI koruma SCHEDULER_LOCK'un işi; bu bayrak yalnız süreç
+ * İÇİ üst üste binmeyi keser (Redis'e gitmeye değmeyecek kadar yerel bir sorun).
+ */
+let zamanlayiciCalisiyor = false
+
 async function schedulerTick(): Promise<void> {
-  if (redis) {
-    // Leader lock: SET NX PX 90s — kazanamayan worker bu turu atlar.
-    const ok = await redis.set(SCHEDULER_LOCK, CONSUMER, 'PX', 90_000, 'NX')
-    const holder = ok ? CONSUMER : await redis.get(SCHEDULER_LOCK)
-    if (holder !== CONSUMER) return
-    await redis.set(SCHEDULER_LOCK, CONSUMER, 'PX', 90_000) // yenile
+  if (zamanlayiciCalisiyor) {
+    logger.debug('zamanlayıcı hâlâ çalışıyor — bu tur atlandı')
+    return
   }
+  zamanlayiciCalisiyor = true
+  try {
+    if (redis) {
+      // Leader lock: SET NX PX 90s — kazanamayan worker bu turu atlar.
+      const ok = await redis.set(SCHEDULER_LOCK, CONSUMER, 'PX', 90_000, 'NX')
+      const holder = ok ? CONSUMER : await redis.get(SCHEDULER_LOCK)
+      if (holder !== CONSUMER) return
+      await redis.set(SCHEDULER_LOCK, CONSUMER, 'PX', 90_000) // yenile
+    }
 
-  await janitor().catch((err) => logger.error({ err }, 'bekçi hatası'))
-  // Kâtip taraması: 10+ dk sessizleşen kullanıcılar için oturum-sonu compact görevi.
-  await compactSweep().catch((err) => logger.error({ err }, 'compact taraması hatası'))
+    await janitor().catch((err) => logger.error({ err }, 'bekçi hatası'))
+    // Kâtip taraması: 10+ dk sessizleşen kullanıcılar için oturum-sonu compact görevi.
+    await compactSweep().catch((err) => logger.error({ err }, 'compact taraması hatası'))
 
-  // Gece penceresi (Europe/Istanbul 02:00–06:00, günde bir): demirhane + hafıza katlama.
-  const nowTr = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Istanbul' }))
-  const hour = nowTr.getHours()
-  const day = nowTr.toISOString().slice(0, 10)
-  if (hour >= 2 && hour < 6 && lastForgeDay !== day) {
-    lastForgeDay = day
-    logger.info({ day }, 'gece işleri başlıyor (demirhane + katlama)')
+    // Gece penceresi (Europe/Istanbul 02:00–06:00, günde bir): demirhane + hafıza katlama.
+    const nowTr = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Istanbul' }))
+    const hour = nowTr.getHours()
+    const day = nowTr.toISOString().slice(0, 10)
+    if (hour < 2 || hour >= 6) return
+
+    // Gün kilidini AL — bütün worker'lar arasında tam bir kazanan. Redis yoksa worker zaten
+    // başlamaz (main), yani bu dal savunma amaçlıdır.
+    const kazandi = redis
+      ? (await redis.set(GECE_KILIDI(day), CONSUMER, 'EX', 86_400, 'NX')) !== null
+      : true
+    if (!kazandi) {
+      logger.debug({ day }, 'gece işleri başka worker tarafından üstlenildi — atlandı')
+      return
+    }
+
+    logger.info({ day, consumer: CONSUMER }, 'gece işleri başlıyor (demirhane + katlama)')
     await runNightlyForge().catch((err) => logger.error({ err }, 'gece demirhanesi hatası'))
     await runNightlyFold().catch((err) => logger.error({ err }, 'gece katlama hatası'))
+  } finally {
+    zamanlayiciCalisiyor = false
   }
 }
 

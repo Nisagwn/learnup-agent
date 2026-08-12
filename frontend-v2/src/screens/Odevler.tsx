@@ -399,7 +399,17 @@ function OdevCoz({ aktif, onKapat }: { aktif: Aktif; onKapat: (gonderildi: boole
     if (gonderiliyor) return
     setGonderiliyor(true)
     try {
-      const answers = qs.map((q) => ({ questionId: q.id, selectedIndex: cevaplar[q.id] ?? -1 }))
+      // ⚠️ BOŞ SORULAR PAKETE KONMAZ.
+      // Eskiden boşlar `selectedIndex: -1` ile gidiyordu; sunucu şeması ise
+      // `selectedIndex: z.number().int().min(0)` — zod -1'i reddedip 400 döndürüyordu.
+      // Yani arayüzün açıkça teşvik ettiği şey ("8/10 cevaplandı — boşlar yanlış sayılır",
+      // onay modalı "2 soru boş") sunucuda kesin hatayla sonuçlanıyor, öğrenci ödevi
+      // HİÇBİR ŞEKİLDE gönderemiyordu; tek çıkış her soruyu işaretlemekti.
+      // Boşu hiç göndermemek doğru davranış: maxScore sunucuda ödevin KENDİ soru sayısından
+      // hesaplanıyor (assignments.routes), dolayısıyla boşlar doğal olarak yanlış sayılır.
+      const answers = qs
+        .filter((q) => cevaplar[q.id] != null)
+        .map((q) => ({ questionId: q.id, selectedIndex: cevaplar[q.id] }))
       const r = aktif.tur === 'sinif'
         ? await apiPost('/assignments/submit', { assignmentId: aktif.odev.id, answers })
         : await apiPost('/assignments/targeted/submit', { targetedAssignmentId: aktif.odev.id, answers })

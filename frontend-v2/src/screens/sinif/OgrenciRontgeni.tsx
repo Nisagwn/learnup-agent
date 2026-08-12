@@ -18,43 +18,61 @@ import {
 } from '../../components/rontgen'
 import { OgrenciBaslik, OgrenciGezinme } from '../../components/sinif'
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   Ã–ÄRENCÄ° RÃ–NTGENÄ° â€” Ã¶ÄŸretmenin gÃ¶rdÃ¼ÄŸÃ¼, Ã–ÄRENCÄ°NÄ°N KENDÄ° EKRANIDIR.
-   OnaylÄ± Ã¶nizleme: docs/design/onizleme/ogrenci-rontgeni.html (2026-07-23).
+/* ═══════════════════════════════════════════════════════════════════════════
+   ÖĞRENCİ RÖNTGENİ — öğretmenin gördüğü, ÖĞRENCİNİN KENDİ EKRANIDIR.
+   Onaylı önizleme: docs/design/onizleme/ogrenci-rontgeni.html (2026-07-23).
 
-   Paneller rontgen.tsx'ten AYNEN gelir; fark eylem fiili ("Set gÃ¶nder") ve
-   teÅŸhis dÃ¶kÃ¼mÃ¼nÃ¼n aÃ§Ä±k olmasÄ±. Ekrana Ã¶zgÃ¼ GERÃ‡EK-uÃ§ panelleri:
-   Â· Cevap LoglarÄ± â€” GET /teacher/ogrenci/:id/loglar (sayfalÄ±; yanÄ±tta doÄŸru
-     ÅŸÄ±k alanÄ± YOK â†’ doÄŸru ÅŸÄ±k GÃ–STERÄ°LMEZ, uydurma yasak)
-   Â· Ã–dev GeÃ§miÅŸi â€” GET /teacher/ogrenci/:id `sonOdevler` (Ã¶ÄŸrenci-bazlÄ±,
-     sunucuda sÃ¼zÃ¼lmÃ¼ÅŸ; soru-bazlÄ± ilerleme uÃ§ta yok â†’ yalnÄ±z puan Ã§izilir)
-   Â· Trend'e sÄ±nÄ±f ortalamasÄ± referansÄ± â€” sÄ±nÄ±f saÄŸlayÄ±cÄ±sÄ±nÄ±n ZATEN Ã§ektiÄŸi
-     /teacher/ozet trend'inden tÃ¼retilir (yeni istek yok).
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   Paneller rontgen.tsx'ten AYNEN gelir; fark eylem fiili ("Set gönder") ve
+   teşhis dökümünün açık olması. Ekrana özgü GERÇEK-uç panelleri:
+   · Cevap Logları — GET /teacher/ogrenci/:id/loglar (sayfalı; yanıtta doğru
+     şık alanı YOK → doğru şık GÖSTERİLMEZ, uydurma yasak)
+   · Ödev Geçmişi — GET /teacher/ogrenci/:id `sonOdevler` (öğrenci-bazlı,
+     sunucuda süzülmüş; soru-bazlı ilerleme uçta yok → yalnız puan çizilir)
+   · Trend'e sınıf ortalaması referansı — sınıf sağlayıcısının ZATEN çektiği
+     /teacher/ozet trend'inden türetilir (yeni istek yok).
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 const GUN_MS = 86_400_000
 const LOG_LIMIT = 20
 
-/** Tarih-YALNIZ dizgiler iÃ§in gÃ¼n farkÄ± (UTC kaymasÄ± yemesin). */
-const gunF = (isoGun: string): number =>
-  Math.floor((Date.now() - +new Date(isoGun + 'T12:00:00')) / GUN_MS)
+/**
+ * GÜN ANAHTARI — ÖĞRENCİNİN SAATİ (Europe/Istanbul), tarayıcının değil.
+ *
+ * Bu ekrandaki günler sunucudan `lib/rontgen.ts:175` ile üretiliyor ve o dosya anahtarı
+ * AÇIKÇA 'Europe/Istanbul' ile kuruyor. İstemci tarafında tarayıcı yereli kullanmak, iki
+ * ucu farklı takvimlere bağlıyordu: yurt dışındaki (ya da saati kaymış cihazdaki) bir
+ * öğretmende "bugün" bir gün öteleniyor, kıvılcım çizgisi trend verisiyle hizasını
+ * kaybediyor ve "bu hafta N soru" yanlış pencereden toplanıyordu.
+ *
+ * 'en-CA' biçimi YYYY-MM-DD verir — uçtan gelen `trend[].date` ile aynı biçim.
+ */
+const TR = 'Europe/Istanbul'
+const gunAnahtari = (t: number | Date): string =>
+  new Date(t).toLocaleDateString('en-CA', { timeZone: TR })
 
-/** ISO zaman â†’ "bugÃ¼n 14:20" Â· "dÃ¼n 19:41" Â· "19 Tem 14:20". */
+/** Tarih-YALNIZ dizgiler için gün farkı (UTC kayması yemesin). */
+// ⚠️ Math.max(0, …): öğlen çıpası, saat 12:00'den önce BUGÜNÜN farkını -1 yapıyordu ve
+// `f >= 0` koşullu pencereler bugünü tamamen düşürüyordu ("bu hafta N soru" öğleden önce
+// eksik gösteriyordu). Harita.tsx'te aynı hata, aynı çare.
+const gunF = (isoGun: string): number =>
+  Math.max(0, Math.floor((Date.now() - +new Date(isoGun + 'T12:00:00+03:00')) / GUN_MS))
+
+/** ISO zaman → "bugün 14:20" · "dün 19:41" · "19 Tem 14:20". */
 const zamanEtiketi = (iso: string): string => {
   const d = new Date(iso)
   if (Number.isNaN(+d)) return iso
-  const saat = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-  const key = d.toLocaleDateString('en-CA')
-  const bugun = new Date().toLocaleDateString('en-CA')
-  const dun = new Date(Date.now() - GUN_MS).toLocaleDateString('en-CA')
-  if (key === bugun) return `bugÃ¼n ${saat}`
-  if (key === dun) return `dÃ¼n ${saat}`
+  const saat = d.toLocaleTimeString('tr-TR', { timeZone: TR, hour: '2-digit', minute: '2-digit' })
+  const key = gunAnahtari(d)
+  const bugun = gunAnahtari(Date.now())
+  const dun = gunAnahtari(Date.now() - GUN_MS)
+  if (key === bugun) return `bugün ${saat}`
+  if (key === dun) return `dün ${saat}`
   return `${gunEtiketi(key)} ${saat}`
 }
 
-/** ms â†’ "58 sn" Â· "1 dk 42 sn" Â· yoksa "â€”". */
+/** ms → "58 sn" · "1 dk 42 sn" · yoksa "—". */
 const sureEtiketi = (ms: number | null): string => {
-  if (ms == null || ms <= 0) return 'â€”'
+  if (ms == null || ms <= 0) return '—'
   const sn = Math.round(ms / 1000)
   if (sn < 60) return `${sn} sn`
   return `${Math.floor(sn / 60)} dk ${String(sn % 60).padStart(2, '0')} sn`
@@ -68,22 +86,31 @@ export function OgrenciRontgeni() {
   const { ozet, ogrenciBul, siradaki } = useSinif()
 
   const rontgen = useAsync<OgretmenRontgenYaniti>(
-    () => tGet(`/teacher/ogrenci/${ogrenciId}/rontgen`),
+    (signal) => tGet(`/teacher/ogrenci/${ogrenciId}/rontgen`, {}, { signal }),
     [ogrenciId],
   )
   const konular = useAsync<{ subjects: Array<{ subject: string; topics: Konu[] }> }>(
-    () => apiGet('/questions/ai/topics'),
+    (signal) => apiGet('/questions/ai/topics', {}, { signal }),
     [],
   )
-  // Ã–dev geÃ§miÅŸi: Ã¶ÄŸrenci-bazlÄ± `sonOdevler` bu uÃ§ta SUNUCUDA sÃ¼zÃ¼lÃ¼ dÃ¶ner.
+  // Ödev geçmişi: öğrenci-bazlı `sonOdevler` bu uçta SUNUCUDA süzülü döner.
   const detay = useAsync<OgrenciDetayYaniti>(
-    () => tGet(`/teacher/ogrenci/${ogrenciId}`),
+    (signal) => tGet(`/teacher/ogrenci/${ogrenciId}`, {}, { signal }),
     [ogrenciId],
   )
   const [logSayfa, setLogSayfa] = useState(0)
   useEffect(() => { setLogSayfa(0) }, [ogrenciId])
+  // ⚠️ SORGU DİZİSİ YOLA GÖMÜLMEZ — parametreler ikinci argümandan geçer.
+  // Eskiden yol zaten `?limit=…&offset=…` içeriyordu; `tGet` ise yönetici vekil kapsamını
+  // (`ogretmenId`) sorgu parametresi olarak EKLİYOR ve `apiGet` yolun sonuna `?${qs}`
+  // yapıştırıyordu. Üretilen URL `…/loglar?limit=20&offset=0?ogretmenId=<uuid>` oluyordu:
+  // `ogretmenId` ayrı bir parametre olarak parse edilmiyor (offset'in İÇİNE gömülüyor),
+  // `requireOgretmenKapsami` yöneticide kapsam bulamıyor → 403 ogretmen_secilmedi.
+  // Ekranın diğer panelleri düz `tGet(yol, {})` kullandığı için çalışıyor, yalnız "Cevap
+  // Logları" paneli "yüklenemedi" diyordu — üstelik yalnız YÖNETİCİDE (öğretmende kapsam
+  // null olduğu için hata görünmüyordu). Ayrıca offset NaN oluyordu.
   const loglar = useAsync<OgrenciLoglarYaniti>(
-    () => tGet(`/teacher/ogrenci/${ogrenciId}/loglar?limit=${LOG_LIMIT}&offset=${logSayfa * LOG_LIMIT}`),
+    (signal) => tGet(`/teacher/ogrenci/${ogrenciId}/loglar`, { limit: LOG_LIMIT, offset: logSayfa * LOG_LIMIT }, { signal }),
     [ogrenciId, logSayfa],
   )
 
@@ -96,8 +123,8 @@ export function OgrenciRontgeni() {
 
   const git = useCallback((id: string | null) => { if (id) nav(`/sinif/ogrenci/${id}`) }, [nav])
 
-  // â† / â†’ roster sÄ±rasÄ±nda gezinir, Esc panoya dÃ¶ner.
-  // Girdi alanÄ±ndayken devre dÄ±ÅŸÄ±: arama yazan Ã¶ÄŸretmen sayfa deÄŸiÅŸtirmemeli.
+  // ← / → roster sırasında gezinir, Esc panoya döner.
+  // Girdi alanındayken devre dışı: arama yazan öğretmen sayfa değiştirmemeli.
   useEffect(() => {
     const tus = (e: KeyboardEvent): void => {
       const hedef = e.target
@@ -110,7 +137,7 @@ export function OgrenciRontgeni() {
     return () => window.removeEventListener('keydown', tus)
   }, [onceki, sonraki, git, nav])
 
-  /* â”€â”€ TÃ¼retimler â€” Harita.tsx ile birebir â”€â”€ */
+  /* ── Türetimler — Harita.tsx ile birebir ── */
 
   const genelUstalik = useMemo(
     () => (nodes.length ? nodes.reduce((s, n) => s + n.mastery, 0) / nodes.length : 0),
@@ -137,7 +164,8 @@ export function OgrenciRontgeni() {
     const map = new Map(trend.map((g) => [g.date, g.solved]))
     const dizi: number[] = []
     for (let i = 11; i >= 0; i--) {
-      dizi.push(map.get(new Date(Date.now() - i * GUN_MS).toLocaleDateString('en-CA')) ?? 0)
+      // Anahtar TSİ ile kurulur — `trend[].date` da öyle üretiliyor (lib/rontgen.ts).
+      dizi.push(map.get(gunAnahtari(Date.now() - i * GUN_MS)) ?? 0)
     }
     return dizi
   }, [trend])
@@ -150,15 +178,18 @@ export function OgrenciRontgeni() {
     [trend],
   )
 
-  // SÄ±nÄ±f doÄŸruluk ortalamasÄ± â€” saÄŸlayÄ±cÄ±nÄ±n zaten Ã§ektiÄŸi /teacher/ozet trend'i
-  // (30 gÃ¼nlÃ¼k pencere). Veri yoksa null â†’ referans Ã§izgisi hiÃ§ Ã§izilmez.
+  // Sınıf doğruluk ortalaması — sağlayıcının zaten çektiği /teacher/ozet trend'i
+  // (⚠️ 84 GÜNLÜK pencere; yorum eskiden "30 günlük" diyordu ve uçla uyuşmuyordu:
+  // teacher.routes.ts trendi 84 günden kuruyor. Sayı doğru hesaplanıyordu ama grafikteki
+  // referans çizgisinin NE olduğunu okuyan kişi yanlış öğreniyordu.)
+  // Veri yoksa null → referans çizgisi hiç çizilmez.
   const sinifOrt = useMemo(() => {
     let s = 0, c = 0
     for (const g of ozet?.trend ?? []) { s += g.solved; c += g.correct }
     return s ? (c / s) * 100 : null
   }, [ozet])
 
-  // MÃ¼fredat toplamlarÄ± â€” matristeki kesikli "Ã¶lÃ§Ã¼m yok" hÃ¼creleri
+  // Müfredat toplamları — matristeki kesikli "ölçüm yok" hücreleri
   const mufredat = useMemo(() => {
     const map = new Map<string, number>()
     for (const c of rontgen.data?.curriculum ?? []) {
@@ -206,14 +237,14 @@ export function OgrenciRontgeni() {
     [nodes],
   )
 
-  // Log tablosunda kazanÄ±m adÄ±: rontgen dÃ¼ÄŸÃ¼mlerinden GERÃ‡EK baÅŸlÄ±k eÅŸlemesi
+  // Log tablosunda kazanım adı: rontgen düğümlerinden GERÇEK başlık eşlemesi
   const kazanimAdlari = useMemo(() => new Map(nodes.map((n) => [n.kazanimId, n.title])), [nodes])
   const kazanimAdi = useCallback(
     (id: number | null): string | null => (id == null ? null : kazanimAdlari.get(id) ?? null),
     [kazanimAdlari],
   )
 
-  /** Ã–ÄŸrencide "Ã‡Ã¶z" /coz'e giderdi; Ã¶ÄŸretmende atÃ¶lyeye Ã–N-DOLU gider. */
+  /** Öğrencide "Çöz" /coz'e giderdi; öğretmende atölyeye ÖN-DOLU gider. */
   const setGonder = (n: { kazanimId: number; subject: string }): void => {
     void nav(`/sinif/odev?ogrenci=${ogrenciId}&kazanim=${n.kazanimId}&ders=${encodeURIComponent(n.subject)}`)
   }
@@ -226,22 +257,22 @@ export function OgrenciRontgeni() {
       altBilgi={
         <>
           {satir?.lastActive && <span>son aktivite: {zamanEtiketi(satir.lastActive)}</span>}
-          {buHafta > 0 && <span>Â· bu hafta {buHafta} soru</span>}
+          {buHafta > 0 && <span>· bu hafta {buHafta} soru</span>}
         </>
       }
       sag={
         <>
           <span className="hidden text-[10.5px] xl:inline" style={{ color: 'var(--metin3)' }}>
-            â† â†’ Ã¶ÄŸrenciler arasÄ±nda gezinir Â· Esc panoya dÃ¶ner
+            ← → öğrenciler arasında gezinir · Esc panoya döner
           </span>
           <OgrenciGezinme
             onOnceki={onceki ? () => git(onceki) : null}
             onSonraki={sonraki ? () => git(sonraki) : null}
           />
-          {/* EkranÄ±n TEK birincil eylemi â€” boÅŸ durumda oradaki CTA devralÄ±r */}
+          {/* Ekranın TEK birincil eylemi — boş durumda oradaki CTA devralır */}
           {ctaGoster && (
             <button className="or-cta" onClick={() => nav(`/sinif/odev?ogrenci=${ogrenciId}`)}>
-              Hedefli Ã¶dev gÃ¶nder
+              Hedefli ödev gönder
             </button>
           )}
         </>
@@ -256,7 +287,7 @@ export function OgrenciRontgeni() {
       <Sayfa>
         <OrStil />
         <div className="glass mx-auto max-w-md rounded-[20px] px-6 py-8 text-center shadow-card">
-          <p className="text-sm" style={{ color: 'var(--metin2)' }}>Ã–ÄŸrenci verisi yÃ¼klenemedi: {rontgen.error}</p>
+          <p className="text-sm" style={{ color: 'var(--metin2)' }}>Öğrenci verisi yüklenemedi: {rontgen.error}</p>
           <button className="or-dis mt-4" onClick={() => rontgen.reload()}>Tekrar dene</button>
         </div>
       </Sayfa>
@@ -276,14 +307,14 @@ export function OgrenciRontgeni() {
               <FidanIkon boyut={22} acik={false} />
             </div>
             <h2 className="mt-4 text-xl font-bold" style={{ color: 'var(--metin1)', fontFamily: 'Outfit, sans-serif' }}>
-              Bu Ã¶ÄŸrenci iÃ§in henÃ¼z Ã¶lÃ§Ã¼m yok
+              Bu öğrenci için henüz ölçüm yok
             </h2>
             <p className="mx-auto mt-2 max-w-sm text-[13.5px] leading-relaxed" style={{ color: 'var(--metin2)' }}>
-              Harita, Ã¶ÄŸrenci soru Ã§Ã¶zdÃ¼kÃ§e belirir: her cevap, kazanÄ±m baÅŸÄ±na ustalÄ±k
-              Ã¶lÃ§Ã¼mÃ¼nÃ¼ gÃ¼nceller. Bir tanÄ±ÅŸma seti yeterli.
+              Harita, öğrenci soru çözdükçe belirir: her cevap, kazanım başına ustalık
+              ölçümünü günceller. Bir tanışma seti yeterli.
             </p>
             <button className="or-cta mt-6" onClick={() => nav(`/sinif/odev?ogrenci=${ogrenciId}`)}>
-              TanÄ±ÅŸma seti gÃ¶nder
+              Tanışma seti gönder
             </button>
           </div>
         </Reveal>
@@ -298,18 +329,18 @@ export function OgrenciRontgeni() {
       <OrStil />
       <Reveal>{baslik(true)}</Reveal>
 
-      {/* â”€â”€ 4 stat ÅŸeridi â€” tÃ¼retimler Harita ile birebir â”€â”€ */}
+      {/* ── 4 stat şeridi — türetimler Harita ile birebir ── */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Reveal delay={0.04}>
-          <section className="glass flex items-center gap-3.5 rounded-[20px] p-4 shadow-card" aria-label="Genel ustalÄ±k">
+          <section className="glass flex items-center gap-3.5 rounded-[20px] p-4 shadow-card" aria-label="Genel ustalık">
             <Halka oran={genelUstalik} boyut={64} kalinlik={7} renk="var(--yaprak)">
               <span className="text-[13px] font-extrabold" style={{ color: 'var(--metin1)', fontFamily: 'Outfit, sans-serif' }}>
                 %<CanliSayi value={Math.round(genelUstalik * 100)} />
               </span>
             </Halka>
             <div className="min-w-0">
-              <div className="or-etiket">Genel UstalÄ±k</div>
-              <div className="or-alt">Ã§Ã¼rÃ¼me uygulanmÄ±ÅŸ Â· {nodes.length} kazanÄ±m</div>
+              <div className="or-etiket">Genel Ustalık</div>
+              <div className="or-alt">çürüme uygulanmış · {nodes.length} kazanım</div>
             </div>
           </section>
         </Reveal>
@@ -319,46 +350,46 @@ export function OgrenciRontgeni() {
             <div className="min-w-0">
               <div className="or-deger"><CanliSayi value={nodes.length} /></div>
               <div className="or-etiket">Kapsama</div>
-              {toplamKazanim > 0 && <div className="or-alt">{toplamKazanim} mÃ¼fredat kazanÄ±mÄ± iÃ§inden</div>}
+              {toplamKazanim > 0 && <div className="or-alt">{toplamKazanim} müfredat kazanımı içinden</div>}
             </div>
           </section>
         </Reveal>
 
         <Reveal delay={0.12}>
-          <section className="glass flex items-center gap-3 rounded-[20px] p-4 shadow-card" aria-label="7 gÃ¼n doÄŸruluk">
+          <section className="glass flex items-center gap-3 rounded-[20px] p-4 shadow-card" aria-label="7 gün doğruluk">
             <div className="min-w-0 flex-1">
               <div className="or-deger">
                 {dogruluk.son == null
-                  ? <span style={{ color: 'var(--metin3)' }}>â€”</span>
+                  ? <span style={{ color: 'var(--metin3)' }}>—</span>
                   : <>%<CanliSayi value={dogruluk.son} /></>}
                 {dogruluk.delta != null && dogruluk.delta !== 0 && (
                   <span
                     className="ml-1.5 align-[3px] text-[12px] font-bold"
                     style={{ color: dogruluk.delta > 0 ? 'var(--dogru)' : 'var(--uyari)' }}
                   >
-                    {dogruluk.delta > 0 ? 'â–²' : 'â–¼'}{Math.abs(dogruluk.delta)}
+                    {dogruluk.delta > 0 ? '▲' : '▼'}{Math.abs(dogruluk.delta)}
                   </span>
                 )}
               </div>
-              <div className="or-etiket">7 GÃ¼n DoÄŸruluk</div>
-              <div className="or-alt">{dogruluk.n7} soru Â· Ã¶nceki 7 gÃ¼ne gÃ¶re</div>
+              <div className="or-etiket">7 Gün Doğruluk</div>
+              <div className="or-alt">{dogruluk.n7} soru · önceki 7 güne göre</div>
             </div>
             <Sparkline veri={kivilcim} genislik={64} yukseklik={22} />
           </section>
         </Reveal>
 
         <Reveal delay={0.16}>
-          <section className="glass flex items-center rounded-[20px] p-4 shadow-card" aria-label="AÃ§Ä±k yanÄ±lgÄ±">
+          <section className="glass flex items-center rounded-[20px] p-4 shadow-card" aria-label="Açık yanılgı">
             <div className="min-w-0">
               <div className="or-deger"><CanliSayi value={yanilgilar.length} /></div>
-              <div className="or-etiket">AÃ§Ä±k YanÄ±lgÄ±</div>
-              <div className="or-alt">{zayiflar.length} kazanÄ±m Ã¶ncelikli</div>
+              <div className="or-etiket">Açık Yanılgı</div>
+              <div className="or-alt">{zayiflar.length} kazanım öncelikli</div>
             </div>
           </section>
         </Reveal>
       </div>
 
-      {/* â”€â”€ Ana Ä±zgara â”€â”€ */}
+      {/* ── Ana ızgara ── */}
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]">
         {/* SOL */}
         <div className="min-w-0 space-y-4">
@@ -366,7 +397,7 @@ export function OgrenciRontgeni() {
             <UstalikMatrisi
               gruplar={gruplar}
               havuzda={havuzda}
-              calisEtiketi="Set gÃ¶nder"
+              calisEtiketi="Set gönder"
               onCalis={setGonder}
             />
           </Reveal>
@@ -389,19 +420,19 @@ export function OgrenciRontgeni() {
           </Reveal>
         </div>
 
-        {/* SAÄ */}
+        {/* SAĞ */}
         <div className="min-w-0 space-y-4">
           <Reveal delay={0.1}>
             <OncelikRadari
               zayiflar={zayiflar}
               kesfedilmemis={kesfedilmemis}
-              calisEtiketi="Set gÃ¶nder"
+              calisEtiketi="Set gönder"
               onCalis={setGonder}
               onKesfet={setGonder}
             />
           </Reveal>
-          {/* TEÅHÄ°S DÃ–KÃœMÃœ â€” yalnÄ±z Ã¶ÄŸretmende. Ã–ÄŸrenci ucu bu alanÄ± hiÃ§ dÃ¶ndÃ¼rmez
-              (persona TESHIS_DILI_YOK: teÅŸhis Ã¶ÄŸrenciye METÄ°N olarak gÃ¶sterilmez). */}
+          {/* TEŞHİS DÖKÜMÜ — yalnız öğretmende. Öğrenci ucu bu alanı hiç döndürmez
+              (persona TESHIS_DILI_YOK: teşhis öğrenciye METİN olarak gösterilmez). */}
           {yanilgilar.length > 0 && (
             <Reveal delay={0.16}><YanilgiTeshisi yanilgilar={yanilgilar} /></Reveal>
           )}
@@ -420,7 +451,7 @@ export function OgrenciRontgeni() {
   )
 }
 
-/* â”€â”€ Ekran stilleri â€” FÄ°DAN (007 inline deseni) â”€â”€ */
+/* ── Ekran stilleri — FİDAN (007 inline deseni) ── */
 
 function OrStil() {
   return (
@@ -449,19 +480,19 @@ function OrStil() {
   )
 }
 
-/* â”€â”€ YANILGI TEÅHÄ°SÄ° â€” yalnÄ±z Ã¶ÄŸretmen gÃ¶rÃ¼r (uyarÄ± tonu; kehribar RAFTA) â”€â”€ */
+/* ── YANILGI TEŞHİSİ — yalnız öğretmen görür (uyarı tonu; kehribar RAFTA) ── */
 
 function YanilgiTeshisi({ yanilgilar }: { yanilgilar: YanilgiAyrinti[] }) {
   const cip = (bg: string, renk: string): CSSProperties => ({ background: bg, color: renk })
   return (
-    <section className="glass rounded-[20px] p-[22px] shadow-card" aria-label="YanÄ±lgÄ± teÅŸhisi">
+    <section className="glass rounded-[20px] p-[22px] shadow-card" aria-label="Yanılgı teşhisi">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="or-h3">YanÄ±lgÄ± TeÅŸhisi</h3>
+        <h3 className="or-h3">Yanılgı Teşhisi</h3>
         <span
           className="rounded-[9px] px-2.5 py-1 text-[10px] font-bold"
           style={{ background: 'color-mix(in srgb, var(--uyari) 16%, transparent)', color: 'var(--uyari)' }}
         >
-          yalnÄ±z Ã¶ÄŸretmen gÃ¶rÃ¼r
+          yalnız öğretmen görür
         </span>
       </div>
       <div className="space-y-2.5">
@@ -477,7 +508,7 @@ function YanilgiTeshisi({ yanilgilar }: { yanilgilar: YanilgiAyrinti[] }) {
               </b>
               {y.confidence != null && (
                 <span className="shrink-0 font-mono text-[10px]" style={{ color: 'var(--metin3)' }}>
-                  gÃ¼ven %{Math.round(y.confidence * 100)}
+                  güven %{Math.round(y.confidence * 100)}
                 </span>
               )}
             </div>
@@ -498,7 +529,7 @@ function YanilgiTeshisi({ yanilgilar }: { yanilgilar: YanilgiAyrinti[] }) {
                   className="rounded-[9px] px-2 py-0.5 text-[10px] font-semibold"
                   style={cip('color-mix(in srgb, var(--yanlis) 12%, transparent)', 'var(--yanlis)')}
                 >
-                  sÄ±k seÃ§ilen: {y.selectedOption}
+                  sık seçilen: {y.selectedOption}
                 </span>
               )}
             </div>
@@ -509,7 +540,7 @@ function YanilgiTeshisi({ yanilgilar }: { yanilgilar: YanilgiAyrinti[] }) {
             )}
             {y.prereqHypothesis && (
               <p className="mt-1 text-[11px] italic leading-relaxed" style={{ color: 'var(--metin3)' }}>
-                Ã–nkoÅŸul hipotezi: {y.prereqHypothesis}
+                Önkoşul hipotezi: {y.prereqHypothesis}
               </p>
             )}
           </div>
@@ -519,29 +550,29 @@ function YanilgiTeshisi({ yanilgilar }: { yanilgilar: YanilgiAyrinti[] }) {
   )
 }
 
-/* â”€â”€ CEVAP LOGLARI â€” sayfalÄ± gerÃ§ek akÄ±ÅŸ (doÄŸru ÅŸÄ±k uÃ§ta YOK â†’ Ã§izilmez) â”€â”€ */
+/* ── CEVAP LOGLARI — sayfalı gerçek akış (doğru şık uçta YOK → çizilmez) ── */
 
 function SonucRozeti({ isCorrect, isSkipped }: { isCorrect: boolean | null; isSkipped: boolean }) {
   if (isSkipped) {
     return (
       <span className="rounded-[9px] px-2.5 py-0.5 text-[10.5px] font-bold" style={{ background: 'var(--ic)', color: 'var(--metin2)' }}>
-        boÅŸ
+        boş
       </span>
     )
   }
-  if (isCorrect == null) return <span style={{ color: 'var(--metin3)' }}>â€”</span>
+  if (isCorrect == null) return <span style={{ color: 'var(--metin3)' }}>—</span>
   const renk = isCorrect ? 'var(--dogru)' : 'var(--yanlis)'
   return (
     <span
       className="rounded-[9px] px-2.5 py-0.5 text-[10.5px] font-bold"
       style={{ background: `color-mix(in srgb, ${renk} 14%, transparent)`, color: renk }}
     >
-      {isCorrect ? 'doÄŸru' : 'yanlÄ±ÅŸ'}
+      {isCorrect ? 'doğru' : 'yanlış'}
     </span>
   )
 }
 
-/** Sayfa listesi: ilk Â· aktifÂ±1 Â· son (aralar "â€¦" ile). */
+/** Sayfa listesi: ilk · aktif±1 · son (aralar "…" ile). */
 const sayfaListesi = (aktif: number, toplam: number): number[] =>
   [...new Set([0, aktif - 1, aktif, aktif + 1, toplam - 1])]
     .filter((s) => s >= 0 && s < toplam)
@@ -559,7 +590,7 @@ function CevapLoglari({ veri, yukleniyor, hata, tekrar, sayfa, onSayfa, kazanimA
   if (hata) {
     return (
       <section className="glass-solid rounded-[20px] p-[22px] text-center shadow-card">
-        <p className="text-[12.5px]" style={{ color: 'var(--metin2)' }}>Cevap kayÄ±tlarÄ± yÃ¼klenemedi: {hata}</p>
+        <p className="text-[12.5px]" style={{ color: 'var(--metin2)' }}>Cevap kayıtları yüklenemedi: {hata}</p>
         <button className="or-dis mt-3" onClick={tekrar}>Tekrar dene</button>
       </section>
     )
@@ -567,17 +598,17 @@ function CevapLoglari({ veri, yukleniyor, hata, tekrar, sayfa, onSayfa, kazanimA
   if (!veri) {
     return yukleniyor ? <div className="glass-solid h-40 animate-pulse rounded-[20px]" /> : null
   }
-  if (veri.total === 0) return null // hiÃ§ kayÄ±t yok â†’ panel gizlenir (null â‰  0)
+  if (veri.total === 0) return null // hiç kayıt yok → panel gizlenir (null ≠ 0)
 
   const toplamSayfa = Math.max(1, Math.ceil(veri.total / veri.limit))
   const sayfalar = sayfaListesi(sayfa, toplamSayfa)
 
   return (
-    <section className="glass-solid rounded-[20px] p-[22px] shadow-card" aria-label="Cevap loglarÄ±">
+    <section className="glass-solid rounded-[20px] p-[22px] shadow-card" aria-label="Cevap logları">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="or-h3">Cevap LoglarÄ±</h3>
+        <h3 className="or-h3">Cevap Logları</h3>
         <span className="font-mono text-[10.5px]" style={{ color: 'var(--metin3)' }}>
-          {veri.total} kayÄ±t Â· son {veri.gunAraligi} gÃ¼n Â· sayfa {sayfa + 1}/{toplamSayfa}
+          {veri.total} kayıt · son {veri.gunAraligi} gün · sayfa {sayfa + 1}/{toplamSayfa}
         </span>
       </div>
       <div className={yukleniyor ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
@@ -585,7 +616,7 @@ function CevapLoglari({ veri, yukleniyor, hata, tekrar, sayfa, onSayfa, kazanimA
           <table className="or-tablo w-full border-collapse">
             <thead>
               <tr>
-                {['Tarih', 'KazanÄ±m', 'SonuÃ§', 'SÃ¼re', 'SeÃ§ilen'].map((b) => (
+                {['Tarih', 'Kazanım', 'Sonuç', 'Süre', 'Seçilen'].map((b) => (
                   <th key={b} className="or-th" scope="col">{b}</th>
                 ))}
               </tr>
@@ -599,13 +630,13 @@ function CevapLoglari({ veri, yukleniyor, hata, tekrar, sayfa, onSayfa, kazanimA
                     <td className="or-td">
                       {ad
                         ? <b className="font-semibold" style={{ color: 'var(--metin1)' }}>{ad}</b>
-                        : <span style={{ color: 'var(--metin3)' }}>â€”</span>}
-                      {l.subject && <span> Â· {l.subject}</span>}
+                        : <span style={{ color: 'var(--metin3)' }}>—</span>}
+                      {l.subject && <span> · {l.subject}</span>}
                     </td>
                     <td className="or-td"><SonucRozeti isCorrect={l.isCorrect} isSkipped={l.isSkipped} /></td>
                     <td className="or-td whitespace-nowrap">{sureEtiketi(l.durationMs)}</td>
-                    {/* UÃ§ta "doÄŸru ÅŸÄ±k" alanÄ± YOK â€” yalnÄ±z Ã¶ÄŸrencinin seÃ§tiÄŸi Ã§izilir */}
-                    <td className="or-td">{l.selectedOption ?? 'â€”'}</td>
+                    {/* Uçta "doğru şık" alanı YOK — yalnız öğrencinin seçtiği çizilir */}
+                    <td className="or-td">{l.selectedOption ?? '—'}</td>
                   </tr>
                 )
               })}
@@ -614,21 +645,21 @@ function CevapLoglari({ veri, yukleniyor, hata, tekrar, sayfa, onSayfa, kazanimA
         </div>
       </div>
       {toplamSayfa > 1 && (
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5" role="navigation" aria-label="Log sayfalarÄ±">
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5" role="navigation" aria-label="Log sayfaları">
           <button
             type="button"
             className="or-dis !px-2.5 !py-1"
             disabled={sayfa === 0}
             style={sayfa === 0 ? { opacity: 0.35, cursor: 'default' } : undefined}
             onClick={() => onSayfa(Math.max(0, sayfa - 1))}
-            aria-label="Ã–nceki sayfa"
+            aria-label="Önceki sayfa"
           >
-            â€¹
+            ‹
           </button>
           {sayfalar.map((s, i) => (
             <span key={s} className="flex items-center gap-1.5">
               {i > 0 && s - sayfalar[i - 1] > 1 && (
-                <span className="font-mono text-[10px]" style={{ color: 'var(--metin3)' }}>â€¦</span>
+                <span className="font-mono text-[10px]" style={{ color: 'var(--metin3)' }}>…</span>
               )}
               <button
                 type="button"
@@ -651,7 +682,7 @@ function CevapLoglari({ veri, yukleniyor, hata, tekrar, sayfa, onSayfa, kazanimA
             onClick={() => onSayfa(Math.min(toplamSayfa - 1, sayfa + 1))}
             aria-label="Sonraki sayfa"
           >
-            â€º
+            ›
           </button>
         </div>
       )}
@@ -659,7 +690,7 @@ function CevapLoglari({ veri, yukleniyor, hata, tekrar, sayfa, onSayfa, kazanimA
   )
 }
 
-/* â”€â”€ Ã–DEV GEÃ‡MÄ°ÅÄ° â€” Ã¶ÄŸrenci-bazlÄ± son setler (sunucuda sÃ¼zÃ¼lÃ¼ `sonOdevler`) â”€â”€ */
+/* ── ÖDEV GEÇMİŞİ — öğrenci-bazlı son setler (sunucuda süzülü `sonOdevler`) ── */
 
 function OdevGecmisi({ odevler, yukleniyor }: {
   odevler: OgrenciDetayYaniti['sonOdevler']
@@ -669,14 +700,14 @@ function OdevGecmisi({ odevler, yukleniyor }: {
     return yukleniyor ? <div className="glass h-28 animate-pulse rounded-[20px]" /> : null
   }
   return (
-    <section className="glass rounded-[20px] p-[22px] shadow-card" aria-label="Ã–dev geÃ§miÅŸi">
-      <h3 className="or-h3 mb-2">Ã–dev GeÃ§miÅŸi</h3>
+    <section className="glass rounded-[20px] p-[22px] shadow-card" aria-label="Ödev geçmişi">
+      <h3 className="or-h3 mb-2">Ödev Geçmişi</h3>
       <div>
         {odevler.map((o, i) => {
           const bitti = o.submittedAt != null
-          // Soru-bazlÄ± ilerleme (7/10) uÃ§ta YOK â€” yalnÄ±z gerÃ§ek puan Ã§izilir.
+          // Soru-bazlı ilerleme (7/10) uçta YOK — yalnız gerçek puan çizilir.
           const oran = o.score != null && o.maxScore
-            ? `${o.score}/${o.maxScore} Â· %${Math.round((o.score / o.maxScore) * 100)}`
+            ? `${o.score}/${o.maxScore} · %${Math.round((o.score / o.maxScore) * 100)}`
             : null
           return (
             <div
@@ -689,7 +720,7 @@ function OdevGecmisi({ odevler, yukleniyor }: {
                 className="shrink-0 rounded-[9px] px-2 py-0.5 text-[10px] font-semibold"
                 style={{ background: 'var(--v1)', color: 'var(--vurgu)' }}
               >
-                {o.tur === 'hedefli' ? 'hedefli set' : 'sÄ±nÄ±f Ã¶devi'}
+                {o.tur === 'hedefli' ? 'hedefli set' : 'sınıf ödevi'}
               </span>
               {oran && (
                 <span className="shrink-0 font-mono text-[10px]" style={{ color: 'var(--metin3)' }}>{oran}</span>
@@ -700,7 +731,7 @@ function OdevGecmisi({ odevler, yukleniyor }: {
                   ? { background: 'color-mix(in srgb, var(--dogru) 14%, transparent)', color: 'var(--dogru)' }
                   : { background: 'var(--v1)', color: 'var(--vurgu)' }}
               >
-                {bitti ? 'tamamlandÄ±' : 'sÃ¼rÃ¼yor'}
+                {bitti ? 'tamamlandı' : 'sürüyor'}
               </span>
             </div>
           )

@@ -40,6 +40,32 @@ interface AuthValue {
 
 const AuthCtx = createContext<AuthValue | null>(null)
 
+/**
+ * ÇIKIŞTA KULLANICIYA ÖZEL YEREL VERİYİ SİL.
+ *
+ * ⚠️ Bu anahtarların hiçbiri kullanıcı başına isimlendirilmemişti ve çıkışta da
+ * silinmiyordu. Ortak bir bilgisayarda (okul laboratuvarı, demo cihazı) A öğrencisi çıkıp
+ * B girdiğinde B şunları görüyordu: A'nın "Yarım kalan teste devam — 5/10" kartı (tıklayınca
+ * A'nın setine gidiyor), A'nın günlük hedefi kendi hedefi sanılıyor, A'nın odak dakikaları
+ * B'nin "Çalışma Süresi" KPI'sında, ve ilk giriş turu B'ye hiç açılmıyordu (A "tamam"
+ * demişti). Aynı sorun yöneticinin test hesapları arasında geçişinde de çıkıyordu.
+ *
+ * TERCİH/CİHAZ ayarları KORUNUR: tema ve ses o cihazın tercihidir, kullanıcının verisi
+ * değil — çıkışta sıfırlamak kullanıcıyı şaşırtırdı.
+ */
+const KULLANICI_ANAHTARLARI = ['learnup.devam', 'learnup.hedef', 'learnup.tur', 'learnup.hedefTarih']
+const KULLANICI_ONEKLERI = ['learnup.odak.']
+
+export function kullaniciVerisiniTemizle(): void {
+  try {
+    for (const k of KULLANICI_ANAHTARLARI) localStorage.removeItem(k)
+    // Odak sayaçları gün anahtarlı (learnup.odak.sn.<gün>) → önekten tara.
+    for (const k of Object.keys(localStorage)) {
+      if (KULLANICI_ONEKLERI.some((p) => k.startsWith(p))) localStorage.removeItem(k)
+    }
+  } catch { /* yut — kota/gizli kip; çıkış bu yüzden engellenmemeli */ }
+}
+
 /** Uygulama genelinde oturum + profil. Supabase onAuthStateChange'e abone olur. */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
@@ -100,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         supabase.auth.signInWithPassword({ email, password }),
       signUp: (email: string, password: string, name: string, ek?: Record<string, string>) =>
         supabase.auth.signUp({ email, password, options: { data: { name, ...(ek ?? {}) } } }),
-      signOut: () => supabase.auth.signOut(),
+      signOut: async () => { kullaniciVerisiniTemizle(); return supabase.auth.signOut() },
       refreshProfile,
     }),
     [session, profile, loading, profilYukleniyor, refreshProfile],

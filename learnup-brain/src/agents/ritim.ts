@@ -42,6 +42,17 @@ export async function handleTask(task: AgentTask): Promise<unknown> {
   }
 }
 
+/**
+ * ⚠️ `costOptimized` / `skipVerification` BU TİPTE YOK — GERİ EKLEME.
+ * İkisi de payload'dan okunuyordu ve /api/agents/dispatch her oturumlu kullanıcıya açık
+ * (routes/agents.routes.ts). `skipVerification` generation.denetle içinde hakemi TAMAMEN
+ * atlatıp `matchesMarked/singleCorrect/curriculumBound = true` UYDURUR, `quality = 4` verir;
+ * aşağıdaki yazım da `verified: true` ile ortak havuza basar. Yani herhangi bir öğrenci
+ * hesabı, doğru cevabı HİÇ KONTROL EDİLMEMİŞ soruyu TÜM öğrencilere servis edilen havuza
+ * yazdırabiliyordu — aşağıdaki yorumun "kapattık" dediği havuz-zehirlenmesi sınıfının aynısı,
+ * yalnız başka kapıdan. Strateji seçenekleri İÇERİDEN verilir (test-modes/script'ler);
+ * HTTP yüzeyinden asla.
+ */
 type TopupPayload = {
   kazanimId?: number
   difficulty?: string
@@ -82,6 +93,7 @@ async function handleTopup(task: AgentTask): Promise<unknown> {
     kazanim: node.code ?? '',
     topic: node.title,
     difficulty,
+    // options YOK: doğrulama/onarım zinciri bu yolda HER ZAMAN çalışır (yukarıdaki uyarı).
   }
   const target = Math.min(MAX_TOPUP, Math.max(1, Math.floor(Number(p.count)) || 5))
   const set = await generateVerifiedSet(spec, target)

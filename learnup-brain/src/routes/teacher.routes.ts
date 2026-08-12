@@ -6,7 +6,8 @@ import { rontgenGovdesi } from '../lib/rontgen.js'
 import { denetimYaz, type DenetimEylemi } from '../lib/denetim.js'
 import { assertTeacherOwnsStudent, kimlikAl, kimligiUnut, sinifiUnut } from '../lib/yetki.js'
 import { HttpHatasi, bulunamadi, gecersizIstek } from '../lib/hata.js'
-import { validateQuery } from '../middleware/validate.js'
+import { logger } from '../utils/logger.js'
+import { IdParam, validateQuery } from '../middleware/validate.js'
 import { havuzdanSec, sorulariMaterialize, uyariMetni, type HavuzKaynak } from '../lib/odev-derle.js'
 import type {
   HavuzListesiYaniti,
@@ -96,6 +97,36 @@ const ISI_ZAYIF_ESIK = 0.4
 const ZAYIF_WRONG_RATE = 0.6
 const ZAYIF_MIN_ATTEMPTS = 3
 
+/**
+ * SON TARİH ÇÖZÜMÜ — istemciden gelen değeri `timestamptz`e uygun bir ana çevirir.
+ *
+ * İki ayrı tuzağı birlikte kapatır:
+ *
+ * 1) DOĞRULAMA YOKTU. Değer `String(b.dueDate)` olarak doğrudan kolona gidiyordu;
+ *    geçersiz bir metin Postgres 22007 üretiyor ve uç bunu 500 `odev_olusturulamadi`'ya
+ *    çeviriyordu — yani istemci hatası sunucu hatası gibi görünüyordu.
+ *
+ * 2) GÜN SINIRI. Arayüz tarih kutusu `YYYY-MM-DD` gönderir. Bunu olduğu gibi yazmak
+ *    UTC gece yarısı = TSİ 03:00 demektir: öğretmenin "20 Ağustos'a kadar" dediği ödev
+ *    20 Ağustos sabahı 03:00'te kapanır ve o günün TAMAMI kapalı olur. Gün-yalnız değer
+ *    o günün SONUNA (23:59:59.999, Europe/Istanbul) çekilir.
+ *
+ * Sabit +03:00: Türkiye 2016'dan beri kalıcı UTC+3, yaz saati uygulaması yok.
+ */
+function sonTarihCoz(ham: unknown): string | null {
+  if (ham == null || ham === '') return null
+  const s = String(ham).trim()
+  if (!s) return null
+
+  const gunYalniz = /^\d{4}-\d{2}-\d{2}$/.test(s)
+  const aday = gunYalniz ? `${s}T23:59:59.999+03:00` : s
+  const t = new Date(aday)
+  if (Number.isNaN(t.getTime())) {
+    throw gecersizIstek('gecersiz_son_tarih', 'Son tarih anlaşılamadı. Beklenen biçim: 2026-08-20.')
+  }
+  return t.toISOString()
+}
+
 type SinifOzetiSatiri = {
   student_id: string
   name: string | null
@@ -174,13 +205,38 @@ teacherRouter.get('/ozet', async (req, res, next) => {
     const aktif = (s: SinifOzetiSatiri, esik: number): boolean =>
       s.last_active !== null && +new Date(s.last_active) >= esik
 
-    // Haftalık toplam + 84 günlük sınıf trendi TEK sorgudan çıkar (sinif_ozeti 30 gün verir).
+    /**
+     * 84 GÜNLÜK SINIF TRENDİ — SAYIM DB'DE, SATIRLAR AĞDA DEĞİL.
+     *
+     * Eskiden sınıfın tüm cevap logu (40 kişilik aktif sınıfta ~60.000 satır, `fetchAll`
+     * ile ~60 ardışık PostgREST isteği) belleğe çekilip burada gruplanıyordu; üretilen
+     * çıktı 42 kovalık bir sparkline + üç KPI'dı. Uçta yanıt önbelleği YOK (bilerek:
+     * öğretmenler arası sızıntı) — yani bu maliyet HER panel açılışında ödeniyordu ve
+     * öğretmen sınıf → öğrenci → sınıf gezinmesinde bunu sürekli tekrarlıyordu.
+     * 200 öğrencide `.in()` sorgu dizesi ~7,5 KB'a çıkıp bilinen 414 sınırına yaklaşıyordu.
+     *
+     * ⚠️ MİGRATION BASILMADIYSA PANELİ ÖLDÜRME (0038): RPC yoksa eski yola düşülür ve
+     * log'a uyarı basılır — panel çalışır, yalnız pahalı yoldan (aynı çizgi: chat.routes.ts
+     * · sohbet_oturumlari, rag.ts).
+     */
     const ids = satirlar.map((s) => s.student_id)
-    let cozulen = 0
-    let dogru = 0
-    let xp = 0
     const gunler = new Map<string, { solved: number; correct: number; xp: number }>()
-    if (ids.length) {
+
+    const { data: trendSatirlari, error: trendHata } = await supabase.rpc('sinif_gunluk_trend', {
+      p_teacher_id: teacherId,
+      p_days: 84,
+    })
+
+    if (!trendHata) {
+      for (const g of (trendSatirlari ?? []) as Array<Record<string, unknown>>) {
+        gunler.set(String(g.gun), {
+          solved: Number(g.solved ?? 0),
+          correct: Number(g.correct ?? 0),
+          xp: Number(g.xp ?? 0),
+        })
+      }
+    } else if (ids.length) {
+      logger.warn({ err: trendHata }, 'sinif_gunluk_trend RPC çağrılamadı (0038 basılı mı?) — satır sayımına düşülüyor')
       const loglar = await fetchAll<{
         created_at: string
         is_correct: boolean | null
@@ -196,7 +252,7 @@ teacherRouter.get('/ozet', async (req, res, next) => {
       for (const l of loglar) {
         const sayilir = !l.is_skipped && l.is_correct !== null
         // Gün anahtarı Europe/Istanbul — sınıfın "bugün"ü UTC gece yarısında bölünmesin
-        // (lib/rontgen.ts'teki gunAnahtari ile aynı kural).
+        // (lib/rontgen.ts'teki gunAnahtari ve RPC'nin `at time zone` ifadesiyle aynı kural).
         const anahtar = new Date(l.created_at).toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' })
         const g = gunler.get(anahtar) ?? { solved: 0, correct: 0, xp: 0 }
         if (sayilir) {
@@ -205,15 +261,29 @@ teacherRouter.get('/ozet', async (req, res, next) => {
         }
         g.xp += l.xp ?? 0
         gunler.set(anahtar, g)
-
-        if (+new Date(l.created_at) >= yediGun) {
-          if (sayilir) {
-            cozulen += 1
-            if (l.is_correct) dogru += 1
-          }
-          xp += l.xp ?? 0
-        }
       }
+    }
+
+    /**
+     * HAFTALIK TOPLAM ARTIK GÜN KOVALARINDAN TÜRETİLİR.
+     *
+     * Eskiden ham satırlar üzerinde "son 168 saat" olarak sayılıyordu; şeridin başlığı ise
+     * "bu hafta" diyordu. İkisi aynı şey değil: gece yarısından sonra çözülen sorular
+     * kayan pencerede bir gün fazladan görünüyordu. Kovalar TSİ takvim günü olduğu için
+     * artık ekrandaki trend çubuklarıyla KPI aynı günleri sayıyor.
+     */
+    // ⚠️ SINIR 6 GÜN ÖNCE, 7 DEĞİL: bugün DE sayıldığı için 7 gün önceki günden başlamak
+    // pencereyi 8 takvim gününe genişletirdi ("bu hafta" 8 gün olurdu).
+    const yediGunAnahtari = new Date(simdi - 6 * 86_400_000)
+      .toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' })
+    let cozulen = 0
+    let dogru = 0
+    let xp = 0
+    for (const [anahtar, g] of gunler) {
+      if (anahtar < yediGunAnahtari) continue
+      cozulen += g.solved
+      dogru += g.correct
+      xp += g.xp
     }
 
     const takipli = satirlar.filter((s) => s.avg_mastery !== null)
@@ -324,6 +394,14 @@ teacherRouter.get('/sinif/isi-haritasi', async (req, res, next) => {
     if (error) throw new HttpHatasi(500, 'isi_haritasi_okunamadi', 'Isı haritası hesaplanamadı.')
     const satirlar = (data ?? []) as IsiSatiri[]
 
+    // Gerçek sınıf mevcudu — haritanın kapsamını dürüst yazabilmek için (bkz. aşağıda).
+    // `sinif_mevcudu` bu ucun kullandığı RPC ile AYNI roster tanımını taşır (0016:82).
+    const { data: mevcut, error: mevcutHata } = await supabase.rpc('sinif_mevcudu', {
+      p_teacher_id: teacherId,
+    })
+    if (mevcutHata) throw new HttpHatasi(500, 'mevcut_okunamadi', 'Sınıf mevcudu okunamadı.')
+    const mevcutSayisi = ((mevcut ?? []) as unknown[]).length
+
     // Ünite başlıkları: TEK sorgu, hücre başına DEĞİL.
     const yollar = [...new Set(satirlar.map((s) => s.unit_path))]
     const basliklar = new Map<string, string>()
@@ -348,7 +426,22 @@ teacherRouter.get('/sinif/isi-haritasi', async (req, res, next) => {
         attempts: Number(s.attempts),
       })),
       subjects: [...new Set(satirlar.map((s) => s.subject))].sort((a, b) => a.localeCompare(b, 'tr')),
-      ogrenciSayisi: satirlar.length ? Math.max(...satirlar.map((s) => s.student_count)) : 0,
+      /**
+       * ⚠️ İKİ AYRI SAYI, İKİ AYRI SORU.
+       *
+       * `ogrenciSayisi` = SINIF MEVCUDU (sinif_mevcudu). Eskiden burada
+       * `Math.max(...student_count)` vardı: `sinif_isi_haritasi` her hücre için o ÜNİTEDE
+       * ölçümü olan öğrenci sayısını döndürüyor ve bunların maksimumu sınıf mevcudu
+       * DEĞİL. 30 kişilik sınıfta matris altında "9 öğrenci" yazıyordu; öğretmen bunu
+       * "sınıfım 9 kişi" ya da "haritada 9 kişi var" diye okuyup haritanın kapsamını
+       * sistematik olarak yanlış tahmin ediyordu. Ekranın kendi dürüstlük kuralı
+       * ("sayı uydurulmaz") sayının DEĞERİNDE değil ADINDA çiğneniyordu.
+       *
+       * `olculenOgrenci` = en kalabalık hücrenin ölçüm sayısı — eski değer, doğru adıyla.
+       * Ekran ikisini birlikte söyler: "30 öğrencinin 9'u ölçüldü".
+       */
+      ogrenciSayisi: mevcutSayisi,
+      olculenOgrenci: satirlar.length ? Math.max(...satirlar.map((s) => s.student_count)) : 0,
       esik: { zayif: ISI_ZAYIF_ESIK },
       olcumZamani: new Date().toISOString(),
     }
@@ -488,22 +581,36 @@ teacherRouter.get('/sinif/zayif-kazanimlar', async (req, res, next) => {
     if (error) throw new HttpHatasi(500, 'zayif_okunamadi', 'Zayıf kazanımlar hesaplanamadı.')
     const satirlar = (data ?? []) as ZayifSatiri[]
 
-    // Havuz stoğu: kazanım başına DEĞİL, iki toplu sorgu + Map.
+    /**
+     * HAVUZ STOĞU — SAYIM DB'DE (0038 · havuz_stok).
+     *
+     * Eskiden istenen şey SAYI'ydı ama kod tüm satırları getirip JS'te Map'e sayıyordu:
+     * `SinifIsi` bu ucu `limit: 100` ile çağırıyor → 100 kazanım × ortalama 200 soru ×
+     * iki tablo ≈ 40.000 satır, ~40 sayfalama isteği. `lib/pg.ts` bunun için `sayimAl`ı
+     * yazmıştı; burada kullanılmamıştı.
+     *
+     * ⚠️ `osym` SAYACI KALDIRILDI. Telif kararı (2026-07-22) gereği çıkmış ÖSYM sorusu
+     * ödeve DERLENEMİYOR; sayacı taşımak arayüze "havuz dolu" dedirtiyordu ve Sınıf
+     * Panosu ödev kapısını tam bu sayı yüzünden yanlış açıyordu (O1). Ölçüde olmayan
+     * bir stoğu göstermemek, onu gösterip her yerde ayıklamaktan ucuz.
+     */
     const ids = satirlar.map((s) => s.kazanim_id)
-    const osymSayim = new Map<number, number>()
     const aiSayim = new Map<number, number>()
     if (ids.length) {
-      const [osym, ai] = await Promise.all([
-        fetchAll<{ kazanim_id: number }>(() =>
-          supabase.from('yks_questions').select('kazanim_id').in('kazanim_id', ids).eq('verified', true),
-        ),
-        fetchAll<{ kazanim_id: number }>(() =>
+      const { data: stok, error: stokHata } = await supabase.rpc('havuz_stok', { p_kazanim_ids: ids })
+      if (!stokHata) {
+        for (const r of (stok ?? []) as Array<{ kazanim_id: number; ai: number }>) {
+          aiSayim.set(Number(r.kazanim_id), Number(r.ai))
+        }
+      } else {
+        // ⚠️ MİGRATION BASILMADIYSA LİSTEYİ ÖLDÜRME (0038): eski yol pahalı ama doğru.
+        logger.warn({ err: stokHata }, 'havuz_stok RPC çağrılamadı (0038 basılı mı?) — satır sayımına düşülüyor')
+        const ai = await fetchAll<{ kazanim_id: number }>(() =>
           supabase.from('yks_ai_questions').select('kazanim_id').in('kazanim_id', ids)
             .eq('verified', true).eq('karantina', false), // 0025
-        ),
-      ])
-      for (const r of osym) osymSayim.set(r.kazanim_id, (osymSayim.get(r.kazanim_id) ?? 0) + 1)
-      for (const r of ai) aiSayim.set(r.kazanim_id, (aiSayim.get(r.kazanim_id) ?? 0) + 1)
+        )
+        for (const r of ai) aiSayim.set(r.kazanim_id, (aiSayim.get(r.kazanim_id) ?? 0) + 1)
+      }
     }
 
     const kazanimlar: SinifZayifKazanim[] = satirlar.map((s) => ({
@@ -516,10 +623,8 @@ teacherRouter.get('/sinif/zayif-kazanimlar', async (req, res, next) => {
       studentCount: s.student_count,
       weakStudentCount: s.weak_student_count,
       attempts: Number(s.attempts),
-      havuzdaSoru: {
-        osym: osymSayim.get(s.kazanim_id) ?? 0,
-        ai: aiSayim.get(s.kazanim_id) ?? 0,
-      },
+      // `osym` alanı bilerek YOK (bkz. yukarısı): derlenemeyen stok raporlanmaz.
+      havuzdaSoru: { ai: aiSayim.get(s.kazanim_id) ?? 0 },
     }))
 
     const yanit: SinifZayifYaniti = {
@@ -547,10 +652,24 @@ teacherRouter.get('/ogrenci/:studentId', async (req, res, next) => {
     const [satirlar, zayif, sinifOdev, hedefliOdev] = await Promise.all([
       sinifOzetiCek(teacherId, days),
       supabase.rpc('weak_kazanimlar', { p_user_id: studentId, p_limit: 8 }),
+      /**
+       * ⚠️ KAPSAM: yalnız BU öğretmenin verdiği sınıf ödevleri.
+       *
+       * Hemen aşağıdaki `targeted_assignments` sorgusunda `teacher_id` süzgeci vardı,
+       * burada yoktu — asimetri aynı Promise.all bloğunun içindeydi. Öğrenci şube/okul
+       * değiştirdiğinde (POST /sinif/katil bunu destekliyor ve eski gönderim satırları
+       * bilerek silinmiyor) yeni öğretmen, ESKİ öğretmenin ödev başlıklarını ve puanlarını
+       * "tur: 'sinif'" rozetiyle kendi ödevlerinden ayırt edemeden görüyordu.
+       *
+       * `assignments.teacher_id` üstünden süzülür: `assignment_submissions.teacher_id`
+       * kolonu yalnız 2026 sonrası gönderimlerde dolu (assignments.routes.ts:249), eski
+       * satırlarda null — gömme üzerinden süzmek ikisini de doğru kapsar.
+       */
       supabase
         .from('assignment_submissions')
-        .select('id, assignment_id, score, max_score, created_at, assignments(subject, topic)')
+        .select('id, assignment_id, score, max_score, created_at, assignments!inner(subject, topic, teacher_id)')
         .eq('student_id', studentId)
+        .eq('assignments.teacher_id', teacherId)
         .order('created_at', { ascending: false })
         .limit(5),
       supabase
@@ -809,17 +928,27 @@ teacherRouter.post('/odev', async (req, res, next) => {
       ? (b.questionIds as unknown[]).map(String).slice(0, 40)
       : null
 
+    /**
+     * UYARI TABANI = GERÇEKTEN İSTENEN ADET.
+     *
+     * Elle seçim varken `adet` zaten `secilenIds.length`'e çekiliyordu ama uyarı metni
+     * hâlâ `soruSayisi` gövde alanını "istenen" sayıyordu (arayüz elle seçimde de o alanı
+     * göndermeye devam ediyor). Sonuç: öğretmen 5 soruyu tek tek seçtiğinde "Havuzda bu
+     * kriterlere uyan 5 soru bulundu (10 istenmişti)" uyarısı çıkıyordu — havuzda eksik
+     * yokken eksik varmış gibi. uyariMetni'nin tüm amacı DÜRÜST eksiklik bildirimi.
+     */
+    const hedefAdet = secilenIds?.length ? secilenIds.length : istenen
+
     const secilen = await havuzdanSec({
       kaynak,
       subject,
       topic: b.topic ? String(b.topic) : null,
       kazanimIds: kazanimId ? [kazanimId] : null,
       difficulty: b.difficulty ? String(b.difficulty) : null,
-      adet: secilenIds?.length ? secilenIds.length : istenen,
+      adet: hedefAdet,
       secilenIds,
     })
 
-    const kimlik = await kimlikAl(teacherId)
     const { data: prof } = await supabase.from('profiles').select('grade').eq('id', teacherId).maybeSingle()
     const derleme = await sorulariMaterialize(secilen, teacherId, (prof?.grade as string | null) ?? null)
 
@@ -829,7 +958,7 @@ teacherRouter.post('/odev', async (req, res, next) => {
       throw new HttpHatasi(
         409,
         'havuz_bos',
-        uyariMetni(istenen, 0, derleme.atlanan) ?? 'Bu kriterlere uyan soru bulunamadı.',
+        uyariMetni(hedefAdet, 0, derleme.atlanan) ?? 'Bu kriterlere uyan soru bulunamadı.',
       )
     }
 
@@ -843,7 +972,7 @@ teacherRouter.post('/odev', async (req, res, next) => {
         title: baslik,
         question_count: derleme.questionIds.length,
         question_ids: derleme.questionIds,
-        due_date: b.dueDate ? String(b.dueDate) : null,
+        due_date: sonTarihCoz(b.dueDate),
         status: 'active',
         max_score: derleme.questionIds.length,
       })
@@ -863,14 +992,128 @@ teacherRouter.post('/odev', async (req, res, next) => {
     const yanit: OdevOlusturYanit = {
       id: String(odev.id),
       questionIds: derleme.questionIds,
-      istenen,
+      istenen: hedefAdet,
       bulunan: derleme.questionIds.length,
       kaynakDagilimi: derleme.kaynakDagilimi,
-      uyari: uyariMetni(istenen, derleme.questionIds.length, derleme.atlanan),
+      uyari: uyariMetni(hedefAdet, derleme.questionIds.length, derleme.atlanan),
       denetimYazildi,
     }
-    void kimlik
     res.status(201).json(yanit)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ÖDEV YAŞAM DÖNGÜSÜ — kapatma / son tarih / silme.
+
+   Öncesinde `assignments` tablosuna yazan TEK yol POST /odev'di: PATCH yoktu,
+   DELETE yoktu, `status` `'active'` sabitiyle yazılıp bir daha değişmiyordu.
+   Sonucu şuydu: yanlış yayınlanmış bir ödev KALICIYDI. Öğrenciler yanlış ödevi
+   görmeye, göndermeye ve o puanlar sınıf ortalamasına girmeye devam ediyordu;
+   "Aktif Ödev Takibi" paneli ödevi sonsuza dek "açık · henüz yapmayan N öğrenci"
+   gösteriyordu. Öğretmenin tek çaresi ikinci bir ödev yayınlamaktı.
+
+   Karşı taraf ZATEN HAZIRDI: assignments.routes.ts:208-215 gönderimde hem
+   `status !== 'active'` hem `due_date` geçmişini 409 ile reddediyor. Yani ödev
+   penceresi üç katmanda vardı, yalnız öğretmenin dokunabildiği yerde yoktu.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const OdevGuncelleSchema = z
+  .object({
+    // 'archived' = kapalı. assignments.routes.ts 'active' dışındaki her değeri
+    // "artık açık değil" sayıyor; serbest metin kabul etmek o kapıyı bulanıklaştırırdı.
+    status: z.enum(['active', 'archived']).optional(),
+    // null = son tarihi KALDIR ("süresiz"). undefined = dokunma. İkisi farklı şeyler.
+    dueDate: z.string().max(40).nullable().optional(),
+  })
+  .refine((d) => d.status !== undefined || d.dueDate !== undefined, {
+    message: 'Güncellenecek alan yok (status ya da dueDate).',
+  })
+
+/** Ödevi kapsamdaki öğretmene ait olarak doğrular. Yoksa ve başkasınınsa AYNI 404:
+ *  "var ama senin değil" bilgisi sızmasın (assertTeacherOwnsStudent ile aynı çizgi). */
+async function odeviSahiplen(odevId: string, teacherId: string) {
+  const { data, error } = await supabase
+    .from('assignments')
+    .select('id, teacher_id, title, subject, status')
+    .eq('id', odevId)
+    .maybeSingle()
+  if (error) throw new HttpHatasi(500, 'odev_okunamadi', 'Ödev okunamadı.')
+  if (!data || String(data.teacher_id) !== teacherId) {
+    throw bulunamadi('odev_yok', 'Ödev bulunamadı.')
+  }
+  return data as { id: string; teacher_id: string; title: string | null; subject: string | null; status: string | null }
+}
+
+// ── PATCH /teacher/odev/:id — durum ve/veya son tarih ────────────────────────
+teacherRouter.patch('/odev/:id', async (req, res, next) => {
+  try {
+    const teacherId = kapsam(req)
+    const p = IdParam.safeParse(req.params)
+    if (!p.success) throw gecersizIstek('gecersiz_id', 'Ödev kimliği geçersiz.')
+    const g = OdevGuncelleSchema.safeParse(req.body ?? {})
+    if (!g.success) {
+      throw gecersizIstek('gecersiz_govde', g.error.issues[0]?.message ?? 'Geçersiz istek.')
+    }
+    const odev = await odeviSahiplen(p.data.id, teacherId)
+
+    const yama: Record<string, unknown> = {}
+    if (g.data.status !== undefined) yama.status = g.data.status
+    // `'dueDate' in` — null ile undefined ayrımı burada korunur (bkz. şema yorumu).
+    if ('dueDate' in g.data) yama.due_date = sonTarihCoz(g.data.dueDate)
+
+    const { error } = await supabase.from('assignments').update(yama).eq('id', odev.id)
+    if (error) throw new HttpHatasi(500, 'odev_guncellenemedi', 'Ödev güncellenemedi.')
+
+    const denetimYazildi = await vekilIzi(req, 'ogretmen_adina_odev', {
+      tur: 'odev_guncelle',
+      odevId: odev.id,
+      baslik: odev.title,
+      yama,
+    })
+    res.json({ id: odev.id, status: yama.status ?? odev.status, denetimYazildi })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── DELETE /teacher/odev/:id — gönderim yoksa sil, varsa arşivle ─────────────
+teacherRouter.delete('/odev/:id', async (req, res, next) => {
+  try {
+    const teacherId = kapsam(req)
+    const p = IdParam.safeParse(req.params)
+    if (!p.success) throw gecersizIstek('gecersiz_id', 'Ödev kimliği geçersiz.')
+    const odev = await odeviSahiplen(p.data.id, teacherId)
+
+    /**
+     * ⚠️ GÖNDERİM VARSA SİLİNMEZ, ARŞİVLENİR. `assignment_submissions.assignment_id`
+     * `on delete cascade` (0001:199): silmek öğrencilerin verdiği cevapları ve aldıkları
+     * puanları da SİLERDİ — öğretmenin "bu ödevi kaldır" isteği, öğrencinin çalışmasını
+     * yok etmek anlamına gelmemeli. Arşiv aynı sonucu verir (gönderim kapanır, panelde
+     * "açık" görünmez) ve geçmişi korur.
+     */
+    const { count } = await supabase
+      .from('assignment_submissions')
+      .select('*', { count: 'exact', head: true })
+      .eq('assignment_id', odev.id)
+
+    const gonderimVar = (count ?? 0) > 0
+    if (gonderimVar) {
+      const { error } = await supabase.from('assignments').update({ status: 'archived' }).eq('id', odev.id)
+      if (error) throw new HttpHatasi(500, 'odev_arsivlenemedi', 'Ödev arşivlenemedi.')
+    } else {
+      const { error } = await supabase.from('assignments').delete().eq('id', odev.id)
+      if (error) throw new HttpHatasi(500, 'odev_silinemedi', 'Ödev silinemedi.')
+    }
+
+    const denetimYazildi = await vekilIzi(req, 'ogretmen_adina_odev', {
+      tur: gonderimVar ? 'odev_arsivle' : 'odev_sil',
+      odevId: odev.id,
+      baslik: odev.title,
+      gonderimSayisi: count ?? 0,
+    })
+    res.json({ id: odev.id, silindi: !gonderimVar, arsivlendi: gonderimVar, gonderimSayisi: count ?? 0, denetimYazildi })
   } catch (err) {
     next(err)
   }
@@ -886,10 +1129,27 @@ teacherRouter.post('/hedefli-odev', async (req, res, next) => {
     const studentId = String(b.studentId ?? '')
     const ogrenci = await assertTeacherOwnsStudent(teacherId, studentId)
 
-    const istenen = Math.min(40, Math.max(1, Number(b.soruSayisi) || 10))
     const kaynak = (['osym', 'ai', 'karisik'] as const).includes(b.kaynak as never)
       ? (b.kaynak as HavuzKaynak)
       : 'karisik'
+
+    /**
+     * ⚠️ ELLE SEÇİM VE ZORLUK BURADA DA OKUNUR — sınıf dalıyla aynı sözleşme.
+     *
+     * Arayüz ikisini de gönderiyordu (OdevAtolyesi.tsx · questionIds + zorluk çipi) ama
+     * bu uç yalnız `soruSayisi` ve `kazanimIds`'i okuyordu: öğretmen havuzdan 5 soru
+     * işaretleyip tek öğrenciye yolladığında sepet "5 soru gidecek — elle seçildi" derken
+     * öğrenciye zayıf kazanımlarından derlenmiş RASTGELE 10 soru düşüyordu. Sepetin vaadi
+     * ile giden istek sessizce ayrışıyordu; öğretmenin bunu fark etmesinin bir yolu yoktu.
+     */
+    const secilenIds = Array.isArray(b.questionIds)
+      ? (b.questionIds as unknown[]).map(String).slice(0, 40)
+      : null
+    const difficulty = b.difficulty ? String(b.difficulty) : null
+
+    const istenen = secilenIds?.length
+      ? secilenIds.length
+      : Math.min(40, Math.max(1, Number(b.soruSayisi) || 10))
 
     // Kazanım verilmediyse motorun işaretlediklerini kullan — panelin bütün fikri bu.
     let kazanimlar: Array<{ kazanimId: number; title: string; wrongRate: number }> = []
@@ -911,7 +1171,11 @@ teacherRouter.post('/hedefli-odev', async (req, res, next) => {
       }))
     }
 
-    if (!kazanimlar.length) {
+    // ⚠️ ELLE SEÇİMDE ZAYIF KAZANIM ŞARTI ARANMAZ: öğretmen soruları kendisi seçtiyse
+    // motorun teşhisine ihtiyaç yoktur. Aksi hâlde hiç ölçümü olmayan bir öğrenciye elle
+    // set gönderilemez, üstelik hata "zayıf kazanım yok" derdi — öğretmenin yaptığı işle
+    // ilgisiz bir gerekçe.
+    if (!kazanimlar.length && !secilenIds?.length) {
       throw new HttpHatasi(
         409,
         'zayif_kazanim_yok',
@@ -922,9 +1186,11 @@ teacherRouter.post('/hedefli-odev', async (req, res, next) => {
     const secilen = await havuzdanSec({
       kaynak,
       kazanimIds: kazanimlar.map((k) => k.kazanimId),
+      difficulty,
       adet: istenen,
       // Daha önce bu öğrenciye gitmiş sorular elenir: "yeni set" gerçekten yeni olsun.
       studentId,
+      secilenIds,
     })
     const derleme = await sorulariMaterialize(secilen, teacherId, ogrenci.grade)
 
@@ -948,12 +1214,15 @@ teacherRouter.post('/hedefli-odev', async (req, res, next) => {
     // 2'si havuzda boş olduğu hâlde katkı vermiş gibi göstermek olurdu.
     const katkiVeren = kazanimlar.filter((k) => (adetler.get(k.kazanimId) ?? 0) > 0).length
     const bosKalan = kazanimlar.length - katkiVeren
-    const rationale =
-      `${ogrenci.name ?? 'Öğrenci'} için ${katkiVeren} kazanımdan ${derleme.questionIds.length} soru ` +
-      `derlendi (ÖSYM ${derleme.kaynakDagilimi.osym}, AI ${derleme.kaynakDagilimi.ai}).` +
-      (bosKalan > 0
-        ? ` ${bosKalan} zayıf kazanım havuzda soru olmadığı için sete giremedi.`
-        : '')
+    // Elle seçimde gerekçe DE farklıdır: "0 kazanımdan derlendi" demek, öğretmenin
+    // kendi seçtiği seti motor teşhisi gibi göstermek olurdu.
+    const rationale = secilenIds?.length
+      ? `${ogrenci.name ?? 'Öğrenci'} için öğretmenin elle seçtiği ${derleme.questionIds.length} soru gönderildi.`
+      : `${ogrenci.name ?? 'Öğrenci'} için ${katkiVeren} kazanımdan ${derleme.questionIds.length} soru ` +
+        `derlendi (ÖSYM ${derleme.kaynakDagilimi.osym}, AI ${derleme.kaynakDagilimi.ai}).` +
+        (bosKalan > 0
+          ? ` ${bosKalan} zayıf kazanım havuzda soru olmadığı için sete giremedi.`
+          : '')
 
     const { data: ta, error } = await supabase
       .from('targeted_assignments')
@@ -1011,10 +1280,20 @@ teacherRouter.post('/ogrenci', async (req, res, next) => {
       throw gecersizIstek('gecersiz_eposta', 'Geçerli bir e-posta adresi gerekli.')
     }
 
+    /**
+     * ⚠️ `eq`, `ilike` DEĞİL. `ilike` LIKE deseni yorumlar: `%` ve `_` joker karakterdir
+     * ve hiçbir yerde kaçışlanmıyordu. `ahmet%@%` yazan bir öğretmen, adını da adresini
+     * de bilmediği bir öğrenciyi sınıfına alabiliyor ve TAM e-posta adresini yanıtta geri
+     * okuyabiliyordu — aşağıdaki "hangi e-postalar kayıtlı yoklanamasın" değişmezinin
+     * tam tersi. `_` ile tek karakter yoklaması da mümkündü (`ali_@gmail.com`).
+     *
+     * `eq` güvenli: kolon zaten küçük harfle yazılıyor (handle_new_user → new.email) ve
+     * istek de `.toLowerCase()` ile normalize ediliyor, yani büyük/küçük harf kaybı yok.
+     */
     const { data: aday, error } = await supabase
       .from('profiles')
       .select('id, name, email, role, teacher_id')
-      .ilike('email', email)
+      .eq('email', email)
       .maybeSingle()
     if (error) throw new HttpHatasi(500, 'ogrenci_aranamadi', 'Öğrenci aranamadı.')
     if (!aday || aday.role !== 'student') {
@@ -1060,7 +1339,7 @@ teacherRouter.post('/ogrenci', async (req, res, next) => {
     }
 
     await kimligiUnut(aday.id)
-    sinifiUnut(teacherId)
+    await sinifiUnut(teacherId)
 
     const denetimYazildi = await vekilIzi(req, 'ogretmen_adina_ogrenci', {
       islem: 'ekle',
@@ -1069,9 +1348,12 @@ teacherRouter.post('/ogrenci', async (req, res, next) => {
       email: aday.email ?? null,
     })
 
+    // ⚠️ Yanıtta `email` YOK: öğretmen zaten yazdığı adresi biliyor, geri vermek yalnız
+    // bir yoklama aracının çıktısı olurdu. Denetim defterine yazılır (yukarıda) — orada
+    // kimin kimi eklediğini göstermek gerekir; istemciye dönmek gerekmez.
     res.json({
       eklendi: true,
-      student: { id: aday.id, name: aday.name ?? null, email: aday.email ?? null },
+      student: { id: aday.id, name: aday.name ?? null },
       denetimYazildi,
     })
   } catch (err) {
@@ -1090,15 +1372,31 @@ teacherRouter.delete('/ogrenci/:studentId', async (req, res, next) => {
     const teacherId = kapsam(req)
     const ogrenci = await assertTeacherOwnsStudent(teacherId, String(req.params.studentId))
 
+    // ⚠️ SAHİPLİK İKİ KOLONDA: assertTeacherOwnsStudent bağı
+    // `teacher_id === X` **VEYA** `teacher_ids içerir X` olarak kabul ediyor (lib/yetki.ts).
+    // Çıkarma ise yalnız `teacher_id`'yi null'lıyordu. Öğrencinin teacher_id=B,
+    // teacher_ids=["A"] olduğu bir kayıtta öğretmen A çıkarma yaptığında:
+    //   · A'nın KENDİ üyeliği (teacher_ids) KALIYOR   → öğrenci hâlâ A'nın mevcudunda,
+    //   · B'nin bağı SİLİNİYOR                         → öğrenci B'nin sınıfından düşüyor.
+    // Yanıt yine {cikarildi:true} dönüyordu. Yani bir öğretmen, başka bir öğretmenin
+    // sınıfından öğrenci düşürebiliyordu. Sahiplik kanonikse çıkarma da kanonik olmalı:
+    // yalnız ÇAĞIRAN öğretmenin bağı koparılır, diğer öğretmenlerinki korunur.
+    const kalanUyelikler = (Array.isArray(ogrenci.teacherIds) ? ogrenci.teacherIds : [])
+      .map((x) => String(x))
+      .filter((x) => x !== teacherId)
+
+    const yama: Record<string, unknown> = { teacher_ids: kalanUyelikler }
+    if (ogrenci.teacherId === teacherId) yama.teacher_id = null
+
     const { error } = await supabase
       .from('profiles')
-      .update({ teacher_id: null })
+      .update(yama)
       .eq('id', ogrenci.id)
       .eq('role', 'student')
     if (error) throw new HttpHatasi(500, 'cikarma_yazilamadi', 'Öğrenci sınıftan çıkarılamadı.')
 
     await kimligiUnut(ogrenci.id)
-    sinifiUnut(teacherId)
+    await sinifiUnut(teacherId)
 
     const denetimYazildi = await vekilIzi(req, 'ogretmen_adina_ogrenci', {
       islem: 'cikar',

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
-import { tGet, tPost, useSinifNav } from '../../lib/sinif-kapsam'
+import * as Dialog from '@radix-ui/react-dialog'
+import { tDelete, tGet, tPatch, tPost, useSinifNav } from '../../lib/sinif-kapsam'
 import { useAsync } from '../../lib/useAsync'
 import { useSinif } from '../../lib/sinif'
 import { dersAnahtar, gunEtiketi } from '../../lib/format'
@@ -17,17 +18,17 @@ import { Reveal } from '../../components/fx'
 import { MathMarkdown } from '../../components/MathMarkdown'
 
 /**
- * Ã–DEV ATÃ–LYESÄ° â€” havuzdan derle, sÄ±nÄ±fa ya da tek Ã¶ÄŸrenciye gÃ¶nder.
- * GOREV-037: onaylÄ± Ã¶nizleme portu (`docs/design/onizleme/odev-atolyesi.html`, onay 2026-07-23) â€”
- * inline FÄ°DAN `oa-*` deseni (SinifPanosu `sp-*` kalÄ±bÄ±). DAVRANIÅ AYNEN korunmuÅŸtur.
+ * ÖDEV ATÖLYESİ — havuzdan derle, sınıfa ya da tek öğrenciye gönder.
+ * GOREV-037: onaylı önizleme portu (`docs/design/onizleme/odev-atolyesi.html`, onay 2026-07-23) —
+ * inline FİDAN `oa-*` deseni (SinifPanosu `sp-*` kalıbı). DAVRANIŞ AYNEN korunmuştur.
  *
- * âš ï¸ SÄ°HÄ°RBAZ YOK (plandan bilinÃ§li sapma): "Sorular" ve "Ä°nceleme" adÄ±mlarÄ± pratikte
- * aynÄ± ÅŸey â€” filtre kurulunca eÅŸleÅŸenler zaten gÃ¶rÃ¼nÃ¼yor. Havuzun seyrek olduÄŸu
- * (kazanÄ±mlarÄ±n %70'inde soru yok) bir ortamda ayrÄ± bir "seÃ§im" adÄ±mÄ±, kullanÄ±cÄ±yÄ±
- * sÄ±k sÄ±k BOÅ bir ekrana gÃ¶tÃ¼rÃ¼rdÃ¼. Tek sayfa: solda kapsam + eÅŸleÅŸenler, saÄŸda sepet.
+ * ⚠️ SİHİRBAZ YOK (plandan bilinçli sapma): "Sorular" ve "İnceleme" adımları pratikte
+ * aynı şey — filtre kurulunca eşleşenler zaten görünüyor. Havuzun seyrek olduğu
+ * (kazanımların %70'inde soru yok) bir ortamda ayrı bir "seçim" adımı, kullanıcıyı
+ * sık sık BOŞ bir ekrana götürürdü. Tek sayfa: solda kapsam + eşleşenler, sağda sepet.
  *
- * âš ï¸ LLM YOK: backend havuzdan derler. Yetmezse `bulunan < istenen` gelir ve
- * uyarÄ± olduÄŸu gibi gÃ¶sterilir â€” sayÄ± uydurulmaz.
+ * ⚠️ LLM YOK: backend havuzdan derler. Yetmezse `bulunan < istenen` gelir ve
+ * uyarı olduğu gibi gösterilir — sayı uydurulmaz.
  */
 
 type HavuzSorusu = {
@@ -43,8 +44,8 @@ type HavuzSorusu = {
   examYear: number | null
 }
 
-/** GET /teacher/odevler yanÄ±tÄ±nÄ±n bu ekranÄ±n OKUDUÄU kesiti (teacher.routes.ts:534 aynasÄ± â€”
-    types.teacher.ts salt-okunur olduÄŸundan ekran-yerel; SinifPanosu `OdevTakipYaniti` emsali). */
+/** GET /teacher/odevler yanıtının bu ekranın OKUDUĞU kesiti (teacher.routes.ts:534 aynası —
+    types.teacher.ts salt-okunur olduğundan ekran-yerel; SinifPanosu `OdevTakipYaniti` emsali). */
 type GecmisOdev = {
   id: string
   subject: string | null
@@ -57,9 +58,9 @@ type GecmisOdev = {
 type GecmisYaniti = { assignments: GecmisOdev[]; ogrenciSayisi: number; total: number }
 
 /**
- * TELÄ°F KARARI (2026-07-22): Ã§Ä±kmÄ±ÅŸ (Ã–SYM) sorular hiÃ§bir kullanÄ±cÄ± yÃ¼zÃ¼ne servis edilmez.
- * Ã–dev derlemesi YALNIZ AI havuzundan yapÄ±lÄ±r â€” kaynak seÃ§ici arayÃ¼zden kaldÄ±rÄ±ldÄ± (GOREV-025).
- * Sunucu tarafÄ± reddi GOREV-016'nÄ±n iÅŸi; buradaki istekler her zaman kaynak:'ai' gÃ¶nderir.
+ * TELİF KARARI (2026-07-22): çıkmış (ÖSYM) sorular hiçbir kullanıcı yüzüne servis edilmez.
+ * Ödev derlemesi YALNIZ AI havuzundan yapılır — kaynak seçici arayüzden kaldırıldı (GOREV-025).
+ * Sunucu tarafı reddi GOREV-016'nın işi; buradaki istekler her zaman kaynak:'ai' gönderir.
  */
 const KAYNAK_AI = 'ai' as const
 
@@ -70,22 +71,22 @@ const ZORLUK: Array<['', string]> | Array<[string, string]> = [
   ['zor', 'Zor'],
 ]
 
-/** '2026-07-19' â†’ 'dÃ¼n' / '4 gÃ¼n Ã¶nce' / '2 hafta Ã¶nce'; 30+ gÃ¼nde kÄ±sa tarih (gerÃ§ek tarih hesabÄ±). */
+/** '2026-07-19' → 'dün' / '4 gün önce' / '2 hafta önce'; 30+ günde kısa tarih (gerçek tarih hesabı). */
 function goreceliGun(iso: string, simdi: number): string {
   const g = Math.max(0, Math.floor((simdi - +new Date(iso)) / 86_400_000))
-  if (g === 0) return 'bugÃ¼n'
-  if (g === 1) return 'dÃ¼n'
-  if (g < 7) return `${g} gÃ¼n Ã¶nce`
+  if (g === 0) return 'bugün'
+  if (g === 1) return 'dün'
+  if (g < 7) return `${g} gün önce`
   if (g < 30) {
     const h = Math.floor(g / 7)
-    return h === 1 ? '1 hafta Ã¶nce' : `${h} hafta Ã¶nce`
+    return h === 1 ? '1 hafta önce' : `${h} hafta önce`
   }
   return gunEtiketi(iso.slice(0, 10))
 }
 
-/* Ekran stilleri â€” Ã¶nizleme CSS'inin FÄ°DAN deÄŸiÅŸkenli karÅŸÄ±lÄ±ÄŸÄ± (oa- Ã¶neki Ã§akÄ±ÅŸmayÄ± Ã¶nler).
-   Animasyonlar hareket-azalt kapÄ±lÄ±; kart giriÅŸleri Reveal (useReducedMotion).
-   TÄ±k hedefleri â‰¥44px (FÄ°DAN Â§9.10) â€” Ã¶nizlemedeki 30-38px mini/segment dolgularÄ± bilinÃ§li bÃ¼yÃ¼tÃ¼ldÃ¼. */
+/* Ekran stilleri — önizleme CSS'inin FİDAN değişkenli karşılığı (oa- öneki çakışmayı önler).
+   Animasyonlar hareket-azalt kapılı; kart girişleri Reveal (useReducedMotion).
+   Tık hedefleri ≥44px (FİDAN §9.10) — önizlemedeki 30-38px mini/segment dolguları bilinçli büyütüldü. */
 const STIL = `
   .oa-kart { background: var(--cam); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--cam-kenar); border-radius: 20px; box-shadow: var(--golge); }
@@ -196,10 +197,12 @@ const STIL = `
 export function OdevAtolyesi() {
   const nav = useSinifNav()
   const [params] = useSearchParams()
-  const { roster } = useSinif()
+  // ⚠️ `loading` DE OKUNUR (panelin diğer ekranları gibi). Yalnız `roster` alınıp
+  // yüklenme beklenmediğinde hedefli ödev sessizce SINIFA gidiyordu — bkz. hedefKilitli.
+  const { roster, loading: sinifYukleniyor, error: sinifHatasi } = useSinif()
   const azalt = useReducedMotion()
 
-  // Derin baÄŸlantÄ± Ã¶n-dolgusu: rÃ¶ntgendeki "Set gÃ¶nder" buraya bÃ¶yle gelir.
+  // Derin bağlantı ön-dolgusu: röntgendeki "Set gönder" buraya böyle gelir.
   const onDolguOgrenci = params.get('ogrenci')
   const onDolguKazanim = params.get('kazanim')
   const onDolguDers = params.get('ders')
@@ -212,12 +215,14 @@ export function OdevAtolyesi() {
   const [ara, setAra] = useState('')
   const [araGecikmeli, setAraGecikmeli] = useState('')
   const [sayfa, setSayfa] = useState(0)
-  /** Elle seÃ§im. BoÅŸsa filtre + rastgele Ã¶rnekleme; doluysa TAM OLARAK bunlar gider. */
+  /** Son tarih (YYYY-MM-DD, boş = süresiz). Sunucu bunu o günün SONUNA çeker — bkz. sonTarihCoz. */
+  const [sonTarih, setSonTarih] = useState('')
+  /** Elle seçim. Boşsa filtre + rastgele örnekleme; doluysa TAM OLARAK bunlar gider. */
   const [secili, setSecili] = useState<string[]>([])
-  // "Åimdi" mount'ta bir kez: gÃ¶reli sÃ¼re metinleri render'lar arasÄ±nda titremesin (sp deseni).
+  // "Şimdi" mount'ta bir kez: göreli süre metinleri render'lar arasında titremesin (sp deseni).
   const [simdi] = useState(() => Date.now())
 
-  // AramayÄ± geciktir: her tuÅŸta havuza gitmek geniÅŸ havuzda hem yavaÅŸ hem gereksiz.
+  // Aramayı geciktir: her tuşta havuza gitmek geniş havuzda hem yavaş hem gereksiz.
   useEffect(() => {
     const t = setTimeout(() => { setAraGecikmeli(ara.trim()); setSayfa(0) }, 350)
     return () => clearTimeout(t)
@@ -225,16 +230,16 @@ export function OdevAtolyesi() {
 
   const kazanimId = onDolguKazanim ? Number(onDolguKazanim) : null
 
-  // Ders listesi sÄ±nÄ±fÄ±n Ä±sÄ± haritasÄ±ndan: Ã¶ÄŸretmene "sÄ±nÄ±fÄ±nÄ±n Ã§alÄ±ÅŸtÄ±ÄŸÄ± dersler"
-  // gÃ¶sterilir, mÃ¼fredatÄ±n tamamÄ± deÄŸil.
-  const isi = useAsync<IsiHaritasiYaniti>(() => tGet('/teacher/sinif/isi-haritasi'), [])
+  // Ders listesi sınıfın ısı haritasından: öğretmene "sınıfının çalıştığı dersler"
+  // gösterilir, müfredatın tamamı değil.
+  const isi = useAsync<IsiHaritasiYaniti>((signal) => tGet('/teacher/sinif/isi-haritasi', {}, { signal }), [])
   const dersler = isi.data?.subjects ?? []
 
-  // GeÃ§miÅŸ Ã–devler (GOREV-037) â€” GERÃ‡EK uÃ§, mock yok: GET /teacher/odevler (teacher.routes.ts:534).
-  const gecmis = useAsync<GecmisYaniti>(() => tGet('/teacher/odevler'), [])
+  // Geçmiş Ödevler (GOREV-037) — GERÇEK uç, mock yok: GET /teacher/odevler (teacher.routes.ts:534).
+  const gecmis = useAsync<GecmisYaniti>((signal) => tGet('/teacher/odevler', {}, { signal }), [])
 
-  // âš ï¸ BaÄŸÄ±mlÄ±lÄ±klar Ä°LKEL: useAsync deps'i effect dizisine yayar (useAsync.ts:19),
-  // taze nesne geÃ§mek sonsuz refetch olurdu.
+  // ⚠️ Bağımlılıklar İLKEL: useAsync deps'i effect dizisine yayar (useAsync.ts:19),
+  // taze nesne geçmek sonsuz refetch olurdu.
   const SAYFA_BOY = 20
   const havuz = useAsync<{ sorular: HavuzSorusu[]; total: number }>(
     () =>
@@ -250,10 +255,10 @@ export function OdevAtolyesi() {
     [ders, kazanimId, zorluk, araGecikmeli, sayfa],
   )
 
-  // Savunma hattÄ±: sunucu reddi (GOREV-016) inene dek yanÄ±t yine de sÃ¼zÃ¼lÃ¼r â€”
-  // sunucu yanlÄ±ÅŸlÄ±kla Ã§Ä±kmÄ±ÅŸ sÄ±zdÄ±rsa bile Ã¶ÄŸretmen yÃ¼zÃ¼ne Ã§Ä±kmaz.
+  // Savunma hattı: sunucu reddi (GOREV-016) inene dek yanıt yine de süzülür —
+  // sunucu yanlışlıkla çıkmış sızdırsa bile öğretmen yüzüne çıkmaz.
   const eslesen = (havuz.data?.sorular ?? []).filter((q) => q.kaynak !== 'osym')
-  // Havuzda kaÃ§ soru VAR (bu sayfada kaÃ§ tane deÄŸil) â€” geniÅŸ havuzda ayrÄ±m kritik.
+  // Havuzda kaç soru VAR (bu sayfada kaç tane değil) — geniş havuzda ayrım kritik.
   const havuzToplam = havuz.data?.total ?? 0
   const gonderilecek = secili.length > 0 ? secili.length : Math.min(adet, havuzToplam)
   const yeterli = secili.length > 0 || havuzToplam >= adet
@@ -262,17 +267,60 @@ export function OdevAtolyesi() {
   const secimCevir = (id: string): void =>
     setSecili((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
 
+  /**
+   * Filtre (ders/zorluk) değişince ÇAĞRILIR — iki ayrı hatayı birden kapatır.
+   *
+   * 1) SAYFA SIFIRLANMIYORDU: `sayfa` yalnız arama debounce'unda sıfırlanıyor ama
+   *    useAsync bağımlılığında duruyordu. Öğretmen 4. sayfadayken (offset 60) 18 soruluk
+   *    bir derse geçince istek `offset=60` ile gidiyor, boş dizi dönüyor ve ekran "Bu
+   *    kriterlere uyan soru yok" diyordu — oysa 18 soru var. Üstelik `sonSayfa = 0`
+   *    olduğu için sayfalama şeridi tümüyle gizleniyor, kullanıcının 1. sayfaya dönecek
+   *    düğmesi bile kalmıyordu.
+   * 2) ELLE SEÇİM KORUNUYORDU: Matematik'ten 6 soru işaretleyip Fizik'e geçen öğretmen
+   *    "Sınıfa yayınla"ya bastığında istek `subject:'Fizik'` + o 6 MATEMATİK sorusuyla
+   *    gidiyordu; sepet "6 soru elle seçildi", özet "Ders: Fizik" diyordu ve sınıfa Fizik
+   *    ödevi diye Matematik soruları düşüyordu.
+   */
+  const filtreDegisti = (): void => { setSayfa(0); setSecili([]) }
+
   const hedefOgrenci = useMemo(
     () => (hedef === 'sinif' ? null : roster.find((o) => o.studentId === hedef) ?? null),
     [hedef, roster],
   )
 
-  // Ã–n-dolgu dersi Ä±sÄ± haritasÄ±nda yoksa kullanÄ±cÄ±yÄ± yanÄ±ltmayalÄ±m.
-  useEffect(() => {
-    if (onDolguDers && dersler.length && !dersler.includes(onDolguDers)) setDers(onDolguDers)
-  }, [onDolguDers, dersler])
+  /**
+   * ⚠️ HEDEF SEÇİLİ AMA ÖĞRENCİ ÇÖZÜLEMİYOR — YAYIN KİLİTLİ.
+   *
+   * Buradaki `find` roster boşken `null` döner ve akış SESSİZCE sınıf dalına düşerdi:
+   * öğretmen Röntgen'den "Hedefli ödev gönder"e basıp buraya gelir (?ogrenci=<uuid>),
+   * ekran anında çizilir, `/teacher/sinif` isteği hâlâ uçuşta ya da hata almıştır ve
+   * sepetteki düğmeye basıldığında istek `POST /teacher/odev` olarak gider — ödev
+   * SINIFIN TAMAMINA düşer. Düğme o an "Sınıfa yayınla" der ama öğretmen tek öğrenci
+   * için geldiği hâlde okumaz; başarı toast'ı da "sınıfa gitti" der ve ekran kapanır.
+   * Geri alınamazdı; artık DELETE ucu var ama yine de olmaması gereken bir yayın.
+   *
+   * Sessiz düşüşün yerine açık kilit: liste gelene kadar bekle, gelmediyse söyle.
+   */
+  const hedefKilitli = hedef !== 'sinif' && !hedefOgrenci
+  const hedefBulunamadi = hedefKilitli && !sinifYukleniyor
+
+  // Ön-dolgu dersi ısı haritasında yoksa çipler arasında karşılığı olmayan bir kapsam
+  // kalır: hiçbir çip "aktif" görünmez ama sepet "Ders: Kimya" der ve havuz sorgusu
+  // Kimya ile gider. Eski effect bunu düzeltmiyordu — state'i ZATEN sahip olduğu değere
+  // yeniden atıyordu (ölü dal). Kapsam korunur, yalnız durum ekranda AÇIKÇA yazılır.
+  const dersListeDisi = Boolean(ders && dersler.length && !dersler.includes(ders))
 
   const yayinla = async (): Promise<void> => {
+    // Kilit düğmede de var; burada ikinci kez kontrol edilir çünkü sessiz sınıf yayını
+    // geri alınamaz bir hatadır ve tek bir savunma satırına bırakılmamalı.
+    if (hedefKilitli) {
+      toast.error(
+        sinifYukleniyor
+          ? 'Öğrenci listesi henüz yüklenmedi — bir saniye.'
+          : 'Seçili öğrenci listede bulunamadı. Sayfayı yenile ya da hedefi yeniden seç.',
+      )
+      return
+    }
     setYayinlaniyor(true)
     try {
       if (hedefOgrenci) {
@@ -281,8 +329,19 @@ export function OdevAtolyesi() {
           soruSayisi: adet,
           kaynak: KAYNAK_AI,
           ...(kazanimId ? { kazanimIds: [kazanimId] } : {}),
+          // Zorluk çipi sepette yazıyor ("Zorluk: Zor") ama hedefli dalda İSTEĞE
+          // girmiyordu — ekranın söylediği ile gidenin ayrışması.
+          ...(zorluk ? { difficulty: zorluk } : {}),
+          // ⚠️ ELLE SEÇİM HEDEFLİ DALDA DA TAŞINIR.
+          // Sınıf dalı `questionIds`'i gönderiyordu, hedefli dal GÖNDERMİYORDU: öğretmen
+          // havuzdan 5 soru işaretleyip tek öğrenciye yolladığında sepet "5 soru gidecek —
+          // elle seçildi" derken sunucuya yalnız `soruSayisi: adet` (varsayılan 10) gidiyor,
+          // öğrenciye zayıf kazanımlarından derlenmiş RASTGELE 10 soru düşüyordu. Toast da
+          // `y.bulunan` bastığı için sayı 5 değil 10 çıkıyor ama öğretmen bunu yuvarlama
+          // sanıyordu — arayüzün vaadi ile giden istek sessizce ayrışıyordu.
+          ...(secili.length ? { questionIds: secili } : {}),
         })
-        toast.success(`${hedefOgrenci.name ?? 'Ã–ÄŸrenciye'} ${y.bulunan} soruluk set gÃ¶nderildi`)
+        toast.success(`${hedefOgrenci.name ?? 'Öğrenciye'} ${y.bulunan} soruluk set gönderildi`)
         if (y.uyari) toast.warning(y.uyari)
       } else {
         const y = await tPost('/teacher/odev', {
@@ -291,25 +350,28 @@ export function OdevAtolyesi() {
           soruSayisi: adet,
           ...(kazanimId ? { kazanimId } : {}),
           ...(zorluk ? { difficulty: zorluk } : {}),
-          // Elle seÃ§im varsa filtre yok sayÄ±lÄ±r â€” backend tam olarak bunlarÄ± alÄ±r.
+          // Elle seçim varsa filtre yok sayılır — backend tam olarak bunları alır.
           ...(secili.length ? { questionIds: secili } : {}),
+          // Boş = süresiz. Gün-yalnız değer sunucuda o günün SONUNA çekilir; ham
+          // gönderirsek UTC gece yarısı (TSİ 03:00) olur ve son gün baştan kapanırdı.
+          ...(sonTarih ? { dueDate: sonTarih } : {}),
         })
-        toast.success(`Ã–dev yayÄ±nlandÄ± â€” ${y.bulunan} soru sÄ±nÄ±fa gitti`)
+        toast.success(`Ödev yayınlandı — ${y.bulunan} soru sınıfa gitti`)
         if (y.uyari) toast.warning(y.uyari)
       }
       nav('/sinif')
     } catch (e: any) {
-      toast.error(e?.message ?? 'YayÄ±nlanamadÄ±')
+      toast.error(e?.message ?? 'Yayınlanamadı')
     } finally {
       setYayinlaniyor(false)
     }
   }
 
   /**
-   * "Åablon olarak kopyala" (EKRAN-HARITASI [HAZIR]): formu eski Ã¶devin deÄŸerleriyle Ã¶n-doldurur;
-   * yayÄ±n AYNI derleme ucuyla yapÄ±lÄ±r â€” yeni uÃ§ yok. UÃ§ yanÄ±tÄ±nda `difficulty` YOK â†’
-   * zorluk 'Hepsi'ye dÃ¶ner (bilinmeyen uydurulmaz). Derin-baÄŸ kazanÄ±mÄ± ÅŸablona sÄ±zmasÄ±n
-   * diye URL temizlenir; elle seÃ§im ve sayfa sÄ±fÄ±rlanÄ±r.
+   * "Şablon olarak kopyala" (EKRAN-HARITASI [HAZIR]): formu eski ödevin değerleriyle ön-doldurur;
+   * yayın AYNI derleme ucuyla yapılır — yeni uç yok. Uç yanıtında `difficulty` YOK →
+   * zorluk 'Hepsi'ye döner (bilinmeyen uydurulmaz). Derin-bağ kazanımı şablona sızmasın
+   * diye URL temizlenir; elle seçim ve sayfa sıfırlanır.
    */
   const sablonKopyala = (o: GecmisOdev): void => {
     if (o.subject) setDers(o.subject)
@@ -318,9 +380,55 @@ export function OdevAtolyesi() {
     setSecili([])
     setSayfa(0)
     setHedef('sinif')
+    // Son tarih ŞABLONA GİRMEZ: eski ödevin tarihi çoktan geçmiş olabilir ve sessizce
+    // kopyalanırsa yeni ödev doğduğu anda kapalı olurdu.
+    setSonTarih('')
     if (kazanimId || onDolguOgrenci || onDolguDers) nav('/sinif/odev', { replace: true })
     window.scrollTo({ top: 0, behavior: azalt ? 'auto' : 'smooth' })
-    toast.success('Åablon yÃ¼klendi â€” yayÄ±nlamadan Ã¶nce gÃ¶zden geÃ§ir')
+    toast.success('Şablon yüklendi — yayınlamadan önce gözden geçir')
+  }
+
+  /* ── Ödev yaşam döngüsü (kapat / sil) ─────────────────────────────────────
+     Yayınlanmış ödevin geri dönüşü yoktu: `status` `'active'` sabitiyle yazılıp bir
+     daha değişmiyordu, silen uç da yoktu. Yanlış yayınlanan ödev kalıcıydı; öğrenciler
+     onu görmeye ve göndermeye devam ediyor, puanlar sınıf ortalamasına giriyordu.
+     ────────────────────────────────────────────────────────────────────────── */
+  const [silinecek, setSilinecek] = useState<GecmisOdev | null>(null)
+  const [odevIsleniyor, setOdevIsleniyor] = useState(false)
+
+  const odevKapat = async (o: GecmisOdev): Promise<void> => {
+    if (odevIsleniyor) return
+    setOdevIsleniyor(true)
+    try {
+      await tPatch(`/teacher/odev/${o.id}`, { status: 'archived' })
+      toast.success('Ödev kapatıldı — yeni gönderim alınmaz')
+      gecmis.reload()
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Ödev kapatılamadı')
+    } finally {
+      setOdevIsleniyor(false)
+    }
+  }
+
+  const odevSil = async (): Promise<void> => {
+    if (!silinecek || odevIsleniyor) return
+    setOdevIsleniyor(true)
+    try {
+      // Sunucu karar verir: gönderim varsa SİLMEZ, arşivler (öğrencinin cevapları
+      // `on delete cascade` ile yok olurdu). Yanıt hangisinin olduğunu söyler.
+      const y = await tDelete(`/teacher/odev/${silinecek.id}`)
+      toast.success(
+        y.silindi
+          ? 'Ödev silindi'
+          : `Ödev arşivlendi — ${y.gonderimSayisi} gönderim olduğu için silinmedi`,
+      )
+      setSilinecek(null)
+      gecmis.reload()
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Ödev kaldırılamadı')
+    } finally {
+      setOdevIsleniyor(false)
+    }
   }
 
   const kapsamVar = Boolean(ders || kazanimId)
@@ -329,22 +437,22 @@ export function OdevAtolyesi() {
     <Sayfa>
       <style>{STIL}</style>
 
-      {/* â•â•â• BAÅLIK â€” havuz-durum ÅŸeridi gerÃ§ek `total` â•â•â• */}
+      {/* ═══ BAŞLIK — havuz-durum şeridi gerçek `total` ═══ */}
       <Reveal>
         <section className="oa-kart flex flex-wrap items-center gap-3.5 px-[22px] py-4">
           <div>
-            <h1 className="oa-h1">Ã–dev AtÃ¶lyesi</h1>
-            <p className="oa-alt">AI havuzundan soru derle, sÄ±nÄ±fa ya da tek Ã¶ÄŸrenciye gÃ¶nder.</p>
+            <h1 className="oa-h1">Ödev Atölyesi</h1>
+            <p className="oa-alt">AI havuzundan soru derle, sınıfa ya da tek öğrenciye gönder.</p>
           </div>
           <div className="oa-monoduz ml-auto flex items-center gap-2">
             <i className="oa-nokta" aria-hidden />
-            {havuz.loading ? 'havuz taranÄ±yorâ€¦' : `${havuzToplam} doÄŸrulanmÄ±ÅŸ soru`}
+            {havuz.loading ? 'havuz taranıyor…' : `${havuzToplam} doğrulanmış soru`}
           </div>
         </section>
       </Reveal>
 
       <div className="mt-3.5 grid items-start gap-3.5 lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]">
-        {/* â”€â”€ SOL: kapsam + havuz â”€â”€ */}
+        {/* ── SOL: kapsam + havuz ── */}
         <div className="min-w-0 space-y-3.5">
           <Reveal delay={0.06}>
             <section className="oa-kart px-[22px] py-[18px]">
@@ -355,14 +463,14 @@ export function OdevAtolyesi() {
                 {isi.loading ? (
                   <div className="oa-iskelet h-11 w-64" />
                 ) : dersler.length === 0 ? (
-                  <p className="text-[12.5px]" style={{ color: 'var(--metin3)' }}>SÄ±nÄ±fÄ±n henÃ¼z Ã§alÄ±ÅŸtÄ±ÄŸÄ± ders yok.</p>
+                  <p className="text-[12.5px]" style={{ color: 'var(--metin3)' }}>Sınıfın henüz çalıştığı ders yok.</p>
                 ) : (
                   dersler.map((d) => (
                     <button
                       key={d}
                       type="button"
                       aria-pressed={ders === d}
-                      onClick={() => setDers(ders === d ? null : d)}
+                      onClick={() => { setDers(ders === d ? null : d); filtreDegisti() }}
                       className={cn('oa-cip', ders === d && 'aktif')}
                     >
                       <SubjectName subject={d} anahtar={dersAnahtar(d)} className="!text-[12px]" />
@@ -380,7 +488,7 @@ export function OdevAtolyesi() {
                         key={etiket}
                         type="button"
                         aria-pressed={zorluk === deger}
-                        onClick={() => setZorluk(deger)}
+                        onClick={() => { setZorluk(deger); filtreDegisti() }}
                         className={zorluk === deger ? 'aktif' : undefined}
                       >
                         {etiket}
@@ -389,7 +497,7 @@ export function OdevAtolyesi() {
                   </div>
                 </div>
                 <div>
-                  <label htmlFor="adet" className="oa-etiket">Soru sayÄ±sÄ±</label>
+                  <label htmlFor="adet" className="oa-etiket">Soru sayısı</label>
                   <input
                     id="adet"
                     type="number"
@@ -404,13 +512,13 @@ export function OdevAtolyesi() {
 
               {kazanimId && (
                 <div className="mt-4 flex items-center gap-1.5">
-                  <span className="oa-kazanim-cip">ğŸ¯ Tek kazanÄ±ma odaklÄ± (#{kazanimId})</span>
+                  <span className="oa-kazanim-cip">ğŸ¯ Tek kazanıma odaklı (#{kazanimId})</span>
                   <button
                     type="button"
                     onClick={() => nav('/sinif/odev', { replace: true })}
                     className="oa-kazanim-kaldir"
                   >
-                    kaldÄ±r âœ•
+                    kaldır ✕
                   </button>
                 </div>
               )}
@@ -421,23 +529,28 @@ export function OdevAtolyesi() {
             <section className="oa-kart px-[22px] py-[18px]">
               <div className="mb-3 flex items-center gap-2">
                 <h3 className="oa-h3">Havuz</h3>
+                {/* ⚠️ ARALIK BOŞ SAYFADA KURULMAZ. Etiket `sayfa*20+1`'den başlıyordu; sonuç
+                    kümesi küçülüp sayfa dışında kalındığında (sunucu boş dizi döner)
+                    "61–60 / 18 eşleşen" gibi İMKÂNSIZ bir aralık yazıyordu. Sayfa sıfırlama
+                    bunu tetiklemeyi zorlaştırdı ama etiket yine de kendi başına dürüst olmalı. */}
                 <span className="oa-monoduz ml-auto">
-                  {havuzToplam > 0 &&
-                    `${sayfa * SAYFA_BOY + 1}â€“${sayfa * SAYFA_BOY + eslesen.length} / ${havuzToplam} eÅŸleÅŸen`}
+                  {havuzToplam > 0 && (eslesen.length > 0
+                    ? `${sayfa * SAYFA_BOY + 1}–${sayfa * SAYFA_BOY + eslesen.length} / ${havuzToplam} eşleşen`
+                    : `${havuzToplam} eşleşen`)}
                 </span>
               </div>
 
-              {/* Arama â€” geniÅŸ havuzda filtre tek baÅŸÄ±na yetmez */}
+              {/* Arama — geniş havuzda filtre tek başına yetmez */}
               <div className="oa-ara">
                 <Icon name="search" size={15} color="currentColor" style={{ opacity: 0.6 }} />
                 <input
                   value={ara}
                   onChange={(e) => setAra(e.target.value)}
-                  placeholder="Soru metninde araâ€¦"
+                  placeholder="Soru metninde ara…"
                   aria-label="Soru metninde ara"
                 />
                 {ara && (
-                  <button type="button" onClick={() => setAra('')} aria-label="AramayÄ± temizle" className="oa-ara-temizle">
+                  <button type="button" onClick={() => setAra('')} aria-label="Aramayı temizle" className="oa-ara-temizle">
                     <Icon name="close" size={14} color="currentColor" />
                   </button>
                 )}
@@ -446,7 +559,7 @@ export function OdevAtolyesi() {
               {havuz.loading ? (
                 <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="oa-iskelet h-16" />)}</div>
               ) : !kapsamVar ? (
-                <p className="oa-bos">BaÅŸlamak iÃ§in bir ders seÃ§.</p>
+                <p className="oa-bos">Başlamak için bir ders seç.</p>
               ) : eslesen.length === 0 ? (
                 <div className="oa-bos">
                   <p className="font-semibold" style={{ color: 'var(--metin2)' }}>
@@ -454,8 +567,8 @@ export function OdevAtolyesi() {
                   </p>
                   <p className="mt-1">
                     {araGecikmeli
-                      ? 'Arama terimini kÄ±saltmayÄ± dene.'
-                      : "Havuz bu kazanÄ±mda henÃ¼z boÅŸ. Zorluk filtresini 'Hepsi' yap ya da baÅŸka ders dene."}
+                      ? 'Arama terimini kısaltmayı dene.'
+                      : "Havuz bu kazanımda henüz boş. Zorluk filtresini 'Hepsi' yap ya da başka ders dene."}
                   </p>
                 </div>
               ) : (
@@ -471,9 +584,9 @@ export function OdevAtolyesi() {
                             aria-pressed={isaretli}
                             className={cn('oa-soru', isaretli && 'secili')}
                           >
-                            {/* KELÄ°MELÄ° rozetler + âœ“ iÅŸaret: seÃ§im asla yalnÄ±z renkle anlatÄ±lmaz */}
+                            {/* KELİMELİ rozetler + ✓ işaret: seçim asla yalnız renkle anlatılmaz */}
                             <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                              {isaretli && <span className="isaret" aria-hidden>âœ“</span>}
+                              {isaretli && <span className="isaret" aria-hidden>✓</span>}
                               <span className="oa-rozet oa-rz-ai">AI</span>
                               {q.difficulty && <span className="oa-rozet oa-rz-zorluk">{q.difficulty}</span>}
                               {q.quality != null && <span className="oa-rozet oa-rz-kalite">kalite {q.quality}</span>}
@@ -495,7 +608,7 @@ export function OdevAtolyesi() {
                         disabled={sayfa === 0}
                         onClick={() => setSayfa((s) => Math.max(0, s - 1))}
                       >
-                        â† Ã–nceki
+                        ← Önceki
                       </button>
                       <span className="oa-monoduz">sayfa {sayfa + 1} / {sonSayfa + 1}</span>
                       <button
@@ -504,7 +617,7 @@ export function OdevAtolyesi() {
                         disabled={sayfa >= sonSayfa}
                         onClick={() => setSayfa((s) => Math.min(sonSayfa, s + 1))}
                       >
-                        Sonraki â†’
+                        Sonraki →
                       </button>
                     </div>
                   )}
@@ -514,36 +627,73 @@ export function OdevAtolyesi() {
           </Reveal>
         </div>
 
-        {/* â”€â”€ SAÄ: yapÄ±ÅŸkan sepet â€” sayfanÄ±n TEK birincil eylemi burada â”€â”€ */}
+        {/* ── SAĞ: yapışkan sepet — sayfanın TEK birincil eylemi burada ── */}
         <div className="min-w-0">
           <Reveal delay={0.1}>
             <div className="sticky" style={{ top: NAV_H + 24 }}>
               <section className="oa-sepet-ic">
-                <h3 className="oa-h3 mb-3.5">Set Ã–zeti</h3>
+                <h3 className="oa-h3 mb-3.5">Set Özeti</h3>
 
                 <label htmlFor="oa-hedef" className="oa-etiket">Kime</label>
                 <select
                   id="oa-hedef"
                   value={hedef}
                   onChange={(e) => setHedef(e.target.value)}
-                  aria-label="Ã–devin hedefi"
+                  aria-label="Ödevin hedefi"
                   className="oa-secim"
+                  disabled={sinifYukleniyor}
                 >
-                  <option value="sinif">TÃ¼m sÄ±nÄ±f ({roster.length} Ã¶ÄŸrenci)</option>
+                  <option value="sinif">
+                    {sinifYukleniyor ? 'Tüm sınıf' : `Tüm sınıf (${roster.length} öğrenci)`}
+                  </option>
+                  {/* Roster gelmemişken seçili öğrenci listede YOKTUR; adını bilmediğimiz
+                      için uydurmuyoruz ama seçimi de düşürmüyoruz (düşseydi hedef sessizce
+                      "sınıf" olurdu — tam kaçındığımız şey). */}
+                  {hedefKilitli && (
+                    <option value={hedef}>
+                      {sinifYukleniyor ? 'Seçili öğrenci (yükleniyor…)' : 'Seçili öğrenci (bulunamadı)'}
+                    </option>
+                  )}
                   {roster.map((o) => (
                     <option key={o.studentId} value={o.studentId}>
-                      {o.name ?? 'Ä°simsiz Ã¶ÄŸrenci'}
+                      {o.name ?? 'İsimsiz öğrenci'}
                     </option>
                   ))}
                 </select>
 
+                {hedefBulunamadi && (
+                  <p className="oa-hata mt-2">
+                    Öğrenci listesi yüklenemedi{sinifHatasi ? `: ${sinifHatasi}` : ''}. Hedefli set
+                    gönderilemez — <b>sınıfa yayın yapılmaz</b>. Sayfayı yenile ya da hedefi
+                    "Tüm sınıf" olarak yeniden seç.
+                  </p>
+                )}
+
+                <label htmlFor="oa-son-tarih" className="oa-etiket mt-3.5 block">Son tarih</label>
+                <input
+                  id="oa-son-tarih"
+                  type="date"
+                  value={sonTarih}
+                  min={new Date().toLocaleDateString('en-CA')}
+                  onChange={(e) => setSonTarih(e.target.value)}
+                  className="oa-secim"
+                />
+                <p className="mt-1 text-[11px]" style={{ color: 'var(--metin3)' }}>
+                  {sonTarih
+                    ? 'O günün sonuna kadar gönderilebilir.'
+                    : 'Boş bırakılırsa süresiz — istediğin zaman "Kapat" ile bitirebilirsin.'}
+                </p>
+
                 <div>
-                  <div className="oa-ozet-satir"><span>Ders</span><b>{ders ?? 'â€”'}</b></div>
-                  {/* TELÄ°F: kaynak seÃ§ici YOK â€” sabit satÄ±r; her istek kaynak:'ai' gÃ¶nderir */}
+                  <div className="oa-ozet-satir">
+                    <span>Ders</span>
+                    <b>{ders ?? '—'}{dersListeDisi ? ' (sınıfta ölçüm yok)' : ''}</b>
+                  </div>
+                  {/* TELİF: kaynak seçici YOK — sabit satır; her istek kaynak:'ai' gönderir */}
                   <div className="oa-ozet-satir"><span>Kaynak</span><b>AI havuzu</b></div>
                   <div className="oa-ozet-satir"><span>Zorluk</span><b>{zorluk || 'Hepsi'}</b></div>
                   <div className="oa-ozet-satir">
-                    <span>SeÃ§im</span><b>{secili.length ? `${secili.length} soru elle` : `${adet} soru rastgele`}</b>
+                    <span>Seçim</span><b>{secili.length ? `${secili.length} soru elle` : `${adet} soru rastgele`}</b>
                   </div>
                   <div className="oa-ozet-satir"><span>Havuzda</span><b>{havuzToplam} soru</b></div>
                 </div>
@@ -554,47 +704,53 @@ export function OdevAtolyesi() {
                     onClick={() => setSecili([])}
                     className="oa-btn oa-btn-mini mt-2 w-full"
                   >
-                    SeÃ§imi temizle â€” filtreye dÃ¶n
+                    Seçimi temizle — filtreye dön
                   </button>
                 )}
 
-                {/* Rakamlar filtre deÄŸiÅŸtikÃ§e YUVARLANIR (NumberFlow) â€” bu ekranÄ±n
-                    en yÃ¼ksek kaldÄ±raÃ§lÄ± mikro-etkileÅŸimi. */}
+                {/* Rakamlar filtre değiştikçe YUVARLANIR (NumberFlow) — bu ekranın
+                    en yüksek kaldıraçlı mikro-etkileşimi. */}
                 <div className={cn('oa-buyuk', !kapsamVar ? 'notr' : !yeterli && 'eksik')}>
                   <span className="n"><Sayi value={gonderilecek} /></span>
                   <span className="a">
                     {!kapsamVar
-                      ? 'ders seÃ§ilmedi'
+                      ? 'ders seçilmedi'
                       : secili.length > 0
-                        ? 'soru gidecek â€” elle seÃ§ildi'
+                        ? 'soru gidecek — elle seçildi'
                         : yeterli
                           ? 'soru gidecek'
-                          : `soru gidecek Â· ${adet} istendi`}
+                          : `soru gidecek · ${adet} istendi`}
                   </span>
                 </div>
 
-                {/* Eksikse ÅÄ°MDÄ°DEN sÃ¶yle â€” yayÄ±nladÄ±ktan sonra sÃ¼rpriz olmasÄ±n. */}
+                {/* Eksikse ŞİMDİDEN söyle — yayınladıktan sonra sürpriz olmasın. */}
                 {kapsamVar && !yeterli && havuzToplam > 0 && (
                   <p className="oa-eksik-not">
-                    Havuzda bu kriterlerde {havuzToplam} soru var; set o kadarÄ±yla
-                    oluÅŸacak. <b>Soru uydurulmaz â€” eksik olduÄŸu gibi gÃ¶rÃ¼nÃ¼r.</b>
+                    Havuzda bu kriterlerde {havuzToplam} soru var; set o kadarıyla
+                    oluşacak. <b>Soru uydurulmaz — eksik olduğu gibi görünür.</b>
                   </p>
                 )}
 
                 <button
                   type="button"
                   className="oa-btn oa-btn-birincil mt-3.5 w-full"
-                  disabled={yayinlaniyor || !kapsamVar || gonderilecek === 0}
+                  disabled={yayinlaniyor || !kapsamVar || gonderilecek === 0 || hedefKilitli}
                   onClick={() => { void yayinla() }}
                 >
                   <Icon name="send" size={15} color="currentColor" />
-                  {yayinlaniyor ? 'YayÄ±nlanÄ±yorâ€¦' : hedefOgrenci ? 'Sete gÃ¶nder' : 'SÄ±nÄ±fa yayÄ±nla'}
+                  {/* ⚠️ ETİKET HEDEFİ YANSITIR. Kilitliyken "Sınıfa yayınla" yazmak, öğretmene
+                      yapmak istediğinden BAŞKA bir işi vaat etmek olurdu. */}
+                  {yayinlaniyor
+                    ? 'Yayınlanıyor…'
+                    : hedefKilitli
+                      ? 'Öğrenci bekleniyor…'
+                      : hedefOgrenci ? 'Sete gönder' : 'Sınıfa yayınla'}
                 </button>
 
                 {hedefOgrenci && (
                   <p className="mt-2.5 text-center text-[11px] leading-relaxed" style={{ color: 'var(--metin3)' }}>
-                    Hedefli set, <strong style={{ color: 'var(--metin2)' }}>{hedefOgrenci.name}</strong> iÃ§in
-                    zayÄ±f kazanÄ±mlarÄ±ndan derlenir.
+                    Hedefli set, <strong style={{ color: 'var(--metin2)' }}>{hedefOgrenci.name}</strong> için
+                    zayıf kazanımlarından derlenir.
                   </p>
                 )}
               </section>
@@ -603,15 +759,15 @@ export function OdevAtolyesi() {
         </div>
       </div>
 
-      {/* â•â•â• GEÃ‡MÄ°Å Ã–DEVLER (GOREV-037) â€” gerÃ§ek uÃ§; sayÄ± uydurulmaz â•â•â• */}
+      {/* ═══ GEÇMİŞ ÖDEVLER (GOREV-037) — gerçek uç; sayı uydurulmaz ═══ */}
       <Reveal delay={0.18}>
         <section className="oa-kart mt-3.5 px-[22px] py-[18px]">
           <div className="mb-2 flex items-center gap-2">
-            <h3 className="oa-h3">GeÃ§miÅŸ Ã–devler</h3>
+            <h3 className="oa-h3">Geçmiş Ödevler</h3>
             <span className="oa-monoduz ml-auto">
-              {/* Ã–nizlemedeki "son 30 gÃ¼n" ibaresi uÃ§ gerÃ§eÄŸiyle eÅŸleÅŸmiyor (uÃ§ son kayÄ±tlarÄ± dÃ¶ner) â€”
-                  yerine GERÃ‡EK toplam yazÄ±lÄ±r. */}
-              {gecmis.data ? `${gecmis.data.total} Ã¶dev` : ''}
+              {/* Önizlemedeki "son 30 gün" ibaresi uç gerçeğiyle eşleşmiyor (uç son kayıtları döner) —
+                  yerine GERÇEK toplam yazılır. */}
+              {gecmis.data ? `${gecmis.data.total} ödev` : ''}
             </span>
           </div>
 
@@ -619,25 +775,25 @@ export function OdevAtolyesi() {
             <div className="space-y-2">{[0, 1].map((i) => <div key={i} className="oa-iskelet h-12" />)}</div>
           ) : gecmis.error ? (
             <div className="oa-hata">
-              GeÃ§miÅŸ Ã¶devler yÃ¼klenemedi: {gecmis.error}{' '}
+              Geçmiş ödevler yüklenemedi: {gecmis.error}{' '}
               <button type="button" className="oa-btn oa-btn-mini ml-2" onClick={gecmis.reload}>Tekrar dene</button>
             </div>
           ) : (gecmis.data?.assignments.length ?? 0) === 0 ? (
-            <p className="oa-bos">HenÃ¼z Ã¶dev gÃ¶ndermedin â€” ilk seti yukarÄ±dan derle.</p>
+            <p className="oa-bos">Henüz ödev göndermedin — ilk seti yukarıdan derle.</p>
           ) : (
             gecmis.data!.assignments.map((o) => {
               const acik = o.status === 'active'
               const ogrenciSayisi = gecmis.data!.ogrenciSayisi
-              const baslikMetni = [o.subject, o.topic].filter(Boolean).join(' Â· ') || 'Ã–dev'
+              const baslikMetni = [o.subject, o.topic].filter(Boolean).join(' · ') || 'Ödev'
               return (
                 <div key={o.id} className="oa-odev-satir">
                   <b>{baslikMetni}</b>
-                  <span className="oa-odev-meta">{o.soruSayisi} soru Â· {goreceliGun(o.createdAt, simdi)}</span>
-                  {/* KELÄ°MELÄ° durum â€” renk tek baÅŸÄ±na bilgi taÅŸÄ±maz */}
+                  <span className="oa-odev-meta">{o.soruSayisi} soru · {goreceliGun(o.createdAt, simdi)}</span>
+                  {/* KELİMELİ durum — renk tek başına bilgi taşımaz */}
                   <span className={cn('oa-durum', acik ? 'oa-durum-acik' : 'oa-durum-kapandi')}>
-                    {acik ? 'aÃ§Ä±k' : 'kapandÄ±'}
+                    {acik ? 'açık' : 'kapandı'}
                   </span>
-                  {/* Tamamlanma = gÃ¶nderim/Ã¶ÄŸrenci (uÃ§ verisi). Ã–ÄŸrenci sayÄ±sÄ± 0 ise Ã§ubuk GÄ°ZLENÄ°R â€” pay uydurulmaz. */}
+                  {/* Tamamlanma = gönderim/öğrenci (uç verisi). Öğrenci sayısı 0 ise çubuk GİZLENİR — pay uydurulmaz. */}
                   {ogrenciSayisi > 0 && (
                     <div className="oa-tamamlama">
                       <div className="oa-ray" aria-hidden>
@@ -649,7 +805,27 @@ export function OdevAtolyesi() {
                     </div>
                   )}
                   <button type="button" className="oa-btn oa-btn-mini" onClick={() => sablonKopyala(o)}>
-                    Åablon olarak kopyala
+                    Şablon olarak kopyala
+                  </button>
+                  {/* Kapatma yıkıcı DEĞİL (geri açılabilir) → onay istemez. Silme yıkıcı →
+                      Radix Dialog (proje kuralı: window.confirm asla). */}
+                  {acik && (
+                    <button
+                      type="button"
+                      className="oa-btn oa-btn-mini"
+                      disabled={odevIsleniyor}
+                      onClick={() => { void odevKapat(o) }}
+                    >
+                      Kapat
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="oa-btn oa-btn-mini"
+                    disabled={odevIsleniyor}
+                    onClick={() => setSilinecek(o)}
+                  >
+                    Sil
                   </button>
                 </div>
               )
@@ -658,7 +834,37 @@ export function OdevAtolyesi() {
         </section>
       </Reveal>
 
-      {/* SÄ±nÄ±f boÅŸ â€” FÄ°DAN filiz gÃ¶rseli (Lighthouse emekli) + tek kÃ¶prÃ¼: SÄ±nÄ±f Panosu */}
+      {/* ═══ SİLME ONAYI — yıkıcı eylem daima Radix Dialog ═══ */}
+      <Dialog.Root open={!!silinecek} onOpenChange={(a) => { if (!a) setSilinecek(null) }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[85]" style={{ background: 'rgba(20,32,24,.42)' }} />
+          <Dialog.Content className="oa-kart fixed left-1/2 top-1/2 z-[86] w-[min(92vw,400px)] -translate-x-1/2 -translate-y-1/2 p-6">
+            <Dialog.Title className="font-display text-[16px] font-bold" style={{ color: 'var(--metin1)' }}>
+              Ödev kaldırılsın mı?
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-[13px] leading-relaxed" style={{ color: 'var(--metin2)' }}>
+              <b>{[silinecek?.subject, silinecek?.topic].filter(Boolean).join(' · ') || 'Ödev'}</b> öğrenci
+              listelerinden kalkar. Gönderim yapılmışsa ödev <b>silinmez, arşivlenir</b> — öğrencilerin
+              verdiği cevaplar ve aldıkları puanlar korunur.
+            </Dialog.Description>
+            <div className="mt-5 flex justify-end gap-2.5">
+              <Dialog.Close asChild>
+                <button type="button" className="oa-btn oa-btn-soluk">Vazgeç</button>
+              </Dialog.Close>
+              <button
+                type="button"
+                className="oa-btn oa-btn-birincil"
+                disabled={odevIsleniyor}
+                onClick={() => { void odevSil() }}
+              >
+                {odevIsleniyor ? 'Kaldırılıyor…' : 'Kaldır'}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Sınıf boş — FİDAN filiz görseli (Lighthouse emekli) + tek köprü: Sınıf Panosu */}
       {roster.length === 0 && (
         <Reveal delay={0.24}>
           <section className="oa-kart mx-auto mt-8 max-w-md px-8 py-8 text-center">
@@ -667,12 +873,12 @@ export function OdevAtolyesi() {
               <path d="M12 12C12 8 9 5 4 5c0 5 3 8 8 8" fill="var(--adacayi)" />
               <path d="M12 9c0-3.5 2.5-6 7-6 0 4.5-2.5 7-7 7" fill="var(--yaprak)" />
             </svg>
-            <h3 className="oa-h3">SÄ±nÄ±fÄ±nda henÃ¼z Ã¶ÄŸrenci yok</h3>
+            <h3 className="oa-h3">Sınıfında henüz öğrenci yok</h3>
             <p className="oa-alt mx-auto mt-1.5 max-w-[320px] leading-relaxed">
-              Ã–dev gÃ¶nderebilmek iÃ§in Ã¶nce sÄ±nÄ±f kodunu paylaÅŸ ya da e-postayla Ã¶ÄŸrenci ekle.
+              Ödev gönderebilmek için önce sınıf kodunu paylaş ya da e-postayla öğrenci ekle.
             </p>
             <button type="button" className="oa-btn oa-btn-soluk mt-4" onClick={() => nav('/sinif')}>
-              SÄ±nÄ±f Panosu'na git
+              Sınıf Panosu'na git
             </button>
           </section>
         </Reveal>

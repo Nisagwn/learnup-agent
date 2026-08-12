@@ -1,0 +1,1005 @@
+{
+  "tarih": "2026-08-05T12:23:56.788Z",
+  "TEKRAR": 3,
+  "DERS": null,
+  "olcumler": [
+    {
+      "id": "57b3e3ae-6bcf-4381-884a-c5262aaed222",
+      "subject": "Coğrafya",
+      "kayitliZorluk": "orta",
+      "turetilen": [
+        "zor",
+        "zor",
+        "kolay"
+      ],
+      "icgozlem": [
+        "orta",
+        "orta",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME",
+          "ÖRTÜK VERİ"
+        ],
+        [
+          "AYIRT ETME",
+          "ÖRTÜK VERİ"
+        ],
+        [
+          "AYIRT ETME"
+        ]
+      ],
+      "skorlar": [
+        0,
+        5,
+        5
+      ],
+      "kabul": [
+        false,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "5a1d16fc-f6cb-434c-a4cd-10ed12725b1f",
+      "subject": "Felsefe",
+      "kayitliZorluk": "kolay",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME"
+        ],
+        [],
+        []
+      ],
+      "skorlar": [
+        4,
+        3,
+        3
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "a2ef1153-1170-42bd-9577-4dde4caba2db",
+      "subject": "T.C. İnkılap Tarihi ve Atatürkçülük",
+      "kayitliZorluk": "zor",
+      "turetilen": [
+        "zor",
+        "orta",
+        "orta"
+      ],
+      "icgozlem": [
+        "orta",
+        "orta",
+        "orta"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        [
+          "AYIRT ETME"
+        ],
+        [
+          "AYIRT ETME"
+        ]
+      ],
+      "skorlar": [
+        5,
+        5,
+        5
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "06cb0fdb-bb3c-4f9d-ad26-a7d4be954c79",
+      "subject": "Fizik",
+      "kayitliZorluk": "kolay",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "orta"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "orta"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        [
+          "AYIRT ETME"
+        ]
+      ],
+      "skorlar": [
+        3,
+        4,
+        4
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "27f70020-e02d-48ba-8657-822210a05edd",
+      "subject": "Din Kültürü ve Ahlak Bilgisi",
+      "kayitliZorluk": "kolay",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "—"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "—"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        []
+      ],
+      "skorlar": [
+        5,
+        5,
+        0
+      ],
+      "kabul": [
+        true,
+        true,
+        false
+      ]
+    },
+    {
+      "id": "fc346c3d-0500-4af6-b6eb-a31663289355",
+      "subject": "Kimya",
+      "kayitliZorluk": "orta",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        []
+      ],
+      "skorlar": [
+        5,
+        5,
+        5
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "953d8da0-ad3e-4bca-89e3-fae80b503f35",
+      "subject": "Felsefe",
+      "kayitliZorluk": "zor",
+      "turetilen": [
+        "orta",
+        "kolay",
+        "zor"
+      ],
+      "icgozlem": [
+        "orta",
+        "kolay",
+        "zor"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME"
+        ],
+        [],
+        [
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ",
+          "GİRİŞ GİZLİ"
+        ]
+      ],
+      "skorlar": [
+        4,
+        3,
+        2
+      ],
+      "kabul": [
+        true,
+        false,
+        false
+      ]
+    },
+    {
+      "id": "622e79c0-fa5b-4a5b-bcfb-6e59138f9df9",
+      "subject": "Tarih",
+      "kayitliZorluk": "orta",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        [],
+        []
+      ],
+      "skorlar": [
+        5,
+        5,
+        3
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "4647a617-8c43-4429-9d40-18d7eeb6f8b4",
+      "subject": "Psikoloji",
+      "kayitliZorluk": "zor",
+      "turetilen": [
+        "zor",
+        "zor",
+        "—"
+      ],
+      "icgozlem": [
+        "orta",
+        "orta",
+        "—"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        []
+      ],
+      "skorlar": [
+        5,
+        5,
+        0
+      ],
+      "kabul": [
+        true,
+        true,
+        false
+      ]
+    },
+    {
+      "id": "4ff50174-957f-4652-a7d7-2862d1bc46b4",
+      "subject": "Psikoloji",
+      "kayitliZorluk": "kolay",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [
+          "AYIRT ETME"
+        ],
+        []
+      ],
+      "skorlar": [
+        2,
+        3,
+        3
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "4d4a162b-159a-46dc-a199-335550c12a5c",
+      "subject": "Sosyoloji",
+      "kayitliZorluk": "kolay",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        []
+      ],
+      "skorlar": [
+        4,
+        5,
+        3
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "8185311d-3706-4818-bee4-aae5593bcd25",
+      "subject": "Matematik",
+      "kayitliZorluk": "orta",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        []
+      ],
+      "skorlar": [
+        3,
+        3,
+        3
+      ],
+      "kabul": [
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "id": "4faef73e-cdb9-4c85-a1b1-9a775e059127",
+      "subject": "Fizik",
+      "kayitliZorluk": "zor",
+      "turetilen": [
+        "zor",
+        "orta",
+        "orta"
+      ],
+      "icgozlem": [
+        "orta",
+        "orta",
+        "orta"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        [
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        []
+      ],
+      "skorlar": [
+        4,
+        4,
+        4
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "7ef4a947-4dd8-4ba3-8fb4-07ff839a731f",
+      "subject": "Mantık",
+      "kayitliZorluk": "orta",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        []
+      ],
+      "skorlar": [
+        3,
+        5,
+        3
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "1679d7a2-c2b4-4dca-9c6e-539ae4421bc8",
+      "subject": "Sosyoloji",
+      "kayitliZorluk": "kolay",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        []
+      ],
+      "skorlar": [
+        3,
+        3,
+        5
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "595102d3-0f39-4452-9a7e-8056335b5281",
+      "subject": "Biyoloji",
+      "kayitliZorluk": "zor",
+      "turetilen": [
+        "orta",
+        "orta",
+        "orta"
+      ],
+      "icgozlem": [
+        "orta",
+        "orta",
+        "orta"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME"
+        ],
+        [
+          "AYIRT ETME"
+        ],
+        [
+          "Kan CO2 artışı, solunum merkezini stimulate ederek nefes hacmini ve nefes frekansını artırır."
+        ]
+      ],
+      "skorlar": [
+        4,
+        4,
+        4
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "96a2ee2c-cb21-4be7-b548-bc729dc09546",
+      "subject": "Tarih",
+      "kayitliZorluk": "orta",
+      "turetilen": [
+        "orta",
+        "orta",
+        "kolay"
+      ],
+      "icgozlem": [
+        "orta",
+        "orta",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME"
+        ],
+        [
+          "AYIRT ETME"
+        ],
+        [
+          "AYIRT ETME"
+        ]
+      ],
+      "skorlar": [
+        5,
+        5,
+        5
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "313c76eb-1bc5-4a02-8d63-52d192ab16ee",
+      "subject": "Coğrafya",
+      "kayitliZorluk": "zor",
+      "turetilen": [
+        "zor",
+        "zor",
+        "zor"
+      ],
+      "icgozlem": [
+        "orta",
+        "zor",
+        "orta"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME",
+          "ÖRTÜK VERİ"
+        ],
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ",
+          "GİRİŞ GİZLİ"
+        ],
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ",
+          "ÖRTÜK VERİ"
+        ]
+      ],
+      "skorlar": [
+        4,
+        5,
+        3
+      ],
+      "kabul": [
+        true,
+        true,
+        false
+      ]
+    },
+    {
+      "id": "648fd074-15fd-4112-ba12-8e0f7157848e",
+      "subject": "Biyoloji",
+      "kayitliZorluk": "kolay",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        []
+      ],
+      "skorlar": [
+        3,
+        3,
+        5
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "ed3f6aeb-bd17-48dc-82ea-2cc2a777df00",
+      "subject": "T.C. İnkılap Tarihi ve Atatürkçülük",
+      "kayitliZorluk": "orta",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        []
+      ],
+      "skorlar": [
+        4,
+        4,
+        3
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "9afa5559-5aea-4af1-ba96-bd5087124266",
+      "subject": "Coğrafya",
+      "kayitliZorluk": "zor",
+      "turetilen": [
+        "kolay",
+        "zor",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        []
+      ],
+      "skorlar": [
+        3,
+        4,
+        4
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "786cad9a-b95d-4810-a93c-080c9cc32058",
+      "subject": "Fizik",
+      "kayitliZorluk": "orta",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        [
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ]
+      ],
+      "skorlar": [
+        4,
+        3,
+        3
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "58a7364f-43ce-4e92-aed9-e796ca754e3c",
+      "subject": "Din Kültürü ve Ahlak Bilgisi",
+      "kayitliZorluk": "kolay",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "—"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "—"
+      ],
+      "mekanizmalar": [
+        [
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        [],
+        []
+      ],
+      "skorlar": [
+        5,
+        5,
+        0
+      ],
+      "kabul": [
+        true,
+        true,
+        false
+      ]
+    },
+    {
+      "id": "d97a49c0-d96e-477a-93ea-ff77291aa34e",
+      "subject": "Felsefe",
+      "kayitliZorluk": "zor",
+      "turetilen": [
+        "kolay",
+        "zor",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        []
+      ],
+      "skorlar": [
+        4,
+        2,
+        3
+      ],
+      "kabul": [
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "id": "431fd9f6-ab9b-4121-8c33-de50e52e59e2",
+      "subject": "Coğrafya",
+      "kayitliZorluk": "kolay",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        []
+      ],
+      "skorlar": [
+        3,
+        3,
+        4
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "b01ec285-aba7-4617-8360-7fdfe88e3927",
+      "subject": "Biyoloji",
+      "kayitliZorluk": "orta",
+      "turetilen": [
+        "zor",
+        "zor",
+        "orta"
+      ],
+      "icgozlem": [
+        "orta",
+        "orta",
+        "orta"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ],
+        []
+      ],
+      "skorlar": [
+        5,
+        5,
+        5
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "4a115eff-ea24-4179-b5a9-e08510b03c6e",
+      "subject": "Coğrafya",
+      "kayitliZorluk": "zor",
+      "turetilen": [
+        "zor",
+        "zor",
+        "zor"
+      ],
+      "icgozlem": [
+        "zor",
+        "orta",
+        "orta"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ",
+          "ÖRTÜK VERİ"
+        ],
+        [
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ",
+          "ÖRTÜK VERİ"
+        ],
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ",
+          "ÖRTÜK VERİ"
+        ]
+      ],
+      "skorlar": [
+        4,
+        4,
+        4
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "bce8b397-10f2-49ca-ba3d-792099478e83",
+      "subject": "Coğrafya",
+      "kayitliZorluk": "kolay",
+      "turetilen": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "kolay",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [],
+        [],
+        []
+      ],
+      "skorlar": [
+        5,
+        5,
+        5
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "f21ab191-3273-4b7e-95bf-a44563fc0fe8",
+      "subject": "T.C. İnkılap Tarihi ve Atatürkçülük",
+      "kayitliZorluk": "orta",
+      "turetilen": [
+        "kolay",
+        "orta",
+        "zor"
+      ],
+      "icgozlem": [
+        "kolay",
+        "orta",
+        "orta"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME"
+        ],
+        [
+          "AYIRT ETME"
+        ],
+        [
+          "AYIRT ETME",
+          "EŞ-ÇEKİMLİ ÇELDİRİCİ"
+        ]
+      ],
+      "skorlar": [
+        5,
+        5,
+        5
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "29e12d75-090e-41fd-aa40-8bd3c60a869b",
+      "subject": "T.C. İnkılap Tarihi ve Atatürkçülük",
+      "kayitliZorluk": "zor",
+      "turetilen": [
+        "orta",
+        "kolay",
+        "kolay"
+      ],
+      "icgozlem": [
+        "orta",
+        "kolay",
+        "kolay"
+      ],
+      "mekanizmalar": [
+        [
+          "AYIRT ETME"
+        ],
+        [],
+        []
+      ],
+      "skorlar": [
+        5,
+        3,
+        4
+      ],
+      "kabul": [
+        true,
+        true,
+        true
+      ]
+    }
+  ]
+}

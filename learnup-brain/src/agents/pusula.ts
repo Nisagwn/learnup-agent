@@ -55,8 +55,11 @@ async function annotatePlan(plan: Plan): Promise<string> {
 function deterministicBrief(plan: Plan): string {
   const today = plan.days[0]
   if (!today || today.blocks.length === 0) return 'Bugün için planlanmış blok yok — önce tanışma testi gerekli.'
+  // ⚠️ Bu metin Kaptan'ın masasına girer, yani öğrencinin duyacağı cümlenin hammaddesidir:
+  // buraya yazılan teknik terim üç durak sonra öğrenciye "SRS destesi" diye geri döner.
+  // `kind` iç sözleşme, gösterilen ad Türkçe (aynı ayrım lib/planner.ts'te de yapıldı).
   const lines = today.blocks.map(
-    (b, i) => `${i + 1}. ${b.kind === 'srs' ? 'SRS destesi' : b.title} — ${b.count} soru (${b.difficulty})`,
+    (b, i) => `${i + 1}. ${b.kind === 'srs' ? 'Tekrar destesi' : b.title} — ${b.count} soru (${b.difficulty})`,
   )
   return `Bugünün rotası:\n${lines.join('\n')}${today.tactic_notes.length ? `\nNot: ${today.tactic_notes.join(' ')}` : ''}`
 }

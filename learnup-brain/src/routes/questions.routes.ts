@@ -4,6 +4,7 @@ import { supabase } from '../clients/supabase.js'
 import { llmChat, GEN_MODEL, GEN_MODES, buildModePromptConfig, parseTaggedQuestions } from '../lib/questions-ai.js'
 import { resolveKazanimByTopic } from '../lib/curriculum.js'
 import { buildMicroTest } from '../lib/test-modes.js'
+import { assertTeacherOwnsStudent } from '../lib/yetki.js'
 import { validateBody } from '../middleware/validate.js'
 
 const GenerateSchema = z.object({
@@ -14,6 +15,12 @@ const GenerateSchema = z.object({
   difficulty: z.enum(['kolay', 'orta', 'zor']).optional().default('orta'),
   mode: z.string().optional(),
   persist: z.boolean().optional(),
+  // ⚠️ costOptimized / skipVerification BİLEREK KALDIRILDI.
+  // Bu iki bayrak `lib/generation.ts` denetle() içinde `skipRepair`'i açıyor ve hakem
+  // (verifyQuestion) HİÇ ÇAĞRILMADAN elle kurulmuş bir `verdict:'ACCEPT'` üretiliyordu;
+  // sonuç `assembleSegment` üzerinden ortak havuza `verified:true` olarak yazılıyordu.
+  // Yani istemci, cevap anahtarı hiç kontrol edilmemiş bir soruyu "doğrulanmış" damgasıyla
+  // TÜM öğrencilere servis ettirebiliyordu. Doğrulama atlama kararı istemcinin değildir.
 })
 
 const TargetedSchema = z.object({
@@ -25,7 +32,8 @@ const TargetedSchema = z.object({
 })
 
 const SaveSchema = z.object({
-  questions: z.array(z.record(z.unknown())).min(1),
+  // .max(50): tek sınır 1MB gövdeydi — binlerce satır tek istekte havuza basılabiliyordu.
+  questions: z.array(z.record(z.unknown())).min(1).max(50),
   meta: z.object({
     subject: z.string().optional(),
     topic: z.string().optional().nullable(),
@@ -33,7 +41,10 @@ const SaveSchema = z.object({
     grade: z.union([z.string(), z.number()]).optional().nullable(),
     difficulty: z.string().optional(),
     mode: z.string().optional().nullable(),
-    teacherId: z.string().uuid().optional(),
+    // teacherId ŞEMADAN KALDIRILDI: gövdeden gelen değer doğrudan questions.teacher_id'ye
+    // yazılıyordu → çağıran, soruları BAŞKA bir öğretmenin adına kaydedebiliyordu
+    // (atıf sahteciliği: kurbanın "kendi soruları" listesi zehirleniyordu).
+    // Atıf artık daima oturum sahibidir.
   }).optional(),
 })
 
@@ -110,6 +121,7 @@ questionsRouter.post('/generate', validateBody(GenerateSchema), async (req, res,
     // buildMicroTest havuzu da kullanır (ısınmışsa LLM'e hiç gitmez) ve ürettiğini havuza yazar.
     const eslesme = await resolveKazanimByTopic(subject, topic).catch(() => null)
     if (eslesme) {
+      // options YOK: doğrulama hattı her zaman tam çalışır (bkz. GenerateSchema notu).
       const set = await buildMicroTest({
         userId, kazanimId: eslesme.node.id, difficulty, count: qCount,
       })
@@ -168,25 +180,18 @@ questionsRouter.post('/targeted', validateBody(TargetedSchema), async (req, res,
     // türetilen çıktı da çağırana dönüyor. Kontrol olmadan herhangi bir öğrenci
     // {"studentId":"<kurban>"} yollayıp kurbanın özel hata geçmişinden türetilmiş içerik
     // alabiliyor ve ona ödev iliştirebiliyordu (satır ~134: student_id: studentId).
-    // İki kapı: (1) çağıran ÖĞRETMEN mi, (2) bu öğrenci ONUN öğrencisi mi.
-    const { data: ogretmen } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', teacherId)
-      .single()
-    if (ogretmen?.role !== 'teacher') {
-      res.status(403).json({ error: 'Bu işlem için öğretmen yetkisi gerekir.' })
-      return
-    }
-    const { data: ogrenci } = await supabase
-      .from('profiles')
-      .select('teacher_id')
-      .eq('id', studentId)
-      .single()
-    if (ogrenci?.teacher_id !== teacherId) {
-      res.status(403).json({ error: 'Bu öğrenci size bağlı değil.' })
-      return
-    }
+    //
+    // ROL kapısı artık mount'ta (app.ts requireRole('teacher','admin')) — orası
+    // öğretmenin ONAYINI da doğrular. Buradaki elle yazılmış `role !== 'teacher'`
+    // kontrolü `is_approved`'a BAKMIYORDU: onayı yönetici tarafından iptal edilmiş bir
+    // öğretmen /teacher/* uçlarından atılıyor ama bu uçtan öğrenci verisi çekmeye
+    // devam ediyordu.
+    //
+    // SAHİPLİK de kanonik yola bağlandı: elle yazılan `ogrenci.teacher_id !== teacherId`
+    // kontrolü `teacher_ids` çoklu üyeliğini SAYMIYORDU — aynı sahiplik sorusuna repoda
+    // iki farklı cevap veriliyordu. assertTeacherOwnsStudent tek tanımdır (404 döner:
+    // "yok" ile "senin değil" ayrımını istemciye sızdırmaz).
+    await assertTeacherOwnsStudent(teacherId, studentId)
 
     const qCount = count
     const gradeStr = grade ? String(grade) : '10'
@@ -246,7 +251,7 @@ questionsRouter.post('/save', validateBody(SaveSchema), async (req, res, next) =
     const grade = meta?.grade != null ? String(meta.grade) : null
     const difficulty = meta?.difficulty ?? 'medium'
     const mode = meta?.mode ?? null
-    const teacherId = meta?.teacherId || userId
+    const teacherId = userId   // atıf daima oturum sahibi (bkz. SaveSchema notu)
 
     const rows = questions.map((q: any) => ({
       category: subject, subject, subject_tr: subject, topic, sub_topic: subTopic,
@@ -257,10 +262,9 @@ questionsRouter.post('/save', validateBody(SaveSchema), async (req, res, next) =
     }))
 
     const { data, error } = await supabase.from('questions').insert(rows).select('id')
-    if (error) {
-      res.status(500).json({ error: error.message })
-      return
-    }
+    // error.message DIŞARI VERİLMEZ: PostgREST hataları tablo/kolon adı taşır (şema keşfi).
+    // Merkezî errorHandler bunu zaten kararlaştırmıştı; bu uç onu atlıyordu.
+    if (error) throw error
     const savedIds = (data || []).map((r: any) => r.id)
     res.json({ savedIds })
   } catch (err) {

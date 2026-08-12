@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto'
 import { openrouter } from '../clients/openrouter.js'
 import { supabase } from '../clients/supabase.js'
+import { redisTry } from '../clients/redis.js'
 import { EMBED_MODEL, EMBED_DIM } from './models.js'
 import { gorselBagimli } from '../utils/soru-saglik.js'
 
@@ -38,22 +40,87 @@ export type Exemplar = {
  *  rehin alır. 20 sn fazlasıyla yeterli; aşarsa çağıran hata alır ve isteği bırakır. */
 const EMBED_TIMEOUT_MS = 20_000
 
+/**
+ * EMBEDDING ÖNBELLEĞİ — kredisiz koşunun ikinci yarısı.
+ *
+ * ⚠️ EMBEDDINGS PARALIDIR VE MODEL ROUTER'DAN GEÇMEZ. Router'ın ücretsiz-zincir/bütçe/tavan
+ * kapılarının hiçbiri buraya uygulanmaz; bu çağrı doğrudan SDK ile gider. Yani "kredisiz koşu"
+ * dediğimiz şey, KREDISIZ kipi açıkken bile embedding kadar fatura üretiyordu.
+ *
+ * Tutar küçük ama sorun tutarda değil GARANTİDE: `generateVerifiedSet` hücre başına 1 embed
+ * yapıyor ve sorgu dizesi (`subject topic kazanim difficulty`) TAMAMEN DETERMİNİSTİK — aynı
+ * hücre her yeniden denemede aynı vektörü yeniden satın alıyordu. 907 kazanım × 3 zorluk =
+ * en fazla 2721 farklı sorgu; önbellekle bu bir kez ödenir, sonraki tüm koşular $0.
+ *
+ * ⚠️ TTL YOK — bilerek. Önbelleğin anahtarı metnin KENDİSİ (sha1) ve embedding modeli anahtara
+ * dahil: metin değişirse anahtar değişir, model değişirse anahtar değişir. Yani bayatlayabilecek
+ * bir şey yok; TTL vermek yalnız aynı vektörü tekrar satın almak demek olurdu.
+ *
+ * ⚠️ Redis yoksa/erişilemezse SESSİZCE eski davranışa döner (redisTry fallback) — önbellek bir
+ * hızlandırıcıdır, bağımlılık değil. Bu dosyanın geri kalanındaki "Redis hot-path, hakikat
+ * değil" çizgisiyle aynı.
+ */
+const embedKey = (text: string): string =>
+  `lb:embed:${EMBED_MODEL}:${EMBED_DIM}:${createHash('sha1').update(text).digest('hex')}`
+
+const embedOnbellekOku = async (texts: string[]): Promise<Array<number[] | null>> =>
+  redisTry(
+    async (r) => {
+      const ham = await r.mget(...texts.map(embedKey))
+      return ham.map((s) => {
+        if (!s) return null
+        try {
+          const v = JSON.parse(s) as number[]
+          // Bozuk/eski boyutlu kayıt önbellekte kalmışsa YOK say — DB'ye yanlış boyut gitmesin.
+          return Array.isArray(v) && v.length === EMBED_DIM ? v : null
+        } catch {
+          return null
+        }
+      })
+    },
+    texts.map(() => null),
+  )
+
+const embedOnbellekYaz = async (ciftler: Array<[string, number[]]>): Promise<void> => {
+  if (!ciftler.length) return
+  await redisTry(async (r) => {
+    const p = r.pipeline()
+    for (const [text, vec] of ciftler) p.set(embedKey(text), JSON.stringify(vec))
+    await p.exec()
+    return true
+  }, false)
+}
+
 export async function embed(texts: string[]): Promise<number[][]> {
+  const onbellekli = await embedOnbellekOku(texts)
+  // Yalnız ISKALAYANLARI satın al. Sıra korunur: eksik indeksler yerlerine geri yazılır.
+  const eksikIdx = onbellekli.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0)
+  if (!eksikIdx.length) return onbellekli as number[][]
+
   const res = await openrouter.embeddings.create(
     {
       model: EMBED_MODEL,
-      input: texts,
+      input: eksikIdx.map((i) => texts[i]),
       dimensions: EMBED_DIM,
     },
     { timeout: EMBED_TIMEOUT_MS, maxRetries: 1 },
   )
-  const vectors = res.data.map((d) => d.embedding)
-  for (const v of vectors) {
+  const yeni = res.data.map((d) => d.embedding)
+  for (const v of yeni) {
     if (v.length !== EMBED_DIM) {
       throw new Error(`EMBED_DIM drift: beklenen ${EMBED_DIM}, gelen ${v.length}`)
     }
   }
-  return vectors
+  // ⚠️ Sağlayıcı isteneni sayıca karşılamazsa yerine koyma sessizce KAYAR (yanlış metne yanlış
+  // vektör) — bu, RAG'de teşhis edilmesi en zor arıza sınıfıdır. Sert kontrol.
+  if (yeni.length !== eksikIdx.length) {
+    throw new Error(`embedding sayısı tutmadı: istenen ${eksikIdx.length}, gelen ${yeni.length}`)
+  }
+
+  const sonuc = onbellekli.slice()
+  eksikIdx.forEach((idx, k) => { sonuc[idx] = yeni[k] })
+  await embedOnbellekYaz(eksikIdx.map((idx, k) => [texts[idx], yeni[k]] as [string, number[]]))
+  return sonuc as number[][]
 }
 
 /** Grounding retrieval — ltree ön-ekli + vektör sıralı (match_yks_knowledge RPC).

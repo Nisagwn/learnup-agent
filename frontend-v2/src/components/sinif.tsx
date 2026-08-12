@@ -260,7 +260,9 @@ export function TriajKuyrugu({ dugumler, onSetGonder, onOgrenciler }: {
         <ul className="space-y-1">
           {dugumler.map((d) => {
             const ustalik = 1 - d.avgWrongRate
-            const havuzVar = d.havuzdaSoru.osym + d.havuzdaSoru.ai > 0
+            // ⚠️ YALNIZ `ai`: çıkmış ÖSYM stoğu ödeve derlenemez (telif kararı), onu
+            // saymak "set gönder" eylemini havuzun boş olduğu kazanımda açık gösterirdi.
+            const havuzVar = d.havuzdaSoru.ai > 0
             return (
               <li
                 key={d.kazanimId}

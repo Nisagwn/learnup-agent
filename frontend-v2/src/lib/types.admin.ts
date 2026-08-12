@@ -276,6 +276,34 @@ export interface AskiYanit {
   id: string
   askidaMi: boolean
   neden: string | null
+  /** Askıyla birlikte kapatılan açık oturum sayısı (askı kaldırılırken 0). */
+  kapatilanOturum: number
+  denetimYazildi: boolean
+}
+
+/* ═══ Oturum yönetimi (yönetici görünümü) ═══ */
+
+export interface AdminOturumSatiri {
+  sid: string
+  cihaz: string | null
+  ip: string | null
+  ilkGiris: string | null
+  sonGorulme: string | null
+  /** Bu cihazın kaç açık girişi var — satırlar cihaza göre gruplanır (bkz. types.ts CihazSatiri). */
+  oturumSayisi: number
+}
+
+/** GET /admin/kullanici/:id/oturumlar — `katmanAcik:false` ≠ boş liste (bkz. types.ts). */
+export interface AdminOturumlarYaniti {
+  id: string
+  katmanAcik: boolean
+  oturumlar: AdminOturumSatiri[]
+}
+
+/** POST /admin/kullanici/:id/oturum-kapat */
+export interface AdminOturumKapatYanit {
+  id: string
+  kapatilan: number
   denetimYazildi: boolean
 }
 

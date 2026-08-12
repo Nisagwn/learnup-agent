@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { supabase } from '../clients/supabase.js'
-import { generateVerifiedSet, type TaggedQuestion } from './generation.js'
+import { generateVerifiedSet, type TaggedQuestion, type GenerationStrategyOptions } from './generation.js'
 import { resolveKazanim, getWeakPaths, osymBlueprint } from './curriculum.js'
 import { logger } from '../utils/logger.js'
 
@@ -49,14 +49,26 @@ function taggedToServed(q: TaggedQuestion): ServedQuestion {
  * Havuzdan (yks_questions) o kazanımın `verified` sorularını çek; eksiği generateVerifiedSet ile üret.
  * Her Segment tek kazanıma karşılık gelir → kazanim_id ile filtre (ltree alt-ağaç gerekmez).
  */
-export async function assembleSegment(seg: Segment, userId: string): Promise<ServedQuestion[]> {
+export async function assembleSegment(
+  seg: Segment,
+  userId: string,
+  options?: GenerationStrategyOptions,
+): Promise<ServedQuestion[]> {
   // Kaynak ayrımı yasası (ürün kuralı #6): adaptif montaj AI havuzunu okur.
   // Ayrım artık FİZİKSEL (0013): AI sorular yks_ai_questions'ta, çıkmış sorular
   // yks_questions'ta — burada çıkmış soru olması imkânsız, source_type filtresi gerekmez.
   // ⚠️ ZORLUK FİLTRESİ EKSİKTİ. seg.difficulty buraya kadar taşınıp yalnızca ÜRETİCİYE
   // veriliyordu; havuz sorgusuna hiç uygulanmıyordu. Yani "zor test istiyorum" diyen öğrenciye,
   // havuz doluysa o kazanımın KOLAY soruları dönüyordu. yaq_serve (kazanim_id, difficulty)
-  // kısmi indeksi tam bunun için var. Ayrıca .order() yoktu: her öğrenci hep aynı ilk N satırı alıyordu.
+  // kısmi indeksi tam bunun için var.
+  //
+  // ⚠️ ÇEŞİTLİLİK: `.order('quality') + .limit(seg.count)` "her öğrenci hep aynı ilk N satırı
+  // alıyordu" sorununu ÇÖZMÜYORDU — deterministik sıralama + sabit limit tam olarak aynı
+  // davranışı üretir. Öğrenci aynı mikro testi ikinci kez açtığında birebir aynı 5 soruyu
+  // görüyor, havuzun geri kalanı hiç servis edilmiyordu. Çözüm: kaliteye göre GENİŞ bir
+  // pencere çek, içinden rastgele örnekle. Kalite önceliği korunur (pencere en iyilerden
+  // kurulur), tekrar eden set biter.
+  const PENCERE = Math.max(seg.count * 5, 30)
   const { data, error } = await supabase
     .from('yks_ai_questions')
     .select('id, question_text, options, correct_option, solution')
@@ -65,10 +77,11 @@ export async function assembleSegment(seg: Segment, userId: string): Promise<Ser
     .eq('karantina', false) // 0025: yöneticinin düşürdüğü soru ÖĞRENCİYE SERVİS EDİLMEZ
     .eq('difficulty', seg.difficulty)
     .order('quality', { ascending: false })   // en iyi doğrulanmış sorular önce
-    .limit(seg.count)
+    .limit(PENCERE)
   if (error) throw error
 
-  const pool = ((data ?? []) as Parameters<typeof poolRowToServed>[0][]).map(poolRowToServed)
+  const aday = ((data ?? []) as Parameters<typeof poolRowToServed>[0][]).map(poolRowToServed)
+  const pool = karistir(aday)
   if (pool.length >= seg.count) return pool.slice(0, seg.count)
 
   const need = seg.count - pool.length
@@ -80,6 +93,7 @@ export async function assembleSegment(seg: Segment, userId: string): Promise<Ser
       kazanim: seg.kazanimCode,
       topic: seg.topic,
       difficulty: seg.difficulty,
+      options,
     },
     need,
   )
@@ -143,6 +157,7 @@ export async function buildMicroTest(p: {
   kazanimId: number
   difficulty: string
   count: number
+  options?: GenerationStrategyOptions
 }): Promise<ServedQuestion[]> {
   const k = await resolveKazanim(p.kazanimId)
   if (!k) throw new Error(`kazanım bulunamadı: ${p.kazanimId}`)
@@ -156,7 +171,7 @@ export async function buildMicroTest(p: {
     difficulty: p.difficulty,
     count: p.count,
   }
-  return assembleSegment(seg, p.userId)
+  return assembleSegment(seg, p.userId, p.options)
 }
 
 /** Mezo — ajanın belirlediği N zayıf kazanım, sarmal (interleave). */
@@ -203,15 +218,32 @@ export async function buildMacroTest(p: {
 /** Makro için: bir dersin AI havuzundaki verified sorulardan çek (kazanım-agnostik). */
 async function assembleBySubjectFromPool(subject: string, count: number): Promise<ServedQuestion[]> {
   // Fiziksel ayrım (0013): yks_ai_questions yalnız AI içerir → çıkmış soru sızamaz.
+  // ⚠️ Burada hiç sıralama yoktu ve `.limit(count)` sabit bir ÖNEK döndürüyordu: makro deneme
+  // her koşuda birebir aynı sorularla kuruluyordu. assembleSegment'teki ile aynı çare —
+  // geniş pencere + rastgele örnekleme.
+  const PENCERE = Math.max(count * 4, 60)
   const { data, error } = await supabase
     .from('yks_ai_questions')
     .select('id, question_text, options, correct_option, solution')
     .eq('subject', subject)
     .eq('verified', true)
     .eq('karantina', false) // 0025
-    .limit(count)
+    .order('quality', { ascending: false })
+    .limit(PENCERE)
   if (error) throw error
-  return ((data ?? []) as Parameters<typeof poolRowToServed>[0][]).map(poolRowToServed)
+  const aday = ((data ?? []) as Parameters<typeof poolRowToServed>[0][]).map(poolRowToServed)
+  return karistir(aday).slice(0, count)
+}
+
+/** Fisher-Yates — girdi dizisini DEĞİŞTİRMEZ (çağıranlar aynı diziyi paylaşabiliyor). */
+function karistir<T>(dizi: T[]): T[] {
+  const out = [...dizi]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const a = out[i]!, b = out[j]!
+    out[i] = b; out[j] = a
+  }
+  return out
 }
 
 function interleave<T>(groups: T[][]): T[] {

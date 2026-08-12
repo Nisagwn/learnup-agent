@@ -8,7 +8,7 @@ import { MathMarkdown } from '../components/MathMarkdown'
 import { MotionRoot } from '../components/fx'
 import { apiGet, apiPost } from '../lib/api.js'
 import { sesAcikMi, sesToggle, sesDogru, sesYanlis, sesFanfar } from '../lib/ses'
-import type { CozSpec, HavuzSoru } from '../lib/types'
+import type { CevapSonucu, CozKaynak, CozSpec, HavuzSoru, TestOzeti, TestYanlis } from '../lib/types'
 
 const HARFLER = ['A', 'B', 'C', 'D', 'E'] as const
 
@@ -51,9 +51,14 @@ function Kabuk({ children }: { children: React.ReactNode }) {
 }
 
 /** Çıkış onayı — Radix Dialog (frontend.md-6: yıkıcı eylem asla window.confirm). */
-function CikisOnay({ onCik, children }: { onCik: () => void; children: React.ReactNode }) {
+function CikisOnay({ onCik, onAcikDegisti, children }: {
+  onCik: () => void
+  /** Açıklık durumu YUKARI taşınır: klavye dinleyicisi modal açıkken kapatılmalı. */
+  onAcikDegisti?: (acik: boolean) => void
+  children: React.ReactNode
+}) {
   return (
-    <Dialog.Root>
+    <Dialog.Root onOpenChange={onAcikDegisti}>
       <Dialog.Trigger asChild>{children}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="cz-overlay" />
@@ -78,7 +83,7 @@ function CikisOnay({ onCik, children }: { onCik: () => void; children: React.Rea
 
 /* ═══ SET AKIŞI — ai / osym / review / tanisma ═══════════════════════════════ */
 
-function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
+function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: CozKaynak }) {
   const nav = useNavigate()
   const azalt = useReducedMotion()
   const [sorular, setSorular] = useState<HavuzSoru[]>([])
@@ -88,6 +93,12 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
   const [secili, setSecili] = useState<string | null>(null)
   const [asama, setAsama] = useState<'soru' | 'geri'>('soru')
   const [dogruMu, setDogruMu] = useState(false)
+  // Geri bildirim malzemesi SUNUCUDAN gelir (soru artık doğru şıkkı taşımıyor).
+  const [dogruSik, setDogruSik] = useState<string | null>(null)
+  const [cozum, setCozum] = useState<string | null>(null)
+  const [kontrolEdiliyor, setKontrolEdiliyor] = useState(false)
+  const [gonderimHatasi, setGonderimHatasi] = useState('')
+  const [cikisAcik, setCikisAcik] = useState(false)
   const [istatistik, setIstatistik] = useState({ dogru: 0, toplam: 0, xp: 0 })
   const [sonXp, setSonXp] = useState(0)
   const [sesli, setSesli] = useState(sesAcikMi)
@@ -95,6 +106,14 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
   const [gecen, setGecen] = useState(0)
   // Per-ders döküm — GERÇEK cevaplardan biriktirilir (özet ekranı); uydurma yok.
   const dersDurum = useRef<Map<string, { dogru: number; toplam: number }>>(new Map())
+  /**
+   * Yanlış yapılan sorular — Koç analizinin ham malzemesi.
+   *
+   * ⚠️ YALNIZ YANLIŞLAR ve KIRPILMIŞ metin tutulur. Doğru çözülen soruların tam metnini
+   * biriktirmek, analize hiçbir şey katmadan sohbete taşınacak istemi (ve LLM faturasını)
+   * şişirirdi. Analizin konusu hatadır.
+   */
+  const yanlislar = useRef<TestYanlis[]>([])
 
   const testModu = kaynak === 'osym' // ÖSYM = test: geri bildirim sona kadar SESSİZ
 
@@ -171,37 +190,52 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
   const soru = sorular[idx]
   const geri = asama === 'geri'
 
-  // Yarım blok kaydı — Bugün'deki "Devam Et" kartının kaynağı
+  /**
+   * Yarım blok kaydı — Bugün'deki "Devam Et" kartının kaynağı.
+   *
+   * ⚠️ SORULARIN KENDİSİ DE KAYDEDİLİR. Eskiden yalnız `{ spec, idx, toplam }` yazılıyordu;
+   * "devam" tıklandığında sorular SIFIRDAN yeniden çekiliyor ve `startIndex` o TAZE listeye
+   * uygulanıyordu. Kaynak 'ai' ve `kazanimId` yoksa (öneriden gelmiş set) `/practice/suggest`
+   * yeniden çağrılıp BAŞKA bir kazanım önerebiliyordu: öğrenci "5/10 kaldığın yerden" deyip
+   * tıklıyor, hiç görmediği bir setin 6. sorusuyla karşılaşıyordu. Sunucu daha az soru
+   * döndürdüğünde (startIndex >= uzunluk) ekran anında "Test bitti — 0/0" özetine düşüyordu.
+   * Soru listesi taşınınca devam GERÇEKTEN kaldığı yerden sürer (yükleyici `spec.questions`
+   * doluysa ağa hiç gitmez). Sorular artık doğru şık taşımadığı için saklamak da güvenli.
+   */
   useEffect(() => {
     try {
       if (!sorular.length) return
       if (idx > 0 && idx < sorular.length) {
         localStorage.setItem('learnup.devam', JSON.stringify({
-          spec: { ...spec, source: kaynak, startIndex: undefined },
+          spec: { ...spec, source: kaynak, startIndex: undefined, questions: sorular },
           idx, toplam: sorular.length, zaman: Date.now(),
         }))
       } else if (idx >= sorular.length) {
         localStorage.removeItem('learnup.devam')
       }
-    } catch { /* yut */ }
-  }, [idx, sorular.length, spec, kaynak])
+    } catch { /* yut — kota dolabilir; devam kartı kritik değil */ }
+  }, [idx, sorular, spec, kaynak])
 
-  // Sunucu-otoriter puanlama (havuzdan okur, LLM yok). xpGained döner ya da null.
-  const puanla = async (q: HavuzSoru, sik: string): Promise<number | null> => {
+  /**
+   * Sunucu-otoriter puanlama VE doğruluk hükmü (havuzdan okur, LLM yok).
+   *
+   * ⚠️ Artık yalnız "puanlama" değil: doğru/yanlış kararı da buradan gelir. Soru nesnesi
+   * `correct_option` taşımıyor (uçlar göndermiyor) — çünkü öğrenci daha cevaplamadan
+   * doğru şıkkı okuyabiliyordu. Karşılığında geri bildirim bir sunucu turu bekler.
+   */
+  const puanla = async (q: HavuzSoru, sik: string): Promise<CevapSonucu | null> => {
     try {
-      const r = await apiPost('/answers', {
+      return await apiPost('/answers', {
         questionId: q.id,
         subject: q.subject,
         kazanimId: q.kazanim_id ?? null,
         selectedOption: sik,
-        attemptNumber: 1,
         durationSec: Math.round((Date.now() - basladi.current) / 1000),
         difficulty: q.difficulty ?? null,
         // Tanışma = yerleştirme: BKT K=0.3 (hızlı yakınsama) — harita ilk setten belirir
         placement: kaynak === 'tanisma' || undefined,
-      })
-      return typeof r?.xpGained === 'number' ? r.xpGained : null
-    } catch { return null } // puanlama sessizce başarısız olabilir; akış sürer
+      }) as CevapSonucu
+    } catch { return null }
   }
 
   const dersEkle = (q: HavuzSoru, dogru: boolean) => {
@@ -211,26 +245,50 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
   }
 
   const kontrol = async () => {
-    if (!secili || !soru || geri) return
-    const dogru = secili === soru.correct_option
-    setIstatistik((s) => ({ ...s, dogru: s.dogru + (dogru ? 1 : 0), toplam: s.toplam + 1 }))
+    if (!secili || !soru || geri || kontrolEdiliyor) return
+    setKontrolEdiliyor(true)
+    const r = await puanla(soru, secili)
+    setKontrolEdiliyor(false)
+
+    // Sunucuya ulaşılamadı ya da doğruluk çözülemedi → HÜKÜM VERMEYİZ.
+    // Eskiden doğruluk istemcide hesaplandığı için ağ hatası bile "sonuç" üretiyordu;
+    // artık uydurulmuş bir doğru/yanlış göstermektense öğrenciden tekrar denemesini isteriz.
+    if (!r || r.isCorrect == null) {
+      // ⚠️ `hata` DEĞİL: o durum tam ekran hata dalını çizip öğrenciyi sorudan atardı.
+      // Bu şerit sorunun üstünde belirir, "Kontrol Et" tıklanabilir kalır.
+      setGonderimHatasi('Cevabın kaydedilemedi — bağlantını kontrol edip tekrar dene.')
+      return
+    }
+    setGonderimHatasi('')
+
+    const dogru = r.isCorrect === true
+    setIstatistik((s) => ({
+      ...s, dogru: s.dogru + (dogru ? 1 : 0), toplam: s.toplam + 1, xp: s.xp + (r.xpGained || 0),
+    }))
     dersEkle(soru, dogru)
+    if (!dogru) {
+      yanlislar.current.push({
+        soru: soru.question_text.slice(0, 160),
+        subject: soru.subject,
+        konu: soru.topic ?? null,
+        secilen: secili,
+        dogruSik: r.correctOption ?? '?',
+      })
+    }
 
     if (testModu) {
       // TEST modu: ses YOK, şık rengi YOK, açıklama YOK — sessizce kaydet ve ilerle.
-      void puanla(soru, secili).then((xp) => { if (xp != null) setIstatistik((s) => ({ ...s, xp: s.xp + xp })) })
       ilerle()
       return
     }
-    // PRATİK modu: anlık geri bildirim
-    setDogruMu(dogru); setAsama('geri'); setSonXp(0)
+    // PRATİK modu: anlık geri bildirim (malzeme sunucudan)
+    setDogruMu(dogru); setDogruSik(r.correctOption); setCozum(r.solution)
+    setSonXp(r.xpGained || 0); setAsama('geri')
     if (dogru) sesDogru(); else sesYanlis()
-    const xp = await puanla(soru, secili)
-    if (xp != null) { setSonXp(xp); setIstatistik((s) => ({ ...s, xp: s.xp + xp })) }
   }
 
   const ilerle = () => {
-    setSonXp(0)
+    setSonXp(0); setDogruSik(null); setCozum(null); setGonderimHatasi('')
     if (idx + 1 >= sorular.length) { setIdx(sorular.length); return } // özet
     setIdx((i) => i + 1); setSecili(null); setAsama('soru'); basladi.current = Date.now(); setGecen(0)
   }
@@ -241,6 +299,12 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
   useEffect(() => {
     const dinle = (e: KeyboardEvent) => {
       if (yukleniyor || !soru || idx >= sorular.length) return
+      // ⚠️ MODAL AÇIKKEN KLAVYE SUSAR. Dinleyici window'a bağlı ve çıkış onayı açıkken de
+      // çalışıyordu: öğrenci ✕'e basıp "Testten çık?" diyaloğunda kararsız kalıp Enter'a
+      // bastığında (odak "Devam et" butonundadır) arkadaki soru CEVAPLANIYOR, /answers'a
+      // POST gidiyor ve sayaç artıyordu — diyalog Enter'ı yutamadığı için kullanıcı ne
+      // olduğunu görmüyordu.
+      if (cikisAcik) return
       const hedef = e.target as HTMLElement | null
       if (hedef && (hedef.tagName === 'INPUT' || hedef.tagName === 'TEXTAREA')) return
       const k = e.key.toUpperCase()
@@ -251,7 +315,7 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
     window.addEventListener('keydown', dinle)
     return () => window.removeEventListener('keydown', dinle)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [yukleniyor, soru, geri, secili, idx, sorular.length])
+  }, [yukleniyor, soru, geri, secili, idx, sorular.length, cikisAcik])
 
   /* ── Durumlar ── */
   if (yukleniyor) return <Merkez><Spinner /><p className="mt-3.5 text-[13px]" style={{ color: 'var(--metin3)' }}>Sorular hazırlanıyor…</p></Merkez>
@@ -289,9 +353,35 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
         istatistik={istatistik}
         kaynak={kaynak}
         dokum={[...dersDurum.current.entries()].map(([subject, s]) => ({ subject, ...s }))}
-        onTekrar={() => { setIdx(0); setSecili(null); setAsama('soru'); setIstatistik({ dogru: 0, toplam: 0, xp: 0 }); dersDurum.current = new Map(); basladi.current = Date.now() }}
+        onTekrar={() => {
+          setIdx(0); setSecili(null); setAsama('soru')
+          setIstatistik({ dogru: 0, toplam: 0, xp: 0 })
+          dersDurum.current = new Map()
+          yanlislar.current = []   // ⚠️ yoksa ikinci turun yanlışları birincininkilere eklenir
+          basladi.current = Date.now()
+        }}
         onBitir={cikis}
         onDersTekrar={(subject) => nav('/coz', { state: { source: 'ai', subject, title: subject } })}
+        /**
+         * Koç'a dönüş — YALNIZ sohbetten gelindiyse (spec.donusSession dolu).
+         * Başka yerden (Arşiv, Rota, komut paleti) gelen öğrenciye "Koç'a dön" demek,
+         * hiç açılmamış bir konuşmaya "dön" demek olurdu.
+         */
+        onKoca={spec?.donusSession ? () => nav('/kaptan', {
+          state: {
+            donusSession: spec.donusSession,
+            testOzeti: {
+              kaynak,
+              baslik: spec?.title,
+              dogru: istatistik.dogru,
+              toplam: istatistik.toplam,
+              dokum: [...dersDurum.current.entries()].map(([subject, s]) => ({ subject, ...s })),
+              // Uzun bir testte 20 yanlışın tamamını taşımak istemi şişirir; ilk 8'i
+              // örüntüyü göstermeye yeter (Koç zaten "ortak hata nedir" diye bakıyor).
+              yanlislar: yanlislar.current.slice(0, 8),
+            } satisfies TestOzeti,
+          },
+        }) : undefined}
       />
     )
   }
@@ -303,7 +393,7 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
       {/* Üst ince cam şerit: çık(onay) + ilerleme + süre + ses */}
       <div className="cz-serit">
         <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4" style={{ height: 56 }}>
-          <CikisOnay onCik={cikis}>
+          <CikisOnay onCik={cikis} onAcikDegisti={setCikisAcik}>
             <button type="button" className="cz-cik grid size-9 cursor-pointer place-items-center rounded-xl" title="Testten çık" aria-label="Çık">
               <Icon name="close" size={17} color="currentColor" />
             </button>
@@ -349,6 +439,22 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
           )}
         </div>
 
+        {/* Gönderim hatası — sorunun ÜSTÜNDE şerit; öğrenci soruda kalır, tekrar deneyebilir */}
+        {gonderimHatasi && (
+          <div
+            className="mb-3.5 flex items-center gap-2.5 rounded-xl px-4 py-3 text-[13px]"
+            role="alert"
+            style={{
+              background: 'color-mix(in srgb, var(--yanlis) 10%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--yanlis) 30%, transparent)',
+              color: 'var(--metin2)',
+            }}
+          >
+            <Icon name="refresh" size={15} color="var(--yanlis)" />
+            {gonderimHatasi}
+          </div>
+        )}
+
         {/* Soru kartı + şıklar */}
         <AnimatePresence mode="wait">
           <m.div
@@ -367,10 +473,12 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
 
             <div className="mt-3.5 space-y-2.5">
               {HARFLER.filter((L) => soru.options?.[L] != null).map((L) => {
-                const dogruSik = L === soru.correct_option
+                // Doğru şık sunucudan gelir; çözülemediyse (dogruSik null) hiçbir şık
+                // "doğru" boyanmaz — yanlış bir şıkkı yeşile boyamaktansa boyamamak yeğdir.
+                const buDogru = dogruSik != null && L === dogruSik
                 const secildi = secili === L
                 const durum = geri
-                  ? (dogruSik ? 'dogru' : secildi ? 'yanlis' : 'soluk')
+                  ? (buDogru ? 'dogru' : secildi ? 'yanlis' : 'soluk')
                   : (secildi ? 'secili' : '')
                 return (
                   <button
@@ -381,16 +489,16 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
                     className={cn('cz-sik', !geri && 'cz-sik-secilebilir', durum)}
                   >
                     <span className="cz-harf">
-                      {geri && dogruSik ? <Icon name="check" size={16} color="currentColor" strokeWidth={2.6} />
-                        : geri && secildi && !dogruSik ? <Icon name="close" size={15} color="currentColor" strokeWidth={2.6} />
+                      {geri && buDogru ? <Icon name="check" size={16} color="currentColor" strokeWidth={2.6} />
+                        : geri && secildi && !buDogru ? <Icon name="close" size={15} color="currentColor" strokeWidth={2.6} />
                         : L}
                     </span>
                     {/* Şık metni KaTeX'ten geçer — havuz "$12$" yazar, ham basılmaz */}
                     <span className="text-[14.5px] font-medium leading-normal">
                       <MathMarkdown inline>{soru.options[L]}</MathMarkdown>
                     </span>
-                    {geri && dogruSik && <span className="cz-durum-yazi" style={{ color: 'var(--dogru)' }}>Doğru</span>}
-                    {geri && secildi && !dogruSik && <span className="cz-durum-yazi" style={{ color: 'var(--yanlis)' }}>Yanlış</span>}
+                    {geri && buDogru && <span className="cz-durum-yazi" style={{ color: 'var(--dogru)' }}>Doğru</span>}
+                    {geri && secildi && !buDogru && <span className="cz-durum-yazi" style={{ color: 'var(--yanlis)' }}>Yanlış</span>}
                   </button>
                 )
               })}
@@ -407,7 +515,7 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
                     <Icon name={dogruMu ? 'check' : 'close'} size={14} color="currentColor" strokeWidth={2.6} />
                   </span>
                   <b style={{ color: dogruMu ? 'var(--dogru)' : 'var(--yanlis)' }}>
-                    {dogruMu ? 'Doğru!' : `Doğru cevap: ${soru.correct_option}`}
+                    {dogruMu ? 'Doğru!' : dogruSik ? `Doğru cevap: ${dogruSik}` : 'Yanlış'}
                   </b>
                   {dogruMu && sonXp > 0 && (
                     <m.span
@@ -420,11 +528,11 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
                     </m.span>
                   )}
                 </div>
-                {soru.solution ? (
+                {cozum ? (
                   <>
                     <b>Neden?</b>
                     <div className="mt-1 max-h-56 overflow-y-auto">
-                      <MathMarkdown>{soru.solution}</MathMarkdown>
+                      <MathMarkdown>{cozum}</MathMarkdown>
                     </div>
                   </>
                 ) : (
@@ -439,8 +547,9 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
       {/* Alt eylem barı — görünüm başına TEK birincil buton */}
       <div className="relative z-[1] mx-auto w-full max-w-3xl px-4 pb-6">
         {!geri ? (
-          <button type="button" className="cz-btn birincil cz-btn-full" disabled={!secili} onClick={kontrol}>
-            {testModu ? (idx + 1 >= sorular.length ? 'Cevapla ve bitir' : 'Cevapla') : 'Kontrol Et'}
+          <button type="button" className="cz-btn birincil cz-btn-full" disabled={!secili || kontrolEdiliyor} onClick={kontrol}>
+            {kontrolEdiliyor ? 'Kontrol ediliyor…'
+              : testModu ? (idx + 1 >= sorular.length ? 'Cevapla ve bitir' : 'Cevapla') : 'Kontrol Et'}
             <span className="font-mono text-[11px] opacity-60">↵</span>
           </button>
         ) : (
@@ -456,12 +565,11 @@ function SetCozumu({ spec, kaynak }: { spec: CozSpec | null; kaynak: string }) {
 
 /* ═══ ANTRENMAN — adaptif /practice/next döngüsü ════════════════════════════ */
 
+/** ⚠️ correct_answer/explanation YOK — /practice/next artık cevabı göndermiyor (bkz. HavuzSoru). */
 interface AntrenmanSoru {
   id: string | null
   question_text: string
   options: string[]
-  correct_answer: string | null
-  explanation: string
   subject: string | null
   difficulty: string | null
   kazanim_id?: number | null
@@ -477,6 +585,12 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
   const [dogruMu, setDogruMu] = useState(false)
   const [istatistik, setIstatistik] = useState({ dogru: 0, toplam: 0 })
   const [hata, setHata] = useState('')
+  // Geri bildirim malzemesi SUNUCUDAN (soru artık cevabı taşımıyor)
+  const [dogruSik, setDogruSik] = useState<string | null>(null)
+  const [cozum, setCozum] = useState<string | null>(null)
+  const [kontrolEdiliyor, setKontrolEdiliyor] = useState(false)
+  /** Havuz tükendi: mevcut soru cevaplandı ama SIRADAKİ yok → akış dürüstçe biter. */
+  const [havuzBitti, setHavuzBitti] = useState(false)
   const basladi = useRef(Date.now())
   const subject = spec?.subject ?? 'Matematik'
 
@@ -495,17 +609,25 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
       if (r?.pedagogicalHint) setIpucu(String(r.pedagogicalHint))
       if (typeof r?.stats?.currentLevel === 'number') setSeviye(r.stats.currentLevel)
       if (r?.nextQuestion) {
+        setHata('')          // başarılı çağrı önceki hatayı TEMİZLER (eskiden hiç temizlenmiyordu)
+        setHavuzBitti(false)
         setSoru(r.nextQuestion as AntrenmanSoru)
         setSecili(null)
         setAsama(cevap ? 'geri' : 'soru')
         if (!cevap) basladi.current = Date.now()
       } else {
+        // ⚠️ Eskiden burada `setAsama('soru')` vardı: ekran AYNI soruyu eski seçimiyle
+        // yeniden gösteriyor, "Kontrol Et" tıklanabilir kalıyordu. Öğrenci aynı soruyu
+        // tekrar cevaplıyor, sayaç ikinci kez artıyor ve /answers'a ikinci POST gidiyordu.
+        // Yazılan hata metni ise hiç görünmüyordu (hata ekranı yalnız `!aktifSoru` iken çizilir).
         setHata('Havuzda uygun soru kalmadı — Koç yenilerini hazırlıyor.')
-        setAsama('soru')
+        setHavuzBitti(true)
+        setAsama(cevap ? 'geri' : 'soru')
       }
     } catch (e: any) {
       setHata(e?.message || 'Antrenman başlatılamadı')
-      setAsama('soru')
+      setHavuzBitti(!!cevap)
+      setAsama(cevap ? 'geri' : 'soru')
     }
   }
 
@@ -516,29 +638,45 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
   useEffect(() => { if (asama === 'soru' && soru) setAktifSoru(soru) }, [asama, soru])
 
   const kontrol = async () => {
-    if (secili == null || !aktifSoru?.correct_answer) return
+    // ⚠️ Eski koşul `!aktifSoru?.correct_answer` idi: cevabı boş gelen soruda fonksiyon
+    // SESSİZCE dönüyor, buton ise aktif kalıyordu (disabled correct_answer'a bakmıyordu).
+    // Öğrenci tıklıyor, hiçbir şey olmuyordu — akış tümüyle kilitleniyordu.
+    if (secili == null || !aktifSoru || kontrolEdiliyor) return
     const verilen = aktifSoru.options[secili]
-    const dogru = String(verilen) === String(aktifSoru.correct_answer)
-    setDogruMu(dogru)
-    setIstatistik((s) => ({ dogru: s.dogru + (dogru ? 1 : 0), toplam: s.toplam + 1 }))
-    if (dogru) sesDogru(); else sesYanlis()
-    // Otoriter kayıt (XP/mastery) — soru havuzda kayıtlıysa puanlanır
+
+    // Doğruluk hükmü SUNUCUDAN (soru artık cevabı taşımıyor).
+    setKontrolEdiliyor(true)
+    let r: CevapSonucu | null = null
     try {
-      await apiPost('/answers', {
+      r = await apiPost('/answers', {
         questionId: aktifSoru.id,
         subject: aktifSoru.subject ?? subject,
         kazanimId: aktifSoru.kazanim_id ?? null,
         selectedOption: HARFLER[secili] ?? null,
-        attemptNumber: 1,
         durationSec: Math.round((Date.now() - basladi.current) / 1000),
         difficulty: aktifSoru.difficulty ?? null,
-      })
-    } catch { /* sessiz */ }
+      }) as CevapSonucu
+    } catch { r = null }
+    setKontrolEdiliyor(false)
+
+    if (!r || r.isCorrect == null) {
+      setHata('Cevabın kaydedilemedi — bağlantını kontrol edip tekrar dene.')
+      return
+    }
+    setHata('')
+
+    const dogru = r.isCorrect === true
+    setDogruMu(dogru)
+    setDogruSik(r.correctOption)
+    setCozum(r.solution)
+    setIstatistik((s) => ({ dogru: s.dogru + (dogru ? 1 : 0), toplam: s.toplam + 1 }))
+    if (dogru) sesDogru(); else sesYanlis()
     // Sıradaki soru + ipucu (yanlışta) arka planda gelir; "geri" aşaması gösterilir
     void getir({ isCorrect: dogru, givenAnswer: String(verilen) })
   }
 
   const devamEt = () => {
+    setDogruSik(null); setCozum(null)
     setAsama('soru')
     basladi.current = Date.now()
   }
@@ -600,9 +738,10 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
             </div>
             <div className="mt-3.5 space-y-2.5">
               {gosterilen.options.map((secenek, i) => {
-                const dogruSik = geri && String(secenek) === String(gosterilen.correct_answer)
+                // Doğru şık sunucudan HARF olarak gelir; çözülemediyse hiçbir şık boyanmaz.
+                const buDogru = geri && dogruSik != null && HARFLER[i] === dogruSik
                 const secildi = secili === i
-                const durum = dogruSik ? 'dogru' : (geri && secildi && !dogruSik) ? 'yanlis' : (geri && !secildi) ? 'soluk' : secildi ? 'secili' : ''
+                const durum = buDogru ? 'dogru' : (geri && secildi && !buDogru) ? 'yanlis' : (geri && !secildi) ? 'soluk' : secildi ? 'secili' : ''
                 return (
                   <button
                     key={i}
@@ -632,10 +771,27 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
               </m.div>
             )}
 
-            {geri && gosterilen.explanation && (
+            {geri && cozum && (
               <div className="cz-aciklama">
                 <b>Neden?</b>
-                <div className="mt-1"><MathMarkdown>{gosterilen.explanation}</MathMarkdown></div>
+                <div className="mt-1"><MathMarkdown>{cozum}</MathMarkdown></div>
+              </div>
+            )}
+
+            {/* Havuz tükendi / ağ hatası — soru ekranındayken de GÖRÜNÜR şerit.
+                Eskiden bu metin yalnız `!aktifSoru` iken çizildiği için hiç görünmüyordu. */}
+            {hata && (
+              <div
+                className="mt-4 flex items-center gap-2.5 rounded-xl px-4 py-3 text-[13px]"
+                role="alert"
+                style={{
+                  background: 'color-mix(in srgb, var(--uyari) 12%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--uyari) 30%, transparent)',
+                  color: 'var(--metin2)',
+                }}
+              >
+                <Icon name="sprout" size={15} color="var(--uyari)" />
+                {hata}
               </div>
             )}
           </>
@@ -644,8 +800,14 @@ function Antrenman({ spec, cikis }: { spec: CozSpec | null; cikis: () => void })
 
       <div className="relative z-[1] mx-auto w-full max-w-3xl px-4 pb-6">
         {!geri ? (
-          <button type="button" className="cz-btn birincil cz-btn-full" disabled={secili == null || asama === 'yukleniyor'} onClick={kontrol}>
-            Kontrol Et
+          <button type="button" className="cz-btn birincil cz-btn-full" disabled={secili == null || asama === 'yukleniyor' || kontrolEdiliyor} onClick={kontrol}>
+            {kontrolEdiliyor ? 'Kontrol ediliyor…' : 'Kontrol Et'}
+          </button>
+        ) : havuzBitti ? (
+          // Sıradaki soru YOK: "Devam" göstermek yalanı sürdürürdü — tek dürüst eylem çıkıştır.
+          <button type="button" className="cz-btn birincil cz-btn-full" onClick={cikis}>
+            Bitir
+            <Icon name="arrowRight" size={16} color="currentColor" />
           </button>
         ) : (
           <div className="flex gap-2.5">
@@ -667,13 +829,15 @@ const KAYNAK_ETIKET: Record<string, string> = {
   ai: 'Koç pratiği', osym: 'ÖSYM çıkmış soru', review: 'Tekrar seti', tanisma: 'Tanışma sınavı',
 }
 
-function Ozet({ istatistik, kaynak, dokum, onTekrar, onBitir, onDersTekrar }: {
+function Ozet({ istatistik, kaynak, dokum, onTekrar, onBitir, onDersTekrar, onKoca }: {
   istatistik: { dogru: number; toplam: number; xp: number }
   kaynak: string
   dokum: { subject: string; dogru: number; toplam: number }[]
   onTekrar: () => void
   onBitir: () => void
   onDersTekrar: (subject: string) => void
+  /** Sohbetten gelindiyse dolu; yoksa "Koç'a dön" butonu HİÇ çizilmez. */
+  onKoca?: () => void
 }) {
   const azalt = useReducedMotion()
   const yuzde = istatistik.toplam ? Math.round((istatistik.dogru / istatistik.toplam) * 100) : 0
@@ -764,12 +928,21 @@ function Ozet({ istatistik, kaynak, dokum, onTekrar, onBitir, onDersTekrar }: {
           </p>
         )}
 
-        {/* Görünüm başına TEK birincil eylem */}
+        {/* Görünüm başına TEK birincil eylem.
+            ⚠️ Sohbetten gelindiyse BİRİNCİL eylem "Koç'a dön" olur, "Bugüne dön" ikincile
+            düşer: öğrenciyi buraya Koç gönderdi, dönüş yolu da oraya bakmalı. Yoksa
+            konuşma yarım kalır — testi öneren Koç sonucu hiç öğrenmez. */}
         <div className="mt-6 flex flex-wrap justify-center gap-2.5">
           {kaynak !== 'tanisma' && (
             <button type="button" className="cz-btn dis" onClick={onTekrar}>Tekrar çöz</button>
           )}
-          <button type="button" className="cz-btn birincil" onClick={onBitir}>
+          {onKoca && (
+            <button type="button" className="cz-btn birincil" onClick={onKoca}>
+              Koç'a dön
+              <Icon name="chat" size={16} color="currentColor" />
+            </button>
+          )}
+          <button type="button" className={cn('cz-btn', onKoca ? 'dis' : 'birincil')} onClick={onBitir}>
             {kaynak === 'tanisma' ? 'Analizlere git' : 'Bugüne dön'}
             <Icon name="arrowRight" size={16} color="currentColor" />
           </button>

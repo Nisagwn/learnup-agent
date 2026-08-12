@@ -28,3 +28,15 @@ export const ROL_ADI: Record<Rol, string> = {
   teacher: 'Öğretmen',
   admin: 'Yönetim',
 }
+
+/**
+ * Rolün ANA EKRANI — "bu hesap açılışta nereyi görür" sorusunun TEK cevabı.
+ *
+ * Kök rota kapısı (AnaKapi) ve rol kapısının yönlendirme kipi aynı tablodan okur:
+ * iki yerde ayrı ayrı yazılsaydı biri güncellenip diğeri unutulurdu.
+ */
+export const ROL_ANA_YOL: Record<Rol, string> = {
+  student: '/',
+  teacher: '/sinif',
+  admin: '/kule',
+}

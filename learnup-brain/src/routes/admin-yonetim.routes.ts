@@ -1,16 +1,21 @@
 import { randomUUID } from 'node:crypto'
 import { Router } from 'express'
+// validateParams(IdParam): geçersiz uuid Postgres'te 22P02 üretip 500'e dönüşüyordu (400 olmalı).
+import { validateParams, IdParam } from '../middleware/validate.js'
 import { supabase } from '../clients/supabase.js'
 import { redisTry } from '../clients/redis.js'
 import { env } from '../config/env.js'
 import { TASKS_STREAM, type AgentTask } from '../agents/bus.js'
 import { kimligiUnut, sinifiUnut } from '../lib/yetki.js'
+import { cihazGruplari, oturumKatmaniAcik, oturumlariListele, tumOturumlariIptalEt } from '../lib/oturum.js'
 import { denetimYaz } from '../lib/denetim.js'
 import { logger } from '../utils/logger.js'
 import { HttpHatasi, bulunamadi, gecersizIstek } from '../lib/hata.js'
 import type {
   AdminDenetimYaniti,
   AdminKullaniciDetayi,
+  AdminOturumKapatYanit,
+  AdminOturumlarYaniti,
   AskiYanit,
   BasvuruReddetYanit,
   DenetimSatiri,
@@ -147,7 +152,7 @@ async function denetimZenginlestir(ham: Array<Record<string, unknown>>): Promise
 // kapalı (sınıfı req.userId'den türetiyorlar, admin orada sessizce boş sınıf
 // görürdü). "Öğretmen sınıfım boş diyor" şikâyeti buradan teşhis edilir.
 // ─────────────────────────────────────────────────────────────────────────────
-yonetimRouter.get('/kullanici/:id', async (req, res, next) => {
+yonetimRouter.get('/kullanici/:id', validateParams(IdParam), async (req, res, next) => {
   try {
     const id = String(req.params.id)
     const p = await profilOku(id)
@@ -236,7 +241,7 @@ yonetimRouter.get('/kullanici/:id', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /admin/kullanici/:id/rol — body: { rol: 'student'|'teacher'|'admin' }
 // ─────────────────────────────────────────────────────────────────────────────
-yonetimRouter.post('/kullanici/:id/rol', async (req, res, next) => {
+yonetimRouter.post('/kullanici/:id/rol', validateParams(IdParam), async (req, res, next) => {
   try {
     const adminId = req.userId!
     const id = String(req.params.id)
@@ -276,9 +281,28 @@ yonetimRouter.post('/kullanici/:id/rol', async (req, res, next) => {
         .eq('teacher_id', id).eq('role', 'student').select('id')
       if (bosHata) throw new HttpHatasi(500, 'sinif_bosaltilamadi', 'Öğretmenin sınıfı boşaltılamadı.')
       const ids = ((bosaltilan ?? []) as Array<{ id: string }>).map((r) => r.id)
+
+      // ⚠️ İKİNCİ BAĞ KOLONU: sahiplik `teacher_ids` üyeliğinden de kurulabiliyor
+      // (lib/yetki.ts). Yalnız `teacher_id` boşaltılınca, bu öğretmene `teacher_ids`
+      // üzerinden bağlı öğrenciler artık öğretmen OLMAYAN bir id'ye bağlı kalıyordu —
+      // yorumun tam da engellemek istediği "sessizce kaybolma" durumu, ikinci kolonda
+      // aynen sürüyordu.
+      const { data: cokluBagli, error: cokluHata } = await supabase
+        .from('profiles').select('id, teacher_ids')
+        .contains('teacher_ids', [id]).eq('role', 'student')
+      if (cokluHata) throw new HttpHatasi(500, 'sinif_bosaltilamadi', 'Öğretmenin sınıfı boşaltılamadı.')
+      for (const satir of (cokluBagli ?? []) as Array<{ id: string; teacher_ids: unknown }>) {
+        const kalan = (Array.isArray(satir.teacher_ids) ? satir.teacher_ids : [])
+          .map((x) => String(x)).filter((x) => x !== id)
+        const { error: yzHata } = await supabase
+          .from('profiles').update({ teacher_ids: kalan }).eq('id', satir.id)
+        if (yzHata) throw new HttpHatasi(500, 'sinif_bosaltilamadi', 'Öğretmenin sınıfı boşaltılamadı.')
+        if (!ids.includes(satir.id)) ids.push(satir.id)
+      }
+
       serbest = ids.length
       await Promise.all(ids.map((sid) => kimligiUnut(sid)))
-      sinifiUnut(id)
+      await sinifiUnut(id)
     }
 
     const yama: Record<string, unknown> = { role: yeniRol }
@@ -314,7 +338,7 @@ yonetimRouter.post('/kullanici/:id/rol', async (req, res, next) => {
     if (error) throw new HttpHatasi(500, 'rol_yazilamadi', 'Rol güncellenemedi.')
     await kimligiUnut(id)
     // Eski öğretmeninin mevcudu değişti — onun listesi de tazelenmeli.
-    if (eskiOgretmenId && yama.teacher_id === null) sinifiUnut(eskiOgretmenId)
+    if (eskiOgretmenId && yama.teacher_id === null) await sinifiUnut(eskiOgretmenId)
 
     const denetimYazildi = await denetimYaz({
       adminId, eylem: 'rol_degis', hedefId: id, hedefTur: 'kullanici',
@@ -341,7 +365,7 @@ yonetimRouter.post('/kullanici/:id/rol', async (req, res, next) => {
 // öğrenciyi reddediyor: devir meşru olabilir ama kararı DEVRALAN öğretmen veremez.
 // Yönetici verir ve kararın izi kalır.
 // ─────────────────────────────────────────────────────────────────────────────
-yonetimRouter.post('/kullanici/:id/sinif', async (req, res, next) => {
+yonetimRouter.post('/kullanici/:id/sinif', validateParams(IdParam), async (req, res, next) => {
   try {
     const adminId = req.userId!
     const studentId = String(req.params.id)
@@ -376,8 +400,8 @@ yonetimRouter.post('/kullanici/:id/sinif', async (req, res, next) => {
     if (error) throw new HttpHatasi(500, 'atama_yazilamadi', 'Sınıf ataması kaydedilemedi.')
 
     await kimligiUnut(studentId)
-    if (oncekiOgretmenId) sinifiUnut(oncekiOgretmenId)
-    if (yeniOgretmenId) sinifiUnut(yeniOgretmenId)
+    if (oncekiOgretmenId) await sinifiUnut(oncekiOgretmenId)
+    if (yeniOgretmenId) await sinifiUnut(yeniOgretmenId)
 
     const denetimYazildi = await denetimYaz({
       adminId, eylem: 'sinif_ata', hedefId: studentId, hedefTur: 'kullanici',
@@ -489,7 +513,7 @@ yonetimRouter.post('/kullanici', async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const DUZELTILEBILIR = ['name', 'school', 'grade', 'student_class'] as const
 
-yonetimRouter.patch('/kullanici/:id', async (req, res, next) => {
+yonetimRouter.patch('/kullanici/:id', validateParams(IdParam), async (req, res, next) => {
   try {
     const adminId = req.userId!
     const id = String(req.params.id)
@@ -539,7 +563,7 @@ yonetimRouter.patch('/kullanici/:id', async (req, res, next) => {
 // vermek hesabı devralmaya yeter — şifre sıfırlama yetkisi HESABA GİRME yetkisi
 // değildir. resetPasswordForEmail bağlantıyı yalnız kullanıcının kutusuna gönderir.
 // ─────────────────────────────────────────────────────────────────────────────
-yonetimRouter.post('/kullanici/:id/sifre-sifirla', async (req, res, next) => {
+yonetimRouter.post('/kullanici/:id/sifre-sifirla', validateParams(IdParam), async (req, res, next) => {
   try {
     const adminId = req.userId!
     const id = String(req.params.id)
@@ -580,7 +604,7 @@ yonetimRouter.post('/kullanici/:id/sifre-sifirla', async (req, res, next) => {
 // ⚠️ ASKI ROL DEĞİLDİR: sınıf bağı, ustalık, ödev geçmişi olduğu gibi kalır.
 // Askı kalkınca kullanıcı bıraktığı yerden devam eder.
 // ─────────────────────────────────────────────────────────────────────────────
-yonetimRouter.post('/kullanici/:id/aski', async (req, res, next) => {
+yonetimRouter.post('/kullanici/:id/aski', validateParams(IdParam), async (req, res, next) => {
   try {
     const adminId = req.userId!
     const id = String(req.params.id)
@@ -620,15 +644,107 @@ yonetimRouter.post('/kullanici/:id/aski', async (req, res, next) => {
     // requireAktifHesap eski kimliği okur ve kullanıcı çalışmaya devam eder.
     await kimligiUnut(id)
 
+    /**
+     * Askıda açık oturumlar da kapatılır.
+     *
+     * ⚠️ ERİŞİMİ KESEN ŞEY BU DEĞİL — onu askı kapısı yapar (yukarıdaki `kimligiUnut`
+     * sayesinde bir sonraki istekte). Buranın işi, kararın CİHAZ DEFTERİNE de işlemesi:
+     * kullanıcının oturum listesi "hâlâ 3 cihazda açıksın" demesin, askı kalktığında
+     * eski token'lar sessizce dirilmesin. Bedeli tek şey: askı kalkınca yeniden giriş.
+     * (Bu, "askı kalkınca bıraktığı yerden devam eder" sözüyle çelişmez — veri, sınıf
+     * bağı ve ilerleme aynen durur; yenilenen yalnız oturumdur.)
+     */
+    const kapatilanOturum = askida ? await tumOturumlariIptalEt(id) : 0
+
     const denetimYazildi = await denetimYaz({
       adminId,
       eylem: askida ? 'hesap_askiya' : 'hesap_geri_al',
       hedefId: id,
       hedefTur: 'kullanici',
-      detay: { neden, rol: p.role ?? null, email: p.email ?? null },
+      detay: { neden, rol: p.role ?? null, email: p.email ?? null, kapatilanOturum },
     })
 
-    const yanit: AskiYanit = { id, askidaMi: askida, neden: askida ? neden : null, denetimYazildi }
+    const yanit: AskiYanit = {
+      id,
+      askidaMi: askida,
+      neden: askida ? neden : null,
+      kapatilanOturum,
+      denetimYazildi,
+    }
+    res.json(yanit)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /admin/kullanici/:id/oturumlar — bir kullanıcının açık cihazları
+//
+// "Hesabım ele geçirildi" şikâyetinin ilk bakılacak yeri. IP + cihaz + son görülme,
+// yöneticinin şikâyeti doğrulayıp doğrulayamayacağı tek yüzeydir.
+//
+// ⚠️ `katmanAcik:false` ile BOŞ LİSTE aynı şey değildir ve yanıtta ayrı alan olarak
+// durur: defter kapalıyken boş listeyi "bu hesap hiçbir yerde açık değil" diye okumak,
+// yöneticiyi olmayan bir bilgiyle karar verdirmek olurdu.
+//
+// ⚠️ SATIRLAR CİHAZA GÖRE GRUPLANIR — kullanıcı görünümüyle AYNI kural (lib/oturum.ts
+// `cihazGruplari`). İkisi ayrışsaydı yönetici, öğrencinin ekranında görmediği bir tabloya
+// bakıp "sende 7 cihaz görünüyor" derdi; şikâyet doğrulama yüzeyi bunu kaldırmaz.
+// `oturumSayisi` satırda durur: gruplama bilgi SAKLAMAZ, düzenler.
+// ─────────────────────────────────────────────────────────────────────────────
+yonetimRouter.get('/kullanici/:id/oturumlar', validateParams(IdParam), async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    await profilOku(id) // yoksa 404 — yabancı uuid yoklamak boş liste döndürmesin
+    const kayitlar = await oturumlariListele(id, null)
+    const yanit: AdminOturumlarYaniti = {
+      id,
+      katmanAcik: oturumKatmaniAcik(),
+      oturumlar: cihazGruplari(kayitlar).map((g) => ({
+        sid: g.sidler[0],
+        oturumSayisi: g.sidler.length,
+        cihaz: g.cihaz,
+        ip: g.ip,
+        ilkGiris: g.ilkGorulmeMs ? new Date(g.ilkGorulmeMs).toISOString() : null,
+        sonGorulme: g.sonGorulmeMs ? new Date(g.sonGorulmeMs).toISOString() : null,
+      })),
+    }
+    res.json(yanit)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /admin/kullanici/:id/oturum-kapat — kullanıcıyı TÜM cihazlarından çıkar
+//
+// Askının hafif hâli: hesap açık kalır, yalnız açık oturumlar kesilir. Çalıntı token
+// şüphesinde doğru araç budur — hesabı durdurmadan erişimi keser.
+//
+// ⚠️ KENDİNİ KAPATMAK SERBEST (rol/askı uçlarının aksine): bu geri alınamaz bir yetki
+// kaybı değil, yalnız yeniden giriştir. Kendi cihazlarını temizlemek isteyen yöneticiyi
+// engellemenin bir gerekçesi yok.
+//
+// ⚠️ SINIR: Supabase'deki refresh token'a dokunulamaz (GoTrue çıkışı hedefin kendi
+// token'ını ister, elimizde yok). Kesilen şey LearnUp API'sidir; Supabase'e doğrudan
+// giden erişim, erişim token'ı dolunca düşer. Kalıcı durdurma askı ucudur.
+// ─────────────────────────────────────────────────────────────────────────────
+yonetimRouter.post('/kullanici/:id/oturum-kapat', validateParams(IdParam), async (req, res, next) => {
+  try {
+    const adminId = req.userId!
+    const id = String(req.params.id)
+    const p = await profilOku(id)
+
+    const kapatilan = await tumOturumlariIptalEt(id)
+    const denetimYazildi = await denetimYaz({
+      adminId,
+      eylem: 'oturum_kapat',
+      hedefId: id,
+      hedefTur: 'kullanici',
+      detay: { kapatilan, rol: p.role ?? null, email: p.email ?? null },
+    })
+
+    const yanit: AdminOturumKapatYanit = { id, kapatilan, denetimYazildi }
     res.json(yanit)
   } catch (err) {
     next(err)
@@ -783,10 +899,16 @@ yonetimRouter.get('/denetim', async (req, res, next) => {
     if (eylem) q = q.eq('eylem', eylem)
     if (filtreAdmin) q = q.eq('admin_id', filtreAdmin)
     if (hedefId) q = q.eq('hedef_id', hedefId)
-    if (baslangic) q = q.gte('created_at', baslangic)
+    // ⚠️ GÜN SINIRLARI YEREL SAATTE (+03:00), UTC'de DEĞİL.
+    // Eskiden sona 'Z' konuyordu: sınır UTC gece yarısıydı. Yönetici "31 Temmuz" seçtiğinde
+    //   · 31 Temmuz 00:00–03:00 (yerel) arası eylemler GÖRÜNMÜYOR,
+    //   · 1 Ağustos 00:00–03:00 (yerel) arası eylemler listeye GİRİYORDU.
+    // Denetim defteri, bir olay incelemesinde tam da güvenilmesi gereken yerde yalan
+    // söylüyordu. Türkiye kalıcı UTC+3 (yaz saati yok) → sabit ofset doğru.
+    if (baslangic) q = q.gte('created_at', baslangic.length === 10 ? `${baslangic}T00:00:00.000+03:00` : baslangic)
     // Bitiş GÜN SONUNU kapsar: kullanıcı "31 Temmuz"u seçtiğinde o günün kayıtları
     // dışarıda kalırsa filtre yalan söyler (lt yerine lte + gün sonu).
-    if (bitis) q = q.lte('created_at', bitis.length === 10 ? `${bitis}T23:59:59.999Z` : bitis)
+    if (bitis) q = q.lte('created_at', bitis.length === 10 ? `${bitis}T23:59:59.999+03:00` : bitis)
 
     const { data, count, error } = await q
       .order('created_at', { ascending: false })
