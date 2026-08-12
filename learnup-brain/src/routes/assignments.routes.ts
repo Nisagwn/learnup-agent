@@ -84,12 +84,34 @@ assignmentsRouter.get('/', async (req, res, next) => {
     ])
 
     const subBy = new Map((gonderim.data ?? []).map((s: any) => [String(s.assignment_id), s]))
+
+    /**
+     * ⚠️ ARŞİVLENMİŞ ÖDEV LİSTEDE KALMAZ — AMA GÖNDERİLMİŞSE KALIR.
+     *
+     * Öğretmen artık ödevi kapatabiliyor (PATCH/DELETE /teacher/odev/:id). Süzgeç
+     * olmasaydı kapatılan ödev öğrencinin panosunda durmaya devam eder, öğrenci açar,
+     * çözer ve ancak GÖNDERİRKEN "Bu ödev artık açık değil" (409) duvarına çarpardı —
+     * yani öğretmenin "kaldırdım" dediği ödev, öğrenciye emeğini boşa harcatırdı.
+     * Kapının kendisi `submit`te zaten var (`status !== 'active'` → 409); liste onunla
+     * AYNI ölçüyü kullanır.
+     *
+     * Zaten GÖNDERİLMİŞ olan arşiv ödevleri görünür kalır: onlar öğrencinin geçmişi ve
+     * aldığı puan orada yazıyor. Kapatma, yapılmış işi silmek değildir (aynı gerekçe
+     * DELETE ucunun "gönderim varsa silme, arşivle" kararında da var).
+     */
+    const gorunurOdevler = ((sinif.data as any[]) ?? []).filter(
+      (a: any) => a.status === 'active' || subBy.has(String(a.id)),
+    )
+
     res.json({
       teacherId,
-      assignments: ((sinif.data as any[]) ?? []).map((a: any) => {
+      assignments: gorunurOdevler.map((a: any) => {
         const s = subBy.get(String(a.id))
         return {
           id: a.id,
+          /** 'active' dışı = kapalı. İstemci bunu "kapandı" rozetiyle gösterebilir; alan
+           *  olmadan gönderilmiş bir arşiv ödevi hâlâ açıkmış gibi görünürdü. */
+          status: a.status ?? 'active',
           title: a.title ?? a.name ?? 'Ödev',
           createdAt: a.created_at ?? null,
           dueDate: a.due_date ?? null,
@@ -202,8 +224,24 @@ assignmentsRouter.post('/submit', validateBody(SubmitSchema), async (req, res, n
       return
     }
 
+    // ÖDEV PENCERESİ: son tarih ve durum HİÇ kontrol edilmiyordu — öğretmen due_date
+    // yazıyor (teacher.routes), arayüz gösteriyor, ama süresi 3 ay geçmiş ya da arşivlenmiş
+    // bir ödev bugün gönderilebiliyordu. Özellik görünürde vardı, fiilen yoktu.
+    if (assignment.status && assignment.status !== 'active') {
+      res.status(409).json({ error: 'Bu ödev artık açık değil.' })
+      return
+    }
+    if (assignment.due_date && new Date(assignment.due_date).getTime() < Date.now()) {
+      res.status(409).json({ error: 'Bu ödevin son tarihi geçti.' })
+      return
+    }
+
     // CEVAP KÂHİNİ KAPANIYOR: yanıt gövdesi correctCount döndürüyor. Tekrar tekrar gönderip
     // selectedIndex değiştirerek doğru cevaplar puandan geri okunabiliyordu. Tek gönderim.
+    // ⚠️ Bu ön kontrol YARIŞA AÇIK (select→insert atomik değil): iki sekmeden aynı anda
+    // gönderim ikisi de `oncekiler=0` okur. Gerçek garanti 0036'daki
+    // `unique(assignment_id, student_id)` kısıtıdır; buradaki kontrol yalnız kullanıcıya
+    // düzgün mesaj vermek için. Kısıt ihlali aşağıda 23505 → 409 olarak yakalanır.
     const { count: oncekiler } = await supabase
       .from('assignment_submissions')
       .select('*', { count: 'exact', head: true })
@@ -219,7 +257,11 @@ assignmentsRouter.post('/submit', validateBody(SubmitSchema), async (req, res, n
       : []
     const byId = await loadQuestionsById(questionIds)
     const correctCount = scoreAnswers(answers, byId)
-    const maxScore = answers.length || questionIds.length || 0
+    // ⚠️ maxScore ÖDEVİN soru sayısıdır, istemcinin gönderdiği cevap sayısı DEĞİL.
+    // Eskiden `answers.length || questionIds.length`: 20 soruluk ödevde yalnız bildiği
+    // 1 soruyu gönderen öğrenci correctCount=1 / maxScore=1 → panelde %100 görünüyordu.
+    // Öğretmenin gördüğü tek somut ölçüt sistematik olarak yanlıştı.
+    const maxScore = questionIds.length || answers.length || 0
 
     const { data: inserted, error: iErr } = await supabase
       .from('assignment_submissions')
@@ -237,8 +279,12 @@ assignmentsRouter.post('/submit', validateBody(SubmitSchema), async (req, res, n
       .select('*')
       .single()
     if (iErr) {
-      res.status(500).json({ error: iErr.message || 'Gönderim kaydedilemedi.' })
-      return
+      // 23505 = unique_violation → yarışı kaybeden ikinci gönderim (0036 kısıtı).
+      if (iErr.code === '23505') {
+        res.status(409).json({ error: 'Bu ödevi zaten gönderdiniz.' })
+        return
+      }
+      throw iErr   // iErr.message dışarı verilmez (şema keşfi)
     }
 
     res.json({
@@ -275,12 +321,24 @@ assignmentsRouter.post('/targeted/submit', validateBody(TargetedSubmitSchema), a
       return
     }
 
+    // TEK GÖNDERİM — kardeş uç /submit'te bu kural "cevap kâhinini kapatmanın TEK dayanağı"
+    // olarak yazılmıştı, hedefli sette HİÇ YOKTU. Öğrenci aynı seti sonsuz kez gönderip her
+    // seferinde yanıttaki `autoScore`'u okuyor; şıkları tek tek deneyip skorun arttığı yeri
+    // gözleyerek doğru cevapları birer birer türetebiliyordu. `status:'completed'` ve
+    // `completed_at` da her turda yeniden yazılıyordu.
+    if (ta.status === 'completed') {
+      res.status(409).json({ error: 'Bu seti zaten gönderdiniz.' })
+      return
+    }
+
     const questionIds: string[] = Array.isArray(ta.question_ids) ? ta.question_ids.map((x: any) => String(x)) : []
     const byId = await loadQuestionsById(questionIds)
     const correctCount = scoreAnswers(answers, byId)
-    const maxScore = answers.length || questionIds.length || 0
+    const maxScore = questionIds.length || answers.length || 0   // setin soru sayısı (bkz. /submit notu)
 
-    const { error: uErr } = await supabase
+    // Kilit ASIL burada: `.neq('status','completed')` UPDATE koşulunun parçası olduğu için
+    // yarışta yalnız BİR istek satırı değiştirebilir. Etkilenen satır 0 ise ikinci gönderimdir.
+    const { data: guncellenen, error: uErr } = await supabase
       .from('targeted_assignments')
       .update({
         answers,
@@ -292,8 +350,11 @@ assignmentsRouter.post('/targeted/submit', validateBody(TargetedSubmitSchema), a
       })
       .eq('id', targetedAssignmentId)
       .eq('student_id', userId) // SELECT'te kontrol ettik; UPDATE'te de TEKRAR (TOCTOU kapanır)
-    if (uErr) {
-      res.status(500).json({ error: uErr.message || 'Gönderim kaydedilemedi.' })
+      .neq('status', 'completed')
+      .select('id')
+    if (uErr) throw uErr   // uErr.message dışarı verilmez (şema keşfi)
+    if (!guncellenen?.length) {
+      res.status(409).json({ error: 'Bu seti zaten gönderdiniz.' })
       return
     }
 

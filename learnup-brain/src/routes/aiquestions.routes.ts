@@ -51,8 +51,11 @@ aiQuestionsRouter.get('/', async (req, res, next) => {
 
     let q = supabase
       .from('yks_ai_questions')
+      // ⚠️ correct_option/solution BİLEREK YOK — bu uç öğrenciye soru servis eder (Çöz set
+      // akışı, tanışma sınavı). Doğru şık ve çözüm cevaptan SONRA /answers'tan döner.
+      // Yöneticinin cevabı gördüğü yer admin-havuz.routes'tur (rol kapılı), burası değil.
       .select(
-        'id, subject, kazanim_id, topic, question_text, options, correct_option, solution, difficulty, quality, created_at',
+        'id, subject, kazanim_id, topic, question_text, options, difficulty, quality, created_at',
         { count: 'exact' },
       )
       .eq('verified', true)
@@ -173,14 +176,22 @@ aiQuestionsRouter.get('/konular', async (req, res, next) => {
       if (konuId) soruKonu.set(String(s.id), konuId)
     }
     // Atlananlar sayılmaz: bilmediği için atlayan öğrenci "yanlış yaptı" değildir.
+    //
+    // ⚠️ `.in('question_id', [...soruKonu.keys()])` KALDIRILDI: havuzun TÜM id'leri tek bir
+    // GET sorgu dizesine gömülüyordu. Bugün havuz ~240 satır (≈9 KB URL) olduğu için
+    // çalışıyor; 10 bin soruda ≈370 KB URL → PostgREST/nginx `414 Request-URI Too Large`
+    // döndürür ve öğrencinin ANA KONU LİSTESİ ekranı havuz büyüdüğü gün topluca 500'e
+    // düşerdi. Hata bugün görünmediği için sürprizle gelirdi.
+    // Süzme zaten aşağıda `soruKonu.get(...)` ile yapılıyor: kullanıcının kendi cevapları
+    // havuz boyutuyla değil KENDİ etkinliğiyle sınırlı, o yüzden filtresiz okumak hem
+    // doğru hem ölçeklenebilir.
     const cevaplar = soruKonu.size
       ? await fetchAll<{ question_id: string | null; is_correct: boolean | null }>(() =>
           supabase
             .from('user_answers')
             .select('question_id, is_correct')
             .eq('user_id', String(req.userId))
-            .eq('skipped', false)
-            .in('question_id', [...soruKonu.keys()]),
+            .eq('skipped', false),
         )
       : []
     /** konu_id → { cozulen: farklı soru adedi, dogru: doğru sayısı } */

@@ -281,7 +281,7 @@ adminRouter.put('/ozgunluk/esik', async (req, res, next) => {
     const yuvarlak = Number(esik.toFixed(3))
 
     const onceki = await esikYaz(subject, yuvarlak, adminId)
-    onbellegiDus('ozgunluk')
+    await onbellegiDus('ozgunluk')
 
     const denetimYazildi = await denetimYaz({
       adminId, eylem: 'esik_degis', hedefId: null, hedefTur: 'sistem',
@@ -305,13 +305,22 @@ adminRouter.put('/ozgunluk/esik', async (req, res, next) => {
 adminRouter.post('/onbellek/dus', async (req, res, next) => {
   try {
     const adminId = req.userId!
-    const panel = onbellegiDus()
+    // `panel` artık ORTAK depodan (Redis) düşer → tek çağrı bütün node'lar için geçerli.
+    const panel = await onbellegiDus()
+    // Süreç-içi kalan tek katman: bu YALNIZ isteği alan node'u temizler. Yanıtta ayrı
+    // sayı olarak dönmesinin sebebi tam olarak bu — yönetici neyin kısmî düştüğünü görsün.
     const { kimlik, sinif } = yetkiOnbelleginiDus()
     const redis = await redisTry(async (r) => {
-      const anahtarlar = await r.keys('yetki:kimlik:*')
-      if (!anahtarlar.length) return 0
-      await r.del(...anahtarlar)
-      return anahtarlar.length
+      // ⚠️ SCAN, KEYS DEĞİL. KEYS tüm anahtar uzayını tek seferde tarar ve Redis tek iş
+      // parçacıklıdır: o süre boyunca oturum kapısı ve rate limit dahil HER istek bloklanır.
+      let silinen = 0
+      let imlec = '0'
+      do {
+        const [sonraki, anahtarlar] = await r.scan(imlec, 'MATCH', 'yetki:*', 'COUNT', 100)
+        imlec = sonraki
+        if (anahtarlar.length) silinen += await r.del(...anahtarlar)
+      } while (imlec !== '0')
+      return silinen
     }, 0)
 
     // Eşikler de tazelensin: yönetici "önbelleği düşür" derken bunu da kastediyor.
@@ -471,7 +480,18 @@ adminRouter.get('/kullanicilar', async (req, res, next) => {
     if (basvuru === 'bekliyor' || basvuru === 'onaylandi' || basvuru === 'reddedildi') {
       q = q.eq('teacher_application_status', basvuru)
     }
-    if (ara) q = q.or(`name.ilike.%${ara}%,email.ilike.%${ara}%`)
+    // ⚠️ `.or()` ARGÜMANI PostgREST'e KAÇIŞSIZ GİDER — ham istemci metni gömülemez.
+    // `?q=a,role.eq.admin` gönderildiğinde üretilen dize
+    // `name.ilike.%a,role.eq.admin%,email.ilike.%a,role.eq.admin%` oluyor ve PostgREST bunu
+    // üst düzey virgüllerden bölerek FAZLADAN OR koşulları uyguluyordu; `)` ile mantıksal
+    // gruplama da bozulabiliyordu. Yani filtre semantiği istemciye devrediliyordu. Bugün
+    // etkisi admin kapısıyla sınırlı, ama desen kopyalandığı an gerçek bir yetki atlatmasına
+    // dönüşür (aynı kalıp lib/yetki.ts:256'da da var; orada değer UUID doğrulamasından
+    // geçtiği için tetiklenemiyor). PostgREST'in ayırıcı/gruplama karakterleri elenir.
+    if (ara) {
+      const temizAra = ara.replace(/[,.()"\\*]/g, ' ').trim()
+      if (temizAra) q = q.or(`name.ilike.%${temizAra}%,email.ilike.%${temizAra}%`)
+    }
 
     const { data, count, error } = await q
       .order('created_at', { ascending: false })

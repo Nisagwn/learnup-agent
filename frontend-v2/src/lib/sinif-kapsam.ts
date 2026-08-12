@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useNavigate, type NavigateOptions } from 'react-router-dom'
-import { apiDelete, apiGet, apiPost } from './api'
+import { apiDelete, apiGet, apiPatch, apiPost } from './api'
 
 /**
  * SINIF KAPSAMI — "hangi öğretmenin gözüyle bakıyoruz?" (0025)
@@ -74,6 +74,11 @@ export function tGet<T = any>(yol: string, params: Record<string, unknown> = {},
  */
 export function tPost<T = any>(yol: string, body: Record<string, unknown> = {}, opts?: { signal?: AbortSignal }): Promise<T> {
   return apiPost(kapsamli(yol), body, opts)
+}
+
+/** PATCH /teacher/… — kısmî güncelleme (ödev durumu / son tarihi). */
+export function tPatch<T = any>(yol: string, body: Record<string, unknown> = {}, opts?: { signal?: AbortSignal }): Promise<T> {
+  return apiPatch(kapsamli(yol), body, opts)
 }
 
 /** DELETE /teacher/… */

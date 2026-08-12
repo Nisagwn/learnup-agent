@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Navigate, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import { rolBul, ROL_ADI, type Rol } from '../lib/rol'
+import { rolBul, ROL_ADI, ROL_ANA_YOL, type Rol } from '../lib/rol'
 import { Skeleton } from './ui'
 import { Reveal } from './fx'
 import { SinifSaglayici } from '../lib/sinif'
@@ -97,14 +97,29 @@ export function YetkiYok({ rol }: { rol: Rol }) {
  * ⚠️ ÜÇ HÂL, İKİSİ DEĞİL. `profilYukleniyor` iken YÖNLENDİRME YOK: profil satırı
  * gelmeden rol "student" görünür ve her sert yenilemede 403 yanıp söner. Bekleme
  * hâlinin varlığı bu panelin en kritik detayı.
+ *
+ * ⚠️ `yonlendir` — YETKİSİZ ROL İÇİN İKİ AYRI DOĞRU CEVAP VAR:
+ *   · Kapalı bir yüzeye (öğretmen/yönetim) izinsiz gelen → `YetkiYok` kartı. Yer imi
+ *     ya da eski link tıklayan kullanıcıyı sessizce fırlatmak "uygulama bozuldu"
+ *     hissi verir; açıkça söylemek daha dürüst.
+ *   · ÖĞRENCİ yüzeyine gelen öğretmen/yönetici → KENDİ ana ekranına yönlendirme.
+ *     Burada bir "erişim ihlali" yok: yalnız hesabın işi değil o sayfa. Yöneticiye
+ *     "Bahçem'e erişimin yok" kartı göstermek gürültü; doğrusu onu Yönetim'e almak.
  */
-export function RolGecidi({ izin, saglayici }: { izin: Rol[]; saglayici?: 'sinif' }) {
+export function RolGecidi({ izin, saglayici, yonlendir }: {
+  izin: Rol[]
+  saglayici?: 'sinif'
+  /** Yetkisiz rolü uyarı kartı yerine kendi ana ekranına indir (öğrenci yüzeyi kapıları). */
+  yonlendir?: boolean
+}) {
   const { profile, profilYukleniyor } = useAuth()
 
   if (profilYukleniyor) return <PanoIskeleti sutun={2} />
 
   const rol = rolBul(profile)
-  if (!izin.includes(rol)) return <YetkiYok rol={rol} />
+  if (!izin.includes(rol)) {
+    return yonlendir ? <Navigate to={ROL_ANA_YOL[rol]} replace /> : <YetkiYok rol={rol} />
+  }
 
   const govde = <Outlet />
   if (saglayici !== 'sinif') return govde

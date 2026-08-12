@@ -149,7 +149,7 @@ export function CommandPalette() {
               Adaptif antrenman başlat
             </Satir>
             <Satir icon="history" onSelect={() => git(() => nav('/coz', { state: { source: 'review', title: 'Tekrar Zamanı' } }))}>
-              SRS tekrarını başlat
+              Tekrar destesini başlat
             </Satir>
           </Command.Group>
           )}

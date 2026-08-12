@@ -13,20 +13,26 @@ import { poolTopics } from './aiquestions.routes.js'
  *  (Edge: submit-answer [adaptif sıradaki soru], record-answer [XP/seri/görev/rozet/SRS]) */
 export const practiceRouter = Router()
 
-// DB satırını (snake_case) client'ın beklediği çift-şemalı biçime indirger.
+/**
+ * DB satırını (snake_case) client'ın beklediği çift-şemalı biçime indirger.
+ *
+ * ⚠️ CEVAP KÂHİNİ KAPALI. Bu fonksiyon `...q` ile satırın TAMAMINI yayıyor, üstüne bir de
+ * `correctAnswer` + `correct_answer` + `explanation` ekliyordu — yani öğrenci soruyu daha
+ * cevaplamadan doğru şıkkı görüyordu. Aynı repoda assignments.routes'un `sorulariSoy()`
+ * fonksiyonu bu alanları KASTEN soyuyor; disiplin bu uçta uygulanmamıştı.
+ *
+ * Artık BEYAZ LİSTE: yalnız soruyu göstermek için gereken alanlar geçer. Doğru şık ve
+ * çözüm, cevap verildikten SONRA `/api/v1/answers` yanıtında döner (lib/answers.ts §6).
+ */
 function shapeQuestion(q: any) {
   if (!q) return null
   const options = Array.isArray(q.options) ? q.options : Object.values(q.options || {})
   const questionText = q.question_text ?? q.text ?? ''
-  const correct = q.correct_answer ?? q.correctAnswer ?? null
   return {
-    ...q,
-    id: q.id,
+    id: q.id ?? null,
     text: questionText,
     question_text: questionText,
     options,
-    correctAnswer: correct,
-    correct_answer: correct,
     isAI: !!(q.is_ai_generated ?? q.isAI),
     is_ai_generated: !!(q.is_ai_generated ?? q.isAI),
     category: q.category ?? q.subject ?? null,
@@ -34,7 +40,8 @@ function shapeQuestion(q: any) {
     topic: q.topic ?? null,
     sub_topic: q.sub_topic ?? null,
     difficulty: q.difficulty ?? null,
-    explanation: q.explanation ?? '',
+    kazanim_id: q.kazanim_id ?? null,
+    kazanim: q.kazanim ?? null,
   }
 }
 
@@ -86,27 +93,44 @@ practiceRouter.get('/suggest', async (req, res, next) => {
  * Leitner kutuları applySrsAnswer ile ilerliyor ama vade hiçbir yerde GÖRÜNMÜYORDU.
  * Sorular yks tablolarından YALNIZ verified=true çekilir — cevaplanabilir_sorular
  * view'inde verified kolonu YOK (0013), oradan servis etmek denetimsiz soru sızdırırdı.
+ *
+ * ⚠️ `count` = SERVİS EDİLEBİLEN SORU SAYISI, vadeli kart sayısı DEĞİL.
+ * Eskiden `count: kartlar.length` dönüyordu; arayüz onu "10 soruluk tekrar" etiketiyle
+ * birleştirince öğrenci "10 soru" deyip 4 soru gören bir ekranla karşılaşıyordu — çünkü
+ * kartların bir kısmı aşağıdaki elemede sessizce düşüyor (çıkmış/öğretmen havuzu,
+ * verified=false, karantina). Arayüzün sayı basacağı TEK alan servis edilebilen settir.
+ * Elenen bakiye `vadeliKart`ta ayrıca döner (teşhis/telemetri; ekranda sayı olarak
+ * gösterilmez — "vadesi geldi ama veremiyorum" ürün vaadi değildir).
  */
+const REVIEW_TARAMA = 120   // taranan vadeli kart tavanı
+const REVIEW_SET = 10       // bir tekrar oturumundaki soru tavanı
+
 practiceRouter.get('/review', async (req, res, next) => {
   try {
     const userId = req.userId!
     const simdi = new Date().toISOString()
-    const { data: due, error } = await supabase
+    // count:'exact' → `vadeli`, limit'ten BAĞIMSIZ gerçek vadeli kart sayısı (PostgREST
+    // Content-Range). Tarama tavanı 30 değil 120: eski çıkmış kartları vade sırasının
+    // başını doldurduğunda 30'luk pencere elemeden sonra 3-5 soruya iniyordu — set
+    // dolmadan aç kalıyordu. 120 kart tarayıp 10 soruya kesmek bu açlığı bitirir.
+    const { data: due, count: vadeli, error } = await supabase
       .from('srs_cards')
-      .select('question_id, next_review_at')
+      .select('question_id, next_review_at', { count: 'exact' })
       .eq('user_id', userId)
       .not('next_review_at', 'is', null)
       .lte('next_review_at', simdi)
       .order('next_review_at', { ascending: true })
-      .limit(30)
+      .limit(REVIEW_TARAMA)
     if (error) throw error
     const kartlar = due ?? []
+    const vadeliKart = vadeli ?? kartlar.length
     if (!kartlar.length) {
-      res.json({ count: 0, questions: [] })
+      res.json({ count: 0, vadeliKart: 0, questions: [] })
       return
     }
     const ids = [...new Set(kartlar.map((k) => String(k.question_id)))]
-    const SECIM = 'id, subject, kazanim_id, question_text, options, correct_option, solution, difficulty'
+    // correct_option/solution BİLEREK YOK: tekrar seti de cevabı önden vermez (bkz. shapeQuestion).
+    const SECIM = 'id, subject, kazanim_id, question_text, options, difficulty'
     // TELİF KARARI (2026-07-22): yks_questions (çıkmış ÖSYM) buradan da OKUNMAZ — SRS kartı
     // Arşiv döneminden bir çıkmışa işaret ediyorsa, eski `questions` (öğretmen) havuzu kartları
     // gibi sessizce atlanır. Tekrar seti yalnız AI havuzundan kurulur.
@@ -117,8 +141,8 @@ practiceRouter.get('/review', async (req, res, next) => {
     const byId = new Map<string, unknown>()
     for (const q of ai ?? []) byId.set(String((q as { id: string }).id), q)
     // Vade sırası korunur; AI havuzunda karşılığı olmayan kartlar (öğretmen/çıkmış) atlanır
-    const questions = ids.map((id) => byId.get(id)).filter(Boolean).slice(0, 10)
-    res.json({ count: kartlar.length, questions })
+    const questions = ids.map((id) => byId.get(id)).filter(Boolean).slice(0, REVIEW_SET)
+    res.json({ count: questions.length, vadeliKart, questions })
   } catch (err) {
     next(err)
   }
@@ -137,7 +161,10 @@ practiceRouter.post('/next', async (req, res, next) => {
     const subject = reqSubject || reqTopic || 'Matematik'
     const topic = reqTopic || subject
     const sub_topic = reqSubTopic || body?.concept_tag || body?.conceptTag || 'Genel'
-    const durationValue = Number(duration) || 15
+    // `Number(duration) || 15`: 0 saniye (anlık cevap) FALSY olduğu için 15'e yuvarlanıyordu —
+    // hız temelli ölçümler (tuzak analizi, duration_ms) tam da en anlamlı uçta bozuluyordu.
+    const durationSayi = Number(duration)
+    const durationValue = Number.isFinite(durationSayi) && durationSayi >= 0 ? durationSayi : 15
     const solvedFromClient: string[] = Array.isArray(body?.solvedQuestionIds)
       ? body.solvedQuestionIds.map((x: any) => String(x))
       : []
@@ -175,21 +202,23 @@ Lütfen öğrenciyi motive edecek ve bu hatasındaki konsept eksiğini anlaması
     }
 
     // Analitik kaydı (user_answers) — izole
+    // ⚠️ supabase-js SORGU HATALARINDA REJECT ETMEZ — `{ data, error }` döndürür.
+    // Buradaki try/catch bu yüzden ÖLÜ KODDU: `error` hiç okunmadığı için user_answers
+    // insert'i sessizce düşüyor, catch bloğu da hiçbir zaman çalışmıyordu. Bu tablo
+    // admin-havuz'un ampirik zorluk ölçümünü ve /questions/ai/konular ilerleme yüzdelerini
+    // besliyor — yani sessiz kayıp doğrudan yanlış ölçüme dönüşüyordu.
     if (answered) {
-      try {
-        await supabase.from('user_answers').insert({
-          user_id: userId,
-          question_id: questionId ? String(questionId) : null,
-          subject,
-          sub_topic: sub_topic || null,
-          is_correct: isCorrect === true,
-          given_answer: givenAnswer || null,
-          skipped: false,
-          duration: durationValue,
-        })
-      } catch (aErr) {
-        logger.warn({ err: aErr }, 'user_answers kaydı başarısız')
-      }
+      const { error: aErr } = await supabase.from('user_answers').insert({
+        user_id: userId,
+        question_id: questionId ? String(questionId) : null,
+        subject,
+        sub_topic: sub_topic || null,
+        is_correct: isCorrect === true,
+        given_answer: givenAnswer || null,
+        skipped: false,
+        duration: durationValue,
+      })
+      if (aErr) logger.warn({ err: aErr }, 'user_answers kaydı başarısız')
     }
 
     // Sıradaki zorluk — adaptif tier [1,3]
@@ -228,12 +257,11 @@ Lütfen öğrenciyi motive edecek ve bu hatasındaki konsept eksiğini anlaması
         })
         const q = set.find((x) => !excludeIds.has(String(x.id ?? '')))
         if (q) {
+          // Doğru şık ve çözüm BİLEREK taşınmıyor — cevap sonrası /answers'tan döner.
           newQuestion = {
             id: q.id ?? null,
             question_text: q.soru,
             options: ['A', 'B', 'C', 'D', 'E'].map((L) => q.siklar[L as 'A']),
-            correct_answer: q.siklar[q.dogru as 'A'],
-            explanation: q.cozum ?? '',
             category: subject, subject, topic, sub_topic,
             difficulty: diffLabel, is_ai_generated: true,
             kazanim_id: eslesme.node.id, kazanim: eslesme.node.code,
@@ -259,16 +287,13 @@ Lütfen öğrenciyi motive edecek ve bu hatasındaki konsept eksiğini anlaması
     if (!newQuestion) newQuestion = await havuzdanSec((q: any) => q.eq('topic', topic))
     if (!newQuestion) newQuestion = await havuzdanSec((q: any) => q)
 
-    // Session güncelle (7 gün TTL)
-    try {
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-      await supabase.from('quiz_sessions').upsert(
-        { user_id: userId, current_difficulty: nextDifficultyNum, last_30_ids: last30Ids, expires_at: expiresAt },
-        { onConflict: 'user_id' },
-      )
-    } catch (sErr) {
-      logger.warn({ err: sErr }, 'quiz_sessions güncellenemedi')
-    }
+    // Session güncelle (7 gün TTL) — aynı ölü-catch hatası burada da vardı.
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    const { error: sErr } = await supabase.from('quiz_sessions').upsert(
+      { user_id: userId, current_difficulty: nextDifficultyNum, last_30_ids: last30Ids, expires_at: expiresAt },
+      { onConflict: 'user_id' },
+    )
+    if (sErr) logger.warn({ err: sErr }, 'quiz_sessions güncellenemedi')
 
     res.json({
       success: true,

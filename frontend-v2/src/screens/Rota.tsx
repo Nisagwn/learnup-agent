@@ -272,9 +272,11 @@ export function Rota() {
             ) : review.data ? (
               (review.data.count ?? 0) > 0 ? (
                 <>
-                  <div className="cp-orta">{review.data.count}<small> kazanım</small></div>
+                  {/* Birim SORU (srs_cards soru başınadır, kazanım başına değil) ve sayı
+                      servis edilebilen setten gelir — buton da aynı sayıyı söyler. */}
+                  <div className="cp-orta">{review.data.count}<small> soru</small></div>
                   <p className="cp-not mb-3.5 mt-2">Aralıklı tekrar programında bugün vadesi gelenler.</p>
-                  <button className="cp-btn ikincil" onClick={tekrarBaslat}>10 soruluk tekrar</button>
+                  <button className="cp-btn ikincil" onClick={tekrarBaslat}>{review.data.count} soruluk tekrar</button>
                 </>
               ) : (
                 <p className="cp-not mt-1 text-[13px]">Bugün tekrar vaden yok.</p>

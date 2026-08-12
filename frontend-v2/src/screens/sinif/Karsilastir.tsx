@@ -24,8 +24,14 @@ export function Karsilastir() {
   const { roster, loading } = useSinif()
   const [params, setParams] = useSearchParams()
 
+  /**
+   * ⚠️ TEKİLLEŞTİRME ŞART. Adres elle de kurulabiliyor (`?ogrenci=a,a`) ve o hâlde aynı
+   * öğrenci iki özdeş sütun olarak çiziliyordu — üstelik React `key`'leri de yineleniyordu.
+   * `Set` hem sütunu hem uyarıyı kapatır; dilim tekilleştirmeden SONRA alınır ki
+   * "4 seçili" tavanı yinelenenlerle dolmasın.
+   */
   const secili = useMemo(
-    () => (params.get('ogrenci') ?? '').split(',').filter(Boolean).slice(0, EN_FAZLA),
+    () => [...new Set((params.get('ogrenci') ?? '').split(',').filter(Boolean))].slice(0, EN_FAZLA),
     [params],
   )
 

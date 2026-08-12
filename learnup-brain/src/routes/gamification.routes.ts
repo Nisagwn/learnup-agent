@@ -58,9 +58,29 @@ gamificationRouter.post('/daily', async (req, res, next) => {
     const weekId = getWeekId()
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single()
     const userData: any = profile || {}
+    const onceki: any = userData.gamification ?? null
     const g = ensureGamification(userData.gamification, today, weekId)
 
-    await supabase.from('profiles').update({ gamification: g }).eq('id', userId)
+    /**
+     * ⚠️ GEREKSİZ YAZIM = KAYIP XP. Bu uç profili okuyup `gamification`'ın TAMAMINI geri
+     * yazıyordu. `processAnswer` ise aynı JSONB'yi atomik `record_answer` RPC'siyle yazıyor.
+     * Öğrenci arka planda soru çözerken (POST /answers) aynı saniyede sayfa açılışı /daily'yi
+     * tetiklerse, buradaki ESKİ `g` az önce kazanılan XP'yi eziyordu — kullanıcı için
+     * "puanım kayboldu" diye görünen, yeniden üretilemez bir şikâyet.
+     *
+     * ensureGamification yalnız İKİ durumda gerçek bir değişiklik üretir: yeni gün (günlük
+     * görevler yenilenir) ve yeni lig haftası (weeklyXP sıfırlanır). Bunların dışında yazımın
+     * hiçbir faydası yok, tek etkisi yarış penceresi açmak. Yazım artık yalnız gerçekten
+     * gerektiğinde yapılıyor — kullanıcı başına GÜNDE BİR yerine her sayfa açılışında değil.
+     *
+     * (Kalan pencere: o günlük tek yazım. Tam kapatmak `record_answer` gibi satırı kilitleyen
+     * bir RPC ister; oradaki değişiklik zaten bir sıfırlama olduğu için etkisi sınırlı.)
+     */
+    const gunDegisti = !onceki?.dailyQuests || onceki.dailyQuests.date !== today
+    const haftaDegisti = onceki?.league?.weekId !== weekId
+    if (!onceki || gunDegisti || haftaDegisti) {
+      await supabase.from('profiles').update({ gamification: g }).eq('id', userId)
+    }
     if (isStudent(userData)) {
       await supabase.from('league_entries').upsert(
         {

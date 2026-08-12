@@ -1,5 +1,6 @@
 import { supabase } from '../clients/supabase.js'
 import { logger } from '../utils/logger.js'
+import { fetchAll } from './pg.js'
 import { HttpHatasi } from './hata.js'
 
 /**
@@ -97,31 +98,85 @@ export async function kokenIziVarMi(): Promise<boolean> {
   return izVarMi
 }
 
+/**
+ * `.in(...)` PARÇA BOYU. Tek istekte kaç uuid gönderilebileceğinin sınırı sorgu
+ * DİZESİNİN uzunluğudur: her uuid ~38 karakter, PostgREST/nginx URL tavanı ~8 KB.
+ * 12.000 uuid'lik tek istek ~450 KB'lık bir GET olur ve 414 döner (aynı sınıra
+ * admin-havuz ve aiquestions uçlarında da rastlandı). 500 uuid ≈ 19 KB gövde
+ * değil URL değil — POST'a çevirmek yerine parçalamak, mevcut istemciyi korur.
+ */
+const IN_PARCA = 500
+
+function parcala<T>(liste: T[], boy: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < liste.length; i += boy) out.push(liste.slice(i, i + boy))
+  return out
+}
+
 async function ogrenciyeGidenler(studentId: string): Promise<Set<string>> {
   // İz yoksa eleyecek bir şey de yok. Boş küme = "eleme yapılmadı", hata değil.
   if (!(await kokenIziVarMi())) return new Set()
-  const setler = await Promise.all([
-    supabase.from('assignments').select('question_ids, teacher_id'),
-    supabase.from('targeted_assignments').select('question_ids').eq('student_id', studentId),
+
+  /**
+   * ⚠️ KAPSAM: yalnız BU ÖĞRENCİNİN ÖĞRETMEN(LER)İNİN ödevleri.
+   *
+   * Eskiden sorgu filtresizdi (`select('question_ids, teacher_id')` — kolon seçiliyor
+   * ama hiç `.eq()` yok). Sonuç: sistemdeki HERHANGİ bir öğretmenin HERHANGİ bir sınıfa
+   * verdiği sorular bu öğrenciye "gitmiş" sayılıp eleniyordu. Okul büyüdükçe havuz
+   * daralıyordu: bir AI sorusu bir kez herhangi bir ödeve girdiyse artık hiçbir öğrenciye
+   * hedefli set olarak gitmiyordu. Öğretmen "havuz boş" uyarısı alıyor, havuz doluydu.
+   *
+   * `teacher_ids` DE OKUNUR: sahiplik tanımı sinif_mevcudu (0016:90) ve
+   * assertTeacherOwnsStudent (yetki.ts:192) ile aynı çizgide kalsın.
+   */
+  const { data: prof } = await supabase
+    .from('profiles')
+    .select('teacher_id, teacher_ids')
+    .eq('id', studentId)
+    .maybeSingle()
+  const ogretmenler = [
+    ...new Set(
+      [
+        prof?.teacher_id ? String(prof.teacher_id) : null,
+        ...(Array.isArray(prof?.teacher_ids) ? (prof.teacher_ids as unknown[]).map(String) : []),
+      ].filter((v): v is string => !!v),
+    ),
+  ]
+
+  // ⚠️ fetchAll: PostgREST 1000 satırda SESSİZCE keser (lib/pg.ts). Ham `.select()` ile
+  // 1000. ödevden sonra eleme rastgele bir alt kümeye dayanıyordu — yani tekrar-eleme
+  // sessizce yanlış çalışıyordu, hiç çalışmamasından beter.
+  const [sinifOdevleri, hedefliSetler] = await Promise.all([
+    ogretmenler.length
+      ? fetchAll<{ question_ids: unknown }>(() =>
+          supabase.from('assignments').select('question_ids').in('teacher_id', ogretmenler))
+      : Promise.resolve([]),
+    fetchAll<{ question_ids: unknown }>(() =>
+      supabase.from('targeted_assignments').select('question_ids').eq('student_id', studentId)),
   ])
+
   const qIds = new Set<string>()
-  // Hedefli setler doğrudan öğrenciye ait.
-  for (const r of (setler[1].data ?? []) as Array<{ question_ids: unknown }>) {
-    for (const id of Array.isArray(r.question_ids) ? r.question_ids : []) qIds.add(String(id))
-  }
-  // Sınıf ödevleri: öğrencinin öğretmeninden gelenler (roster üstünden filtrelemek
-  // pahalı; ödev sayısı sınıf ölçeğinde küçük kaldığı için tümü taranır).
-  for (const r of (setler[0].data ?? []) as Array<{ question_ids: unknown }>) {
+  for (const r of [...hedefliSetler, ...sinifOdevleri]) {
     for (const id of Array.isArray(r.question_ids) ? r.question_ids : []) qIds.add(String(id))
   }
   if (!qIds.size) return new Set()
 
-  const { data } = await supabase
-    .from('questions')
-    .select('kaynak_soru_id')
-    .in('id', [...qIds])
-    .not('kaynak_soru_id', 'is', null)
-  return new Set((data ?? []).map((r) => String((r as { kaynak_soru_id: unknown }).kaynak_soru_id)))
+  // Kopya id'lerinden KÖKEN id'lerine — parça parça (bkz. IN_PARCA).
+  const kokenler = new Set<string>()
+  for (const parca of parcala([...qIds], IN_PARCA)) {
+    const { data, error } = await supabase
+      .from('questions')
+      .select('kaynak_soru_id')
+      .in('id', parca)
+      .not('kaynak_soru_id', 'is', null)
+    // Eleme BEST-EFFORT: bir parça patlarsa ödev derlemesini öldürme, elemeyi eksik yap.
+    if (error) {
+      logger.warn({ err: error, parca: parca.length }, 'tekrar-eleme parçası okunamadı — eksik elemeyle sürüyor')
+      continue
+    }
+    for (const r of data ?? []) kokenler.add(String((r as { kaynak_soru_id: unknown }).kaynak_soru_id))
+  }
+  return kokenler
 }
 
 /** AI havuzunda (yks_ai_questions) rastgele pencereyle örnekleme.

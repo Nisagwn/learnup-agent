@@ -7,6 +7,7 @@ import { cn } from '../../lib/cn'
 import { Icon } from '../../ui'
 import type {
   AdminDenetimYaniti, AdminKullaniciDetayi, AdminKullanicilarYaniti,
+  AdminOturumKapatYanit,
   AskiYanit, BasvuruReddetYanit, HesapOlusturYanit, ProfilDuzeltYanit,
   RolDegisYanit, SifreSifirlaYanit, SinifAtaYanit,
 } from '../../lib/types.admin'
@@ -18,6 +19,7 @@ import {
   AskiDialog, DenetimAkisi, HesapAcDialog, KullaniciTablosu, ProfilDuzeltDialog,
   RolDegisDialog, RolRozeti, SinifAtaDialog, type RolAdi,
 } from '../../components/yonetim'
+import { AdminOturumBolumu, OturumKapatDialog } from '../../components/oturumlar'
 
 /**
  * KULLANICILAR — yönetimin insan tarafı (FİDAN v1.2 inline desen; onaylı önizleme:
@@ -49,6 +51,9 @@ export function Kullanicilar() {
   const [sorgu, setSorgu] = useState('')
   const [sayfa, setSayfa] = useState(0)
   const [seciliId, setSeciliId] = useState<string | null>(null)
+  // Oturum listesi kendi ucundan okunur (detay yanıtının parçası değil) — mutasyondan
+  // sonra tazelenmesi için ayrı sayaç.
+  const [oturumNonce, setOturumNonce] = useState(0)
 
   // Arama debounce'u: her tuş vuruşunda sunucuya gitmek hem gereksiz hem de
   // useAsync'in bağımlılık dizisini sürekli tetikler.
@@ -186,13 +191,37 @@ export function Kullanicilar() {
       const y: AskiYanit = await apiPost(`/admin/kullanici/${id}/aski`, { askida, neden })
       toast.success(
         askida
-          ? 'Hesap askıya alındı — tüm ekranlar anında kapandı'
-          : 'Askı kaldırıldı — hesap yeniden çalışıyor',
+          ? `Hesap askıya alındı — tüm ekranlar anında kapandı${y.kapatilanOturum > 0 ? `, ${y.kapatilanOturum} oturum kapatıldı` : ''}`
+          : 'Askı kaldırıldı — hesap yeniden çalışıyor (yeniden giriş gerekir)',
       )
       izUyar(y.denetimYazildi)
+      setOturumNonce((n) => n + 1)
       tazele()
     } catch (e: any) {
       toast.error(e?.message ?? 'Askı durumu değiştirilemedi', { duration: 7000 })
+    }
+  }
+
+  /**
+   * Kullanıcıyı tüm cihazlarından çıkarır — askı DEĞİL, hesap açık kalır.
+   *
+   * ⚠️ "0 oturum kapatıldı" BAŞARISIZLIK DEĞİLDİR: defterde kayıt yoksa (hiç giriş
+   * yapmamış ya da kayıtlar TTL ile düşmüş) sayı sıfır olur. Yöneticiye bunu olduğu gibi
+   * söylüyoruz; "kapatıldı" deyip geçmek, yapılmamış bir işi yapılmış göstermek olurdu.
+   */
+  const oturumKapat = async (id: string, ad: string | null): Promise<void> => {
+    try {
+      const y: AdminOturumKapatYanit = await apiPost(`/admin/kullanici/${id}/oturum-kapat`, {})
+      toast.success(
+        y.kapatilan > 0
+          ? `${ad ?? 'Kullanıcı'} ${y.kapatilan} cihazdan çıkarıldı`
+          : `${ad ?? 'Kullanıcı'} için defterde açık oturum yoktu — kesim damgası yine de yazıldı`,
+      )
+      izUyar(y.denetimYazildi)
+      setOturumNonce((n) => n + 1)
+      tazele()
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Oturumlar kapatılamadı', { duration: 7000 })
     }
   }
 
@@ -583,6 +612,8 @@ export function Kullanicilar() {
               onSifre={sifreSifirla}
               onAski={askiDegistir}
               onBasvuruReddet={basvuruReddet}
+              onOturumKapat={oturumKapat}
+              oturumNonce={oturumNonce}
               onKapat={() => setSeciliId(null)}
             />
           </Reveal>
@@ -602,7 +633,7 @@ export function Kullanicilar() {
 
 function KullaniciDetay({
   detay, yukleniyor, kendiId, ogretmenler,
-  onRol, onSinif, onProfil, onSifre, onAski, onBasvuruReddet, onKapat,
+  onRol, onSinif, onProfil, onSifre, onAski, onBasvuruReddet, onOturumKapat, oturumNonce, onKapat,
 }: {
   detay: AdminKullaniciDetayi | null
   yukleniyor: boolean
@@ -614,6 +645,8 @@ function KullaniciDetay({
   onSifre: (id: string, ad: string | null) => Promise<void>
   onAski: (id: string, askida: boolean, neden: string | null) => Promise<void>
   onBasvuruReddet: (id: string) => Promise<void>
+  onOturumKapat: (id: string, ad: string | null) => Promise<void>
+  oturumNonce: number
   onKapat: () => void
 }) {
   if (yukleniyor) {
@@ -710,6 +743,10 @@ function KullaniciDetay({
         )}
       </div>
 
+      {/* ── Açık cihazlar ── "hesabım ele geçirildi" şikâyetinin bakılacak tek yeri.
+             Askı bölümünün ARDINDA: önce hesabın durumu, sonra nereden girildiği. */}
+      <AdminOturumBolumu userId={k.id} nonce={oturumNonce} />
+
       {/* ── Öğretmen başvurusu (0021) — bağlam + tek tık onay ── */}
       {detay.basvuru && (
         <BasvuruBolumu
@@ -738,6 +775,9 @@ function KullaniciDetay({
         )}
         <ProfilDuzeltDialog kullanici={k} onKaydet={(yama) => onProfil(k.id, yama)} />
         <SifreSifirlaDugmesi kullanici={k} onGonder={() => onSifre(k.id, k.name)} />
+        {/* Askının HAFİF hâli — çalıntı token şüphesinde doğru araç. Askının SOLUNDA
+            duruyor ki yönetici sert olana geçmeden önce bunu görsün. */}
+        <OturumKapatDialog ad={k.name} onKapat={() => onOturumKapat(k.id, k.name)} />
         <AskiDialog
           kullanici={k}
           kendisiMi={kendisiMi}

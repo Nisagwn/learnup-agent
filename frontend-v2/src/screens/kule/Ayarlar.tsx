@@ -4,6 +4,7 @@ import { apiGet, apiPost, apiPut } from '../../lib/api'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../lib/auth'
 import { useAsync } from '../../lib/useAsync'
+import { useAgentTaskStatus } from '../../lib/useAgentTaskStatus'
 import { cn } from '../../lib/cn'
 import { Icon } from '../../ui'
 import type {
@@ -325,9 +326,30 @@ function EsikPaneli() {
 
 /* ── Ops ─────────────────────────────────────────────────────────────────── */
 
+/** Yoklama durumunu yöneticinin okuyacağı cümleye çevirir. */
+const GOREV_METNI: Record<string, string> = {
+  PENDING: 'Kuyrukta bekliyor…',
+  RUNNING: 'İşleniyor — havuz taranıyor, dakikalar sürebilir…',
+  COMPLETED: 'Ölçüm tamamlandı. Sonuç Yönetim ekranında.',
+  FAILED: 'Ölçüm başarısız oldu.',
+  // ⚠️ "Başarısız" DEĞİL: görev arka planda sürüyor olabilir, yalnız bu ekran beklemeyi bıraktı.
+  zaman_asimi: 'Takip bırakıldı (2 dk). Görev arka planda sürüyor olabilir — Yönetim ekranından bak.',
+}
+
 function OpsPaneli() {
   const [mesgul, setMesgul] = useState<'onbellek' | 'eval' | null>(null)
   const [sonuc, setSonuc] = useState<string | null>(null)
+
+  /**
+   * Eval görevinin CANLI takibi.
+   *
+   * Eskiden `202 Accepted` ile dönen taskId yalnız metin olarak basılıyordu ("…kuyruğa alındı:
+   * 3f2a1b9c…") ve orada bitiyordu: yönetici görevin koşup koşmadığını, bittiğini ya da
+   * patladığını hiçbir yerden göremiyordu. Sunucuda GET /agents/status/:taskId ZATEN vardı,
+   * yalnız hiç çağrılmıyordu.
+   */
+  const [evalTaskId, setEvalTaskId] = useState<string | null>(null)
+  const evalGorev = useAgentTaskStatus(evalTaskId)
 
   const onbellekDus = async (): Promise<void> => {
     setMesgul('onbellek')
@@ -349,7 +371,8 @@ function OpsPaneli() {
     try {
       const y: EvalTetikYanit = await apiPost('/admin/eval/kosum', {})
       setSonuc(`eval görevi kuyruğa alındı: ${y.taskId.slice(0, 8)}…`)
-      toast.success('Eval ölçümü kuyruğa alındı — sonuç Yönetim ekranında görünecek', { duration: 7000 })
+      setEvalTaskId(y.taskId) // → useAgentTaskStatus yoklamayı başlatır
+      toast.success('Eval ölçümü kuyruğa alındı — durumu aşağıda izleyebilirsin', { duration: 7000 })
     } catch (err: any) {
       toast.error(err?.message ?? 'Eval tetiklenemedi', { duration: 7000 })
     } finally {
@@ -387,6 +410,15 @@ function OpsPaneli() {
       </div>
 
       {sonuc && <p className="ay-sonuc">{sonuc}</p>}
+
+      {/* Eval görevinin canlı durumu — yoklama başlamadıysa ('bos') hiçbir şey çizilmez. */}
+      {evalGorev.durum !== 'bos' && (
+        <p className="ay-sonuc" role="status" aria-live="polite">
+          {evalGorev.yokluyor && <span className="ay-spin" aria-hidden="true">◌</span>}{' '}
+          {GOREV_METNI[evalGorev.durum] ?? evalGorev.durum}
+          {evalGorev.hata && ` — ${evalGorev.hata}`}
+        </p>
+      )}
     </section>
   )
 }

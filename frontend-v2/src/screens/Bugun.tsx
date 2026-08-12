@@ -294,7 +294,9 @@ export function Bugun() {
 
         {/* ════════ SAĞ ════════ */}
         <div className="flex min-w-0 flex-col gap-5">
-          {/* Bugünün Tekrarı */}
+          {/* Bugünün Tekrarı — koşul SERVİS EDİLEBİLEN soru sayısı. Eskiden vadeli KART
+              sayısına bakıyordu: kartların hepsi elemede düşünce (çıkmış/karantina) modül
+              yine çıkıyor, buton boş bir Çöz ekranı açıyordu. */}
           {(review.data?.count ?? 0) > 0 && (
             <Reveal delay={0.12}>
               <section className="bg-kart" aria-label="Bugünün tekrarı">
@@ -304,9 +306,11 @@ export function Bugun() {
                   </span>
                   <h2 className="bg-h2">Bugünün Tekrarı</h2>
                 </div>
-                <p className="bg-aciklama">{review.data!.count} kazanımın tekrar vakti geldi — unutmadan pekiştir, fidanın büyüsün.</p>
+                {/* Sayı VERİDEN gelir. Sabit "10" yazıyordu; set 10'a KESİLİYOR ama elemeden
+                    sonra çoğu zaman altında kalıyor — etiket ile ekran birbirini tutmuyordu. */}
+                <p className="bg-aciklama">{review.data!.count} sorunun tekrar vakti geldi — unutmadan pekiştir, fidanın büyüsün.</p>
                 <button className="bg-dis mt-3" onClick={() => nav('/coz', { state: { source: 'review', title: 'Tekrar Zamanı', questions: review.data!.questions } })}>
-                  10 soruluk tekrar başlat
+                  {review.data!.count} soruluk tekrar başlat
                 </button>
               </section>
             </Reveal>

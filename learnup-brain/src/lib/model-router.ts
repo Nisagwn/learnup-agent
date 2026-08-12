@@ -239,6 +239,49 @@ function chainFromEnv(name: string, fallback: string[]): string[] {
 
 const isFree = (entry: string): boolean =>
   entry.endsWith(':free') || entry.startsWith('groq:') || entry.startsWith('google:')
+
+/**
+ * KREDİSİZ KİP — "bu koşu tek kuruş kredi harcamayacak" garantisi.
+ *
+ * ⚠️ NEDEN AYRI BİR KİP GEREKTİ: `maliyetTavani(0)` bunu SAĞLAMIYOR. İki delik vardı:
+ *   1. Tavan kapısı `role !== 'verify'` diyor (aşağıdaki muafiyet — gerekçesi kendi yerinde
+ *      haklı: paralı üretip denetlememek parayı çöpe atar). Ama tavan 0 iken üretim zaten
+ *      ücretsiz; muafiyet o durumda korunacak bir harcamayı değil, DOĞRUDAN FATURAYI geçirir:
+ *      ücretsiz hakem slug'ları tükendiğinde zincir sessizce paralı v4-flash/v3.2'ye düşer.
+ *   2. Zincirler DAİMA paralı slug'da bitiyor ("açık kapatıcı" tasarımı) — ücretsiz kota
+ *      dolduğu anda üretim de paralıya geçer. Tavan bunu üretimde durdurur, denetimde durdurmaz.
+ *
+ * Bu kip AÇIKKEN zincirlerden paralı slug'lar TAMAMEN çıkarılır ve çağrı anında ikinci bir
+ * kapı daha vardır (rol farkı gözetmeden). Zincir boşalırsa çağrı HATA VERİR — sessizce
+ * paralıya düşmez. "Ücretsiz kapasite yoksa dur" davranışı, kredisiz koşunun ta kendisidir.
+ *
+ * Varsayılan KAPALI: normal üretim davranışı hiç değişmez.
+ *
+ * ⚠️ EMBEDDINGS BU KAPIDAN GEÇMEZ. lib/rag.ts embeddings'i doğrudan OpenAI SDK ile çağırıyor
+ * (openai/text-embedding-3-small — PARALI). Router onu görmez. Kredisiz koşuda embedding
+ * maliyetini sıfıra indiren şey bu kip değil, rag.ts'teki kalıcı embed ÖNBELLEĞİdir.
+ */
+export const KREDISIZ = process.env.KREDISIZ === '1'
+
+if (KREDISIZ) {
+  for (const rol of Object.keys(CHAINS) as LlmRole[]) {
+    const once = CHAINS[rol]
+    const kalan = once.filter(isFree)
+    CHAINS[rol] = kalan
+    if (kalan.length < once.length) {
+      logger.info(
+        { rol, cikarilan: once.filter((s) => !isFree(s)), kalan },
+        'KREDİSİZ kip: paralı slug zincirden çıkarıldı',
+      )
+    }
+    if (!kalan.length) {
+      // Zinciri boş bırakmak SESSİZ bir arıza olurdu: çağrı "model zinciri boş" diye düşer ve
+      // sebebi log'a bakmayan biri için görünmez. Kip açılırken bir kez yüksek sesle söyle.
+      logger.warn({ rol }, 'KREDİSİZ kip: bu rolde HİÇ ücretsiz slug yok — rol kullanılamaz')
+    }
+  }
+}
+
 /** Rol başına timeout. `generate` 60sn'ydi ve YETMİYORDU: tek çağrıda 4 tam ÖSYM sorusu
  *  + çözümleri (max_tokens 8000) yazılıyor; model bunu 60sn'de bitiremeyip abort ediliyordu.
  *  Üretim interaktif değil (P1 canlı top-up / P2 gece batch) → bekleyebilir. `chat` P0 kalır. */
@@ -665,9 +708,11 @@ export async function routedChat(
     if (role !== 'verify' && !isFree(slug) && harcananUsd >= maliyetTavaniUsd) {
       throw new MaliyetTavaniAsildi(harcananUsd, maliyetTavaniUsd)
     }
+    // KREDİSİZ ikinci kapı — zincirler zaten süzüldü (yukarı bak), bu satır rol muafiyeti
+    // GÖZETMEZ ve ileride eklenecek bir zincir/rol yolunu da kapatır. Ucuz sigorta.
+    if (KREDISIZ && !isFree(slug)) continue
     if (await breakerOpen(slug)) continue
     if (isFree(slug) && !(await freeBudgetOk(provider, priority))) continue // bütçe → sıradaki
-    if (isFree(slug)) await freeBudgetTuket(provider) // pay burada düşer: çağrı GİDİYOR
     try {
       // ⚠️ HTTP 200 + HATA GÖVDESİ — OpenRouter'ın SESSİZ arıza biçimi. Sağlayıcı kapasitesi
       // dolduğunda gövde `{error:{...}}` döner ve `choices` HİÇ GELMEZ. Durum kodu 200 olduğu
@@ -686,6 +731,14 @@ export async function routedChat(
       let res: OpenAI.Chat.Completions.ChatCompletion | null = null
       let bosGovde: string | undefined
       for (let d = 1; d <= dene; d++) {
+        // ⚠️ BÜTÇE PAYI HER ÇAĞRIDA DÜŞER — döngünün İÇİNDE.
+        // Eskiden `freeBudgetTuket` döngüden ÖNCE bir kez çağrılıyordu; hemen altındaki
+        // `dene = 3` ise aynı slug'a 3 GERÇEK HTTP çağrısı gönderebiliyordu. Dakika
+        // (MINUTE_CAP) ve gün (DAY_CAP_BASE) sayaçları çağrıların yalnız 1/3'ünü görüyordu:
+        // 'google' için 20/gün tavanı fiilen 60 isteğe kadar açılıyordu. Sayaç sağlayıcıdan
+        // önce durmadığı için bu dosyanın 320-336'da önlemek için yazıldığı arıza aynen
+        // yaşanıyordu — 429 dalgası → kesici üstel açılır → hat dakikalarca ölür.
+        if (isFree(slug)) await freeBudgetTuket(provider)
         const aday = await withTimeout(TIMEOUT_MS[role], (signal) =>
           client.chat.completions.create(saglayiciEkle(provider, role, { ...params, model }), { signal }),
         )
@@ -705,6 +758,25 @@ export async function routedChat(
     } catch (err) {
       lastErr = err
       if (isRetryable(err)) {
+        // ⚠️ ARIZANIN CİNSİ LOGLANMALI — yoksa kesici teşhissiz açılır.
+        // ÖLÇÜLDÜ (2026-08-07, kredisiz üretim koşusu): 16 dakikada 6 kesici açıldı ve logda
+        // yalnız "model kesicisi açıldı" yazıyordu. İki bambaşka dünya ayırt edilemiyordu:
+        //   · TIMEOUT      → istenen İŞ çağrı bütçesine sığmıyor (tavan/count/eşzamanlılık ayarı)
+        //   · 429          → dakika/gün penceresi dar (MINUTE_CAP / eşzamanlılık)
+        //   · 5xx          → sağlayıcı arızası, bizde yapacak bir şey yok, beklemek doğru
+        // Üçünün İLACI FARKLI; ayırt edemeyince ayar tahminle yapılır. Kredisiz kipte bu daha
+        // da can yakıcı: zincirde paralı "açık kapatıcı" YOK, tek bir açık kesici o rolü
+        // dakikalarca tamamen durdurur.
+        logger.warn(
+          {
+            slug, role,
+            status: (err as { status?: number })?.status ?? null,
+            ad: (err as { name?: string })?.name ?? null,
+            hata: String((err as { message?: string })?.message ?? err).slice(0, 160),
+            timeoutMs: TIMEOUT_MS[role],
+          },
+          'kesici açılıyor — arıza cinsi (timeout | 429 | 5xx) için status/ad/hata alanlarına bak',
+        )
         await tripBreaker(slug)
         continue
       }
@@ -726,6 +798,22 @@ export async function routedChat(
  * stream adaptörü yoktu) — yani P0 sohbet, routedChat'in kullandığı modelden BAŞKA bir modele
  * düşüyordu. Artık tüm sağlayıcılar OpenAI-uyumlu: stream ve non-stream aynı slug'ı kullanır.
  */
+/**
+ * Akışı OLDUĞU GİBİ geçirir, yalnız `usage` taşıyan chunk'ı görünce sayaca yazar.
+ * Şeffaf sarmalayıcı: çağıran davranış farkı görmez, sayaç akışı da görür.
+ */
+async function* usageSayan(
+  stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+  slug: string,
+  role: LlmRole,
+): AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> {
+  for await (const chunk of stream) {
+    const usage = (chunk as { usage?: OpenAI.Completions.CompletionUsage | null }).usage
+    if (usage) maliyetEkle(slug, role, usage)
+    yield chunk
+  }
+}
+
 export async function routedStream(
   role: LlmRole,
   params: StreamParams,
@@ -737,6 +825,14 @@ export async function routedStream(
     const { provider, model } = parseEntry(slug)
     const client = clientOf(provider)
     if (!client) continue
+    // ⚠️ MALİYET TAVANI BURADA DA GEÇERLİ — eskiden YALNIZ routedChat'te vardı.
+    // Kaptan sohbeti bu yoldan geçiyor ve zinciri paralı slug'larla başlıyor; yani
+    // `maliyetTavani(0.20)` kuran bir koşu sohbet trafiğini HİÇ durduramıyordu.
+    // (verify muafiyeti routedChat'teki gerekçeyle aynı — akışta verify rolü zaten yok.)
+    if (role !== 'verify' && !isFree(slug) && harcananUsd >= maliyetTavaniUsd) {
+      throw new MaliyetTavaniAsildi(harcananUsd, maliyetTavaniUsd)
+    }
+    if (KREDISIZ && !isFree(slug)) continue // kredisiz kip (routedChat'teki kapının aynısı)
     if (await breakerOpen(slug)) continue
     if (isFree(slug) && !(await freeBudgetOk(provider, priority))) continue
     if (isFree(slug)) await freeBudgetTuket(provider) // pay burada düşer: çağrı GİDİYOR
@@ -747,10 +843,19 @@ export async function routedStream(
       // akışa bağlı kalıyordu: 45sn'den uzun süren bir cevap ORTASINDAN kesiliyordu. Artık
       // timeout yalnız BAŞLATMAYA (ilk bayta kadar) uygulanır — akışın süresi sınırsız.
       const stream = await withTimeout(TIMEOUT_MS[role], (signal) =>
-        client.chat.completions.create(saglayiciEkle(provider, role, { ...params, model, stream: true }), { signal }),
+        client.chat.completions.create(
+          saglayiciEkle(provider, role, {
+            ...params, model, stream: true,
+            // Akışta usage YALNIZ bunu istersek gelir (son chunk'ta, choices boş).
+            // Olmadan `maliyetHarcanan()` akış trafiğini HİÇ görmez ve "bu koşu ne harcadı"
+            // raporu sistematik olarak eksik kalır — tavan kararları eksik veriyle verilir.
+            stream_options: { include_usage: true },
+          }),
+          { signal },
+        ),
       )
       void resetBreaker(slug)
-      return { stream, model: slug }
+      return { stream: usageSayan(stream, slug, role), model: slug }
     } catch (err) {
       lastErr = err
       if (isRetryable(err)) {

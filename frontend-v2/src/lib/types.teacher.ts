@@ -64,7 +64,10 @@ export interface IsiHaritasiHucresi {
 export interface IsiHaritasiYaniti {
   cells: IsiHaritasiHucresi[]
   subjects: string[]
+  /** SINIF MEVCUDU — haritada ölçümü olan öğrenci sayısı DEĞİL (panel.ts aynası). */
   ogrenciSayisi: number
+  /** Haritanın kapsadığı öğrenci sayısı (en kalabalık hücre). */
+  olculenOgrenci: number
   /** Renk skalasının eşiği backend'den gelir — TEK kaynak. */
   esik: { zayif: number }
   olcumZamani: string
@@ -110,7 +113,8 @@ export interface SinifZayifKazanim {
   weakStudentCount: number
   attempts: number
   /** 0/0 ise UI "set gönder" butonunu KAPATIR — havuzda soru yokken ödev kurulamaz. */
-  havuzdaSoru: { osym: number; ai: number }
+  /** Ödeve DERLENEBİLİR stok — yalnız AI havuzu (telif kararı; bkz. panel.ts aynası). */
+  havuzdaSoru: { ai: number }
 }
 
 export interface SinifZayifYaniti {

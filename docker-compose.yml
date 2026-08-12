@@ -6,7 +6,12 @@
 #   • kök .env             → VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY  (frontend BUILD-time)
 #     (.env.example'ı kopyala: cp .env.example .env)
 #
-# NOT: Yalnız 'brain' imajı build eder; 'worker' aynı imajı komutla yeniden kullanır.
+# NOT: Yalnız 'brain' imajı build eder; brain2/worker/worker2 aynı imajı komutla kullanır.
+#
+# TOPOLOJİ: nginx → (brain · brain2)  ·  (worker · worker2) → redis ← hepsi
+#   API katmanı  : nginx least_conn ile iki brain arasında paylaştırır (deploy/nginx/default.conf)
+#   Worker katmanı: iki worker aynı Redis consumer group'undan tüketir (lb:tasks / grup 'atolye')
+#   Durum        : hiçbir node süreç belleğinde hakikat tutmaz → node sayısı serbestçe artar
 
 services:
   # ── Frontend: Vite build → nginx (statik + /api proxy → brain) ──
@@ -30,6 +35,7 @@ services:
     depends_on:
       - frontend
       - brain
+      - brain2
     ports:
       - "3000:80"    # Host port 3000 -> nginx:80
     volumes:
@@ -43,7 +49,71 @@ services:
     image: learnup-brain
     command: ["bun", "src/server.ts"]
     ports:
-      - "8080:8080"
+      # ⚠️ YALNIZ LOOPBACK. Eskiden "8080:8080" idi → API, nginx ATLANARAK dışarıdan
+      # doğrudan erişilebiliyordu. İki sonucu vardı:
+      #   · nginx'teki rate limit ve failover devre dışı kalıyordu,
+      #   · `trust proxy: 1` yüzünden doğrudan bağlanan biri sahte X-Forwarded-For
+      #     göndererek oturum defterine istediği IP'yi yazdırabiliyordu (nginx üzerinden
+      #     bu mümkün değil: $proxy_add_x_forwarded_for zinciri gerçek adresi sona ekler).
+      # 127.0.0.1'e bağlamak yerel hata ayıklamayı (curl localhost:8080/health) korur,
+      # dış erişimi kapatır. Normal trafik zaten nginx üzerinden 3000 portundan geçiyor.
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - ./learnup-brain/.env
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379/1
+      # Oturum defteri AYRI DB'de (…/2). db 1 atılabilir veri taşır (cache/rate-limit/kuyruk)
+      # ve operasyonda FLUSHDB edilir; oturum iptalini oraya koymak, çıkış yaptırılan cihazın
+      # bir cache temizliğiyle geri dönmesi demekti. Aynı Redis sunucusu, ayrı ömür.
+      - SESSION_REDIS_URL=redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Brain2: Bun API failover node ──
+  brain2:
+    build: ./learnup-brain
+    image: learnup-brain
+    command: ["bun", "src/server.ts"]
+    env_file:
+      - ./learnup-brain/.env
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379/1
+      # ⚠️ brain ile AYNI DB olmak ZORUNDA: nginx istekleri iki node arasında paylaştırıyor.
+      # Farklı olsalardı brain'de kapatılan oturum brain2'de açık kalırdı — yapışkan oturum
+      # (ip_hash) gerekmemesinin tek sebebi defterin ortak olması.
+      - SESSION_REDIS_URL=redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Worker: Atölye (aynı imaj, farklı komut) ──
+  #
+  # ⚠️ İKİ WORKER ÇALIŞIR — brain/brain2 ile AYNI desen. Güvenli olmasının sebebi tesadüf
+  # değil, üç ayrı korumadır; birini bozan worker2'yi de bozar:
+  #
+  #   1) GÖREV TÜKETİMİ — Redis consumer group (XREADGROUP ... '>'), yani bir görev grup
+  #      içinde YALNIZ BİR consumer'a teslim edilir. Consumer kimliği `w-<hostname>-<pid>`
+  #      (bus.ts consumerName) ve Docker her container'a farklı hostname verir → çakışmaz.
+  #      Üstüne Postgres CAS-claim var (bus.ts claimTask): at-least-once teslimatta bile
+  #      görevi tek worker işler.
+  #   2) ZAMANLANMIŞ İŞLER — tur başına Redis leader lock (lb:lock:scheduler) + gece işleri
+  #      için AYRI gün kilidi (lb:lock:gece:<gün>). Tur kilidi tek başına yetmiyordu:
+  #      TTL'i 90 sn, zamanlayıcı aralığı 300 sn → kilit turlar arasında düşüyor ve liderlik
+  #      el değiştiriyor. Günlük tekrarı engelleyen bayrak süreç-yerel olduğu için gece
+  #      katlaması worker sayısı kadar tekrarlıyordu (atolye.worker.ts GECE_KILIDI).
+  #   3) OTURUM-SONU TARAMASI — compactSweep artık SREM'in dönüşünü sahiplik kanıtı sayar
+  #      (katip.ts); iki tarama aynı kullanıcıyı üstlenemez.
+  #
+  # ⚠️ container_name BİLEREK VERİLMEDİ (brain/brain2 de vermiyor). Compose zaten eşsiz ad
+  # üretir (learnup-agent-worker-1 / -worker2-1); sabit ad `--scale` kullanımını engeller.
+  worker:
+    image: learnup-brain
+    command: ["bun", "src/workers/atolye.worker.ts"]
     env_file:
       - ./learnup-brain/.env
     environment:
@@ -52,10 +122,18 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      brain:
+        condition: service_started
     restart: unless-stopped
 
-  # ── Worker: Ritim (aynı imaj, farklı komut) ──
-  worker:
+  # ── Worker2: Atölye ikinci tüketici (yatay ölçeklendirme) ──
+  # worker ile BİREBİR aynı: aynı imaj, aynı komut, aynı env, aynı REDIS_URL (db 1).
+  # Aynı consumer group'a katılır → görevler ikisi arasında paylaştırılır.
+  #
+  # ⚠️ REDIS_URL worker ile AYNI DB OLMAK ZORUNDA. Farklı olsalardı iki ayrı kuyruk oluşur,
+  # her worker yalnız kendi kuyruğunu görür ve consumer group'un iş paylaşımı anlamsızlaşırdı
+  # (brain/brain2'nin SESSION_REDIS_URL'i paylaşmasıyla aynı gerekçe).
+  worker2:
     image: learnup-brain
     command: ["bun", "src/workers/atolye.worker.ts"]
     env_file:

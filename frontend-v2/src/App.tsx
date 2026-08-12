@@ -9,7 +9,7 @@ import { useTheme } from './lib/theme'
 import { NAV_H } from './lib/layout'
 import { cn } from './lib/cn'
 import { useIsDesktop } from './lib/responsive'
-import { rolBul, ROL_ADI } from './lib/rol'
+import { rolBul, ROL_ADI, ROL_ANA_YOL } from './lib/rol'
 import { NAV_ROL, NAV_AYRAC, baslikBul, type NavOgesi } from './lib/nav'
 import { Icon, type IconName } from './ui'
 import { MotionRoot, YakamozBackdrop } from './components/fx'
@@ -63,6 +63,24 @@ export default function App() {
   const { session, loading } = useAuth()
   const { theme } = useTheme()
   const loc = useLocation()
+  const nav = useNavigate()
+
+  /**
+   * OTURUM KAPANDI → URL'yi giriş kapısına sabitle.
+   *
+   * Kimliksiz yüzey derin bağlantıyı KORUR (paylaşılan link girişten sonra açılsın diye)
+   * ama ÇIKIŞ bunun istisnasıdır: öğrenci /ben'de çıkış yapınca URL /ben'de kalıyor,
+   * ardından giren YÖNETİCİ doğrudan öğrenci profiline düşüyordu. Çıkışta yol sıfırlanır;
+   * bir sonraki hesap kendi ana ekranından (AnaKapi rol kapısı) başlar.
+   *
+   * `replace`: geri tuşu kapanmış oturumun sayfasına dönmemeli.
+   * Yalnız VAR→YOK geçişinde çalışır; ilk yüklemedeki "henüz oturum yok" hâli tetiklemez.
+   */
+  const oturumVardi = useRef(false)
+  useEffect(() => {
+    if (oturumVardi.current && !session) nav('/giris', { replace: true })
+    oturumVardi.current = !!session
+  }, [session, nav])
 
   // Rota başına sekme başlığı — profesyonel SaaS detayı.
   // baslikBul: /sinif/ogrenci/:id gibi dinamik rotalar önek eşleşmesiyle çözülür.
@@ -86,8 +104,10 @@ export default function App() {
       />
       {loading ? <Splash /> : !session ? (
         /* Kimliksiz yüzey: kök → Tanıtım (landing, GOREV-023); diğer TÜM yollar (derin
-           bağlantılar dahil) Giriş'e düşer — URL korunur, girişten sonra hedef rota açılır
-           (mevcut davranış). Tanıtımdaki CTA'lar /giris'e yönlendirir. */
+           bağlantılar dahil) Giriş'e düşer — URL korunur, girişten sonra hedef rota açılır.
+           TEK İSTİSNA ÇIKIŞ: yukarıdaki oturum-kapandı effect'i yolu /giris'e sabitler,
+           yoksa sonraki hesap önceki rolün sayfasına düşerdi.
+           Tanıtımdaki CTA'lar /giris'e yönlendirir. */
         <Suspense fallback={<Splash />}>
           <Routes>
             <Route index element={<Tanitim />} />
@@ -98,13 +118,26 @@ export default function App() {
         <Routes>
           <Route element={<Shell />}>
             <Route index element={<AnaKapi />} />
-            <Route path="konular" element={<Konular />} />
-            <Route path="rota" element={<Rota />} />
-            <Route path="kaptan" element={<Kaptan />} />
-            <Route path="harita" element={<Harita />} />
-            <Route path="bahce" element={<Bahce />} />
-            <Route path="odevler" element={<Odevler />} />
-            <Route path="ben" element={<Ben />} />
+
+            {/* ── ÖĞRENCİ YÜZEYİ ── kişisel çalışma ekranları: öğretmen/yöneticide bu
+                verilerin hiçbiri yok (navlarında da yoklar — nav.ts). Kapı OLMADIĞI için
+                yer imi, geri tuşu ya da çıkış sonrası kalan URL yöneticiyi öğrenci
+                ekranına düşürüyordu. Yetkisiz rol UYARI KARTI DEĞİL, kendi ana ekranını
+                görür (`yonlendir`): burada bir ihlal yok, sayfa sadece o hesabın işi değil. */}
+            <Route element={<RolGecidi izin={['student']} yonlendir />}>
+              <Route path="konular" element={<Konular />} />
+              <Route path="rota" element={<Rota />} />
+              <Route path="kaptan" element={<Kaptan />} />
+              <Route path="harita" element={<Harita />} />
+              <Route path="bahce" element={<Bahce />} />
+              <Route path="odevler" element={<Odevler />} />
+            </Route>
+
+            {/* /ben öğretmende de var (NAV_OGRETMEN son sekmesi) — yalnız yönetim dışarıda;
+                yöneticinin kendi hesabı /kule/ayarlar'da (ProfileMenu de bu çizgide). */}
+            <Route element={<RolGecidi izin={['student', 'teacher']} yonlendir />}>
+              <Route path="ben" element={<Ben />} />
+            </Route>
 
             {/* ── SINIF YÜZEYİ ── kapı + sınıf verisi TEK layout route'ta: kontrol ve
                 paylaşılan fetch alt-ağaç başına bir kez çalışır.
@@ -138,14 +171,18 @@ export default function App() {
             <Route path="*" element={<NotFound />} />
           </Route>
           {/* Odak modu — nav yok, blob yok, tam ekran. Hata sınırı: soru çözüm ekranı
-              çökerse diğer rotalar sağlam kalmalı. */}
-          <Route path="coz" element={
-            <ErrorBoundary>
-              <Suspense fallback={<Splash />}>
-                <Coz />
-              </Suspense>
-            </ErrorBoundary>
-          } />
+              çökerse diğer rotalar sağlam kalmalı. Öğrenci yüzeyi: buraya YALNIZ öğrenci
+              akışlarından gelinir (Bugün/Rota/Harita/Konular/Koç); öğretmenin karşılığı
+              Ödev Atölyesi'dir (OgrenciRontgeni.tsx:216). */}
+          <Route path="coz" element={<RolGecidi izin={['student']} yonlendir />}>
+            <Route index element={
+              <ErrorBoundary>
+                <Suspense fallback={<Splash />}>
+                  <Coz />
+                </Suspense>
+              </ErrorBoundary>
+            } />
+          </Route>
         </Routes>
       )}
     </>
@@ -162,8 +199,9 @@ function AnaKapi() {
   const { profile, profilYukleniyor } = useAuth()
   if (profilYukleniyor) return <PanoIskeleti sutun={2} />
   const rol = rolBul(profile)
-  if (rol === 'admin') return <Navigate to="/kule" replace />
-  if (rol === 'teacher') return <Navigate to="/sinif" replace />
+  // Öğrencinin ana yolu köktür (ROL_ANA_YOL.student === '/') — kendine yönlendirme olmaz,
+  // ekran doğrudan basılır. Diğer roller kendi paneline iner.
+  if (rol !== 'student') return <Navigate to={ROL_ANA_YOL[rol]} replace />
   return <Bugun />
 }
 
@@ -194,7 +232,7 @@ function Shell() {
   const loc = useLocation()
   const outlet = useOutlet()
   const isDesktop = useIsDesktop()
-  const { profile } = useAuth()
+  const { profile, profilYukleniyor } = useAuth()
   const rol = rolBul(profile)
   const [tur, setTur] = useState(turGerekli)
   const azalt = useReducedMotion()
@@ -210,7 +248,9 @@ function Shell() {
         )}
         <TopBar />
         <main style={{ paddingTop: NAV_H }}>
-          <ErrorBoundary>
+          {/* sifirlaAnahtari: rota değişince sınır kendini temizler — yoksa bir kez çöken
+              ekran, kullanıcı başka sayfaya geçse bile hata ekranını orada tutuyordu. */}
+          <ErrorBoundary sifirlaAnahtari={loc.pathname}>
             <Suspense fallback={<EkranBekleme />}>
               {/* Rota geçişleri: süzülme — mode=wait ile temiz devir. useOutlet
                   şart: çıkan sayfanın anlık görüntüsü animasyon boyunca korunur. */}
@@ -229,8 +269,13 @@ function Shell() {
           </ErrorBoundary>
         </main>
         {/* İlk giriş turu — localStorage bayrağıyla bir kez. YALNIZ ÖĞRENCİ:
-            tur /coz, /rota, /bahce gibi öğretmende olmayan ekranları anlatıyor. */}
-        {rol === 'student' && tur && <Onboarding onKapat={() => setTur(false)} />}
+            tur /coz, /rota, /bahce gibi öğretmende olmayan ekranları anlatıyor.
+            ⚠️ `profilYukleniyor` BEKLENİR: RolGecidi ve AnaKapi bekliyordu, Shell beklemiyordu
+            ve `rolBul(null)` güvenli varsayılan olarak 'student' dönüyor. Yeni kaydolan bir
+            öğretmen ilk girişinde, profil satırı gelene kadarki pencerede tam ekran onboarding
+            görüyordu; "Sınava başla"ya basınca RolGecidi onu geri atıyor ama localStorage'a
+            'tamam' yazılmış oluyordu — yani aynı cihazdaki gerçek öğrenci turu HİÇ görmüyordu. */}
+        {!profilYukleniyor && rol === 'student' && tur && <Onboarding onKapat={() => setTur(false)} />}
         {/* ⌘K / Ctrl+K komut paleti */}
         <CommandPalette />
         {/* Kayıtta girilen sınıf kodunu ilk girişte uygular (görsel çıktısı yok) */}

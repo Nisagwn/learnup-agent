@@ -1,4 +1,8 @@
 import { Router } from 'express'
+// validateParams(IdParam): yol parametresi doğrudan `.eq('id', …)`'ye gidiyordu; `abc` gibi
+// bir değer Postgres'te 22P02 (invalid input syntax for type uuid) üretiyor ve okuma
+// noktalarında 500'e dönüşüyordu — oysa bu bir İSTEMCİ hatası, 400 olmalı.
+import { validateParams, IdParam } from '../middleware/validate.js'
 import { supabase } from '../clients/supabase.js'
 import { fetchAll } from '../lib/pg.js'
 import { denetimYaz } from '../lib/denetim.js'
@@ -260,7 +264,7 @@ havuzRouter.get('/sorular', async (req, res, next) => {
 // soru-saglik.ts, benzerlik.ts). Panelde ikinci bir "kalite kanısı" hesaplamak,
 // iki ölçünün zamanla ayrışması ve hangisinin doğru olduğunun bilinememesi demekti.
 // ─────────────────────────────────────────────────────────────────────────────
-havuzRouter.get('/soru/:id', async (req, res, next) => {
+havuzRouter.get('/soru/:id', validateParams(IdParam), async (req, res, next) => {
   try {
     const id = String(req.params.id)
     const s = await soruOku(id)
@@ -458,7 +462,7 @@ function mudahaleYaniti(s: Record<string, unknown>, denetimYazildi: boolean): So
 // verified=true okur). Geri vermek de mümkün: hattın yanlış elediği bir soru elle
 // havuza alınabilir.
 // ─────────────────────────────────────────────────────────────────────────────
-havuzRouter.post('/soru/:id/dogrulama', async (req, res, next) => {
+havuzRouter.post('/soru/:id/dogrulama', validateParams(IdParam), async (req, res, next) => {
   try {
     const adminId = req.userId!
     const id = String(req.params.id)
@@ -475,7 +479,7 @@ havuzRouter.post('/soru/:id/dogrulama', async (req, res, next) => {
 
     const { error } = await supabase.from('yks_ai_questions').update({ verified: b.verified }).eq('id', id)
     if (error) throw new HttpHatasi(500, 'dogrulama_yazilamadi', 'Doğrulama durumu güncellenemedi.')
-    onbellegiDus()
+    await onbellegiDus()
 
     const denetimYazildi = await denetimYaz({
       adminId, eylem: 'soru_dogrulama', hedefId: id, hedefTur: 'soru',
@@ -495,7 +499,7 @@ havuzRouter.post('/soru/:id/dogrulama', async (req, res, next) => {
 // karantina=true "insan düşürdü" demektir. Aynı kolona bindirmek, hattın kalite
 // oranını insan müdahalesiyle kirletir ve "hattımız kötüleşti" gibi okunur.
 // ─────────────────────────────────────────────────────────────────────────────
-havuzRouter.post('/soru/:id/karantina', async (req, res, next) => {
+havuzRouter.post('/soru/:id/karantina', validateParams(IdParam), async (req, res, next) => {
   try {
     const adminId = req.userId!
     const id = String(req.params.id)
@@ -524,7 +528,7 @@ havuzRouter.post('/soru/:id/karantina', async (req, res, next) => {
       })
       .eq('id', id)
     if (error) throw new HttpHatasi(500, 'karantina_yazilamadi', 'Karantina durumu güncellenemedi.')
-    onbellegiDus()
+    await onbellegiDus()
 
     const denetimYazildi = await denetimYaz({
       adminId, eylem: 'soru_karantina', hedefId: id, hedefTur: 'soru',
@@ -544,7 +548,7 @@ havuzRouter.post('/soru/:id/karantina', async (req, res, next) => {
 // konu listesine giremez, zorluğu yanlış olan soru yanlış öğrenciye gider. İkisi de
 // metne dokunmadan düzeltilebilir — bu yüzden burada, gövde düzenleme ise YOK.
 // ─────────────────────────────────────────────────────────────────────────────
-havuzRouter.patch('/soru/:id', async (req, res, next) => {
+havuzRouter.patch('/soru/:id', validateParams(IdParam), async (req, res, next) => {
   try {
     const adminId = req.userId!
     const id = String(req.params.id)
@@ -588,7 +592,7 @@ havuzRouter.patch('/soru/:id', async (req, res, next) => {
 
     const { error } = await supabase.from('yks_ai_questions').update(yama).eq('id', id)
     if (error) throw new HttpHatasi(500, 'etiket_yazilamadi', 'Etiket güncellenemedi.')
-    onbellegiDus()
+    await onbellegiDus()
 
     const denetimYazildi = await denetimYaz({
       adminId, eylem: 'soru_etiket', hedefId: id, hedefTur: 'soru',

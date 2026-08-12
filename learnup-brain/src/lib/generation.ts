@@ -230,10 +230,25 @@ export function parseTagged(text: string): TaggedQuestion[] {
 export type GenSpec = {
   userId: string
   subject: string
-  paths: string[] // ltree ön-ekleri (retrieval filtresi)
-  kazanim: string // kazanım kodu (prompt için)
+  paths: string[] // ltree ön-ekleri (retrieval filtresi); KONU-GÜDÜMLÜ üretimde boş geçilir
+  kazanim: string // kazanım kodu (prompt için); konu-güdümlüde konu ADI
   topic: string
   difficulty: string
+  /**
+   * KONU-GÜDÜMLÜ ÜRETİM (0033) — üretim birimi kazanım değil KONU.
+   *
+   * ⚠️ NEDEN VAR: kazanım-güdümlü üretim, kazanım ağacının içerik ekseninde olduğunu VARSAYAR.
+   * TDE'de bu varsayım tutmuyor — 244 kazanımın tamamı beceri ekseninde (okuma/konuşma/yazma/
+   * dinleme) ve okuma kazanımları bile içerik taşımıyor ("'Dünden Bugüne' temasında ele alınan
+   * metinlerde anlam oluşturabilme" hem fablı hem destanı kapsar). 59 okuma kazanımıyla 102
+   * konu doldurulamaz; ölçüldü, eşleme koştuktan sonra bile TDE'de dolu konu 0 çıktı.
+   *
+   * Verildiğinde: havuz kökleri KONUDAN çekilir (kazanım kodundan değil) ve istem "kazanım"
+   * yerine "konu" der. Retrieval spec.paths boş olduğu için ders-geneli vektör aramasına
+   * düşer — konu adı zaten sorgu dizesinde, yakınlık semantik olarak kurulur.
+   */
+  konuId?: number
+  options?: GenerationStrategyOptions
 }
 
 export type Verdict = {
@@ -298,6 +313,24 @@ const parcaTavani = (difficulty: string): number => (difficulty === 'zor' ? 1 : 
 /** Kaç parça AYNI ANDA üretilsin — router'ın dakika tavanının altında kalacak kadar. */
 const GEN_ESZAMAN = 2
 
+export interface GenerationStrategyOptions {
+  costOptimized?: boolean
+  skipVerification?: boolean
+}
+
+const COST_OPTIMIZED_EXEMPLAR_LIMIT = 2
+const COST_OPTIMIZED_GROUNDING_LIMIT = 2
+
+export function resolveGenerationRole(difficulty: string, costOptimized = false): 'generate' | 'generateFree' {
+  if (costOptimized && difficulty !== 'zor') return 'generateFree'
+  return difficulty === 'zor' ? 'generate' : 'generateFree'
+}
+
+function selectPromptInputs<T>(items: T[], costOptimized: boolean, limit: number): T[] {
+  if (!costOptimized) return items
+  return items.slice(0, Math.min(limit, items.length))
+}
+
 export async function generateQuestions(a: {
   userId: string
   subject: string
@@ -311,7 +344,10 @@ export async function generateQuestions(a: {
   studentCtx?: string
   /** Aynı kazanımın havuzdaki mevcut kökleri — GÖREV'e "bunları tekrarlama" diye basılır. */
   havuzKokleri?: string[]
+  /** Konu-güdümlü üretim (0033): istem "kazanım" yerine "konu" der. Bkz. GenSpec.konuId. */
+  konuGudumlu?: boolean
   priority?: LlmPriority
+  options?: GenerationStrategyOptions
 }): Promise<TaggedQuestion[]> {
   const studentCtx = a.studentCtx ?? (await buildStudentContext(a.userId)) // ← Context Injection
 
@@ -327,7 +363,7 @@ export async function generateQuestions(a: {
       'büyük count parçalandı — tek çağrıda düşünme bütçesi metni yer',
     )
     const gruplar = await mapLimit(parcalar, GEN_ESZAMAN, (n) =>
-      generateQuestions({ ...a, count: n, studentCtx }).catch((err) => {
+      generateQuestions({ ...a, count: n, studentCtx, options: a.options }).catch((err) => {
         // Bir parça düşerse tur BOŞA DÖNMESİN: diğer parçaların soruları sağlamdır.
         logger.warn({ err, kazanim: a.kazanim, parca: n }, 'üretim parçası düştü — diğerleri sürüyor')
         return [] as TaggedQuestion[]
@@ -336,7 +372,10 @@ export async function generateQuestions(a: {
     return gruplar.flat()
   }
 
-  const grounding = a.grounding
+  const costOptimized = !!a.options?.costOptimized
+  const exemplarsForPrompt = selectPromptInputs(a.exemplars, costOptimized, COST_OPTIMIZED_EXEMPLAR_LIMIT)
+  const groundingChunksForPrompt = selectPromptInputs(a.grounding, costOptimized, COST_OPTIMIZED_GROUNDING_LIMIT)
+  const grounding = groundingChunksForPrompt
     .map((g, i) => `[BAĞLAM ${i + 1}] ${g.context ?? ''}\n${g.content}`)
     .join('\n\n')
   // ⚠️ BOŞ ÇÖZÜMÜ BASMA. Eskiden `Çözüm: ${e.solution}` koşulsuz yazılıyordu ve çıkmış ÖSYM
@@ -354,7 +393,7 @@ export async function generateQuestions(a: {
   // modelin beceriksizliği gibi görünüyordu ("0 aday döndürdü") ama kaynağı BİZDİK.
   // Etiketli basmak çift kazanç: örnek hem ÖSYM stilini hem hedef biçimi aynı anda öğretir.
   // (Prompt'taki bu etiketler ayrıştırıcıyı KİRLETMEZ — parseTagged yalnız modelin ÇIKTISINA koşar.)
-  const style = a.exemplars
+  const style = exemplarsForPrompt
     .map((e, i) => {
       // Başlık etiketin DIŞINDA: `[ÖRNEK n] <soru>` yazmak modele soruyu [SORU]'suz yazdırıyordu
       // (ölçüldü — aşağıdaki yoruma bak). Numara ayrı satırda, blok sözleşmeyle birebir aynı.
@@ -384,7 +423,7 @@ export async function generateQuestions(a: {
   // ZORLUK-FARKINDA YÖNLENDİRME (rol seçimi): kolay/orta [TASARIM] planı GEREKTİRMEZ (o kapı yalnız
   // zor) → 'generateFree' (Gemini-önce, paralı-yedek; hacmin ~%72'si çoğunlukla $0). zor → 'generate'
   // (v4-pro: kabul-başına en ucuz VE tek [TASARIM] yazan). difficulty router'a girmez; seçim tek yer burası.
-  const res = await routedChat(a.difficulty === 'zor' ? 'generate' : 'generateFree', {
+  const res = await routedChat(resolveGenerationRole(a.difficulty, costOptimized), {
     temperature: TEMP.CREATIVE, // tüm sağlayıcılar OpenAI-uyumlu → sıcaklık geçilir
     // max_tokens = DÜŞÜNME + METİN toplamı. Zincir başı deepseek-v4-pro ve DÜŞÜNÜYOR (ölçüldü:
     // reasoning_tokens>0). OpenRouter reasoning'i `content`ten ayırdığı için metin boşalmaz, ama
@@ -423,7 +462,11 @@ export async function generateQuestions(a: {
           `⚠️ Örneklerde [COZUM], [KAZANIM] ve [ZORLUK] satırları YOKTUR — çünkü arşivdeki çıkmış\n` +
           `soruların çözümü elimizde yok. Bu bir İZİN DEĞİL, EKSİKLİKTİR: senin çıktında bu üç satır\n` +
           `ZORUNLUDUR ve [COZUM] boş/tek cümle olamaz.\n${style}\n\n` +
-          `### BİLGİ BAĞLAMI — SORUNUN İÇERİĞİ YALNIZ BURADAN (kazanım ${a.kazanim})\n${grounding}\n\n` +
+          // KONU-GÜDÜMLÜ ÜRETİMDE "KAZANIM" DEME. Hedef bir müfredat kazanımı değil bir ÖSYM
+          // konusudur; modele kazanım kodu beklediğimizi ima etmek onu olmayan bir künyeye
+          // zorlar (ve [KAZANIM] satırına uydurma kod yazdırır).
+          `### BİLGİ BAĞLAMI — SORUNUN İÇERİĞİ YALNIZ BURADAN ` +
+          `(${a.konuGudumlu ? 'konu' : 'kazanım'}: ${a.kazanim})\n${grounding}\n\n` +
           // HAVUZ KÖKLERİ — klasik/tekrar caydırıcısı. Kod kapısı yalnız birebir kopyayı
           // yakalayabilir (ölçüldü: kalıp paylaşımı ÖSYM-normali, eşik onu yakalamaz);
           // ÇEŞİTLİLİĞİ ancak model verebilir, bunun için nelerin zaten var olduğunu görmesi gerek.
@@ -432,8 +475,10 @@ export async function generateQuestions(a: {
               a.havuzKokleri.map((k) => `- ${k.replace(/\s+/g, ' ').slice(0, 200)}`).join('\n') +
               `\nBunlardan FARKLI bir senaryo kur. Aynı kurgunun sayıları değişmiş hâli KOPYADIR ve kod kapısında elenir.\n\n`
             : '') +
-          `### GÖREV\nYukarıdaki BİLGİ BAĞLAMI ve ${a.kazanim} kazanımıyla SINIRLI, ` +
-          `${a.difficulty} zorlukta ${a.count} özgün ÖSYM sorusu üret. Konu: ${a.topic}.\n` +
+          `### GÖREV\nYukarıdaki BİLGİ BAĞLAMI ve "${a.kazanim}" ` +
+          `${a.konuGudumlu ? 'konusuyla' : 'kazanımıyla'} SINIRLI, ` +
+          `${a.difficulty} zorlukta ${a.count} özgün ÖSYM sorusu üret.` +
+          (a.konuGudumlu ? '\n' : ` Konu: ${a.topic}.\n`) +
           `${ZORLUK_TARIFI[dersAilesi(a.subject)][zorlukAnahtari(a.difficulty)]}\n` +
           `Biçimi STİL ÖRNEKLERİ'nden, içeriği BİLGİ BAĞLAMI'ndan al. Çıktı sözleşmesine birebir uy.`,
       },
@@ -762,11 +807,29 @@ export async function generateVerifiedSet(
   // GÖREV'e basılacak mevcut kökler: AYNI KAZANIMIN havuzdaki soruları — "bunlar var, YENİ
   // senaryo kur". Klasik/tekrar sorununa bedava caydırıcı (garanti değil: kapı yalnız birebir
   // kopyayı yakalar, klasiği yakalayamaz — bkz. utils/benzerlik dürüst sınır).
-  const { data: kNode } = await supabase
-    .from('curriculum_nodes').select('id').eq('code', spec.kazanim).maybeSingle()
-  const havuzKokleri = kNode?.id
-    ? havuz.filter((h) => h.kazanim_id === kNode.id).map((h) => h.question_text).slice(0, 5)
-    : []
+  // KONU-GÜDÜMLÜ (0033): kökler KONUDAN gelir. `spec.kazanim` orada bir kod değil konu adıdır,
+  // yani curriculum_nodes'ta aranırsa HİÇBİR ŞEY bulunmaz ve tekrar caydırıcısı sessizce ölürdü.
+  const havuzKokleri = spec.konuId
+    ? await (async (): Promise<string[]> => {
+        try {
+          const { data } = await supabase
+            .from('yks_ai_questions')
+            .select('question_text')
+            .eq('konu_id', spec.konuId)
+            .eq('verified', true)
+            .limit(5)
+          return ((data ?? []) as Array<{ question_text: string }>).map((r) => r.question_text)
+        } catch {
+          return [] // 0033 basılmamışsa kolon yok → caydırıcı düşer, üretim DURMAZ
+        }
+      })()
+    : await (async (): Promise<string[]> => {
+        const { data: kNode } = await supabase
+          .from('curriculum_nodes').select('id').eq('code', spec.kazanim).maybeSingle()
+        return kNode?.id
+          ? havuz.filter((h) => h.kazanim_id === kNode.id).map((h) => h.question_text).slice(0, 5)
+          : []
+      })()
 
   /** Bir adayı denetle; REPAIR ise bir kez onar ve yeniden denetle. Kabul edilirse döner.
    *  ⚠️ HİÇ FIRLATMAZ: tek bir adayın geçici doğrulama hatası (429/timeout) TÜM turun
@@ -797,58 +860,6 @@ export async function generateVerifiedSet(
         }
       }
 
-      // ── LATEX KAPISI — HAKEMİN GÖREMEDİĞİ TEK KUSUR ──
-      // Denetçi bir LLM'dir ve `\frac{1}{2}`yi ZATEN OKUR; soruyu kusursuz bulur. Bozulma
-      // hakemde değil, ÖĞRENCİNİN TARAYICISINDA olur: KaTeX yalnız $...$ arasını çizer, gerisini
-      // ham basar. Yani bu, hakeme sorulması ANLAMSIZ olan bir kusur — ölçmenin tek yolu
-      // frontend'in kullandığı KaTeX'i burada çalıştırmak (utils/latex).
-      //
-      // ⚠️ DİĞER İKİ KAPIDAN ÖNCE — sıra tesadüf değil. Onlar şıkkı `sayiya` ile sayıya çeviriyor
-      // ve sayiya LaTeX sarmalını soyuyor. Yarım/bozuk sarmal ("$12" gibi) soyulamaz → şık
-      // "sayısal değil" görünür → iki kapı da o soruda SESSİZCE kenara çekilir. Matematiği önce
-      // sağlama almak, sonraki kapıların doğru ölçmesini sağlar.
-      // `sayisalAile` bayrağı ham ^/_ kaçağını da açar (x^2 sarmalsız — yalnız sayısal
-      // derste anlamlı; sözelde matematik yok, kontrol gürültü olur). Bkz. latex.hamMatematikKacagi.
-      const latexNeden = soruLatexBozuk(aday, sayisalAile)
-      if (latexNeden) {
-        aday = await repairQuestion(aday, LATEX_ELESTIRISI(latexNeden), grounding, priority)
-        const kalan = soruLatexBozuk(aday, sayisalAile)
-        if (kalan) {
-          // Onarım tutmadı → ELE. Ham LaTeX gösteren soru öğrenci için ÇÖZÜLEMEZDİR ve
-          // yanlış işaretlenir; sistem bunu "kavram yanılgısı" diye kaydeder (kirli teşhis).
-          // Aynı gerekçe utils/soru-saglik'te: okunamayan soru servis edilmez.
-          logger.info(
-            { kazanim: spec.kazanim, neden: kalan },
-            'LaTeX onarımı tutmadı — soru elendi (öğrencide ham formül görünürdü)',
-          )
-          return null
-        }
-      }
-
-      // ── KOD KAPISI (LLM'den ÖNCE) — bedava, anlık, KESİN ──
-      // Çeldirici kuşatması saf aritmetik; hakeme para ödeyip olasılıksal yakalatmanın anlamı yok.
-      // ÖLÇÜLDÜ: ucuz hakemler (v4-flash/v3.2) tam da bu kusuru kaçırıyor, diğerlerini buluyor.
-      // Burada yakalayınca doğrudan onarıma gideriz → boşa bir doğrulama çağrısı da ödemeyiz.
-      if (celdiriciKusatmasi(aday) === 'tek-yanda') {
-        aday = siklariDuzenle(
-          await repairQuestion(aday, KUSATMA_ELESTIRISI, grounding, priority),
-        )
-        // Onarım tutmadıysa ELE: artan sırada doğru cevabı hep aynı harfe düşüren soru,
-        // öğrenciye çözmeden tahmin ettirir — havuza girmemeli.
-        if (celdiriciKusatmasi(aday) === 'tek-yanda') return null
-      }
-
-      // ŞIK UZUNLUĞU SIZINTISI — yine saf aritmetik, yine LLM'den ÖNCE.
-      // ÖLÇÜLDÜ: metinsel şıklı sorularda doğru cevap gerçek ÖSYM'de %24 en uzun şık (rastgele
-      // %20 → sızıntı yok), bizim havuzda %52. Yani havuzun yarısında öğrenci konuyu bilmeden
-      // "en uzun şıkkı işaretle" ile doğruyu buluyor. Hakem bunu kaçırır (uzunluk saymaz);
-      // kod asla kaçırmaz. Onarım TEK sefer denenir — tutmazsa soru ELENİR.
-      if (sikUzunlukSizintisi(aday) === 'sizinti') {
-        aday = siklariDuzenle(
-          await repairQuestion(aday, UZUNLUK_ELESTIRISI, grounding, priority),
-        )
-        if (sikUzunlukSizintisi(aday) === 'sizinti') return null
-      }
 
       // ── KÖK UZUNLUĞU ÖN-KAPISI — eşik gerçek ÖSYM'den (eval 2b: p1=7 / p99=117 kelime),
       // paylar geniş (5/135) ki yanlış alarm ~0 olsun. Aşan kök ya bozuk parse ya saçmalama.
@@ -895,6 +906,58 @@ export async function generateVerifiedSet(
         return { ...soru, zorluk: olculen ?? soru.zorluk, quality: hukum.osymStyleScore }
       }
 
+      const latexNeden = soruLatexBozuk(aday, sayisalAile)
+      const strategy = spec.options ?? {}
+      const skipRepair = strategy.skipVerification || strategy.costOptimized
+
+      if (latexNeden) {
+        if (skipRepair) {
+          logger.info({ kazanim: spec.kazanim, neden: latexNeden }, 'maliyet-optimizasyonu açık — LaTeX onarımı atlandı')
+          return null
+        }
+        aday = await repairQuestion(aday, LATEX_ELESTIRISI(latexNeden), grounding, priority)
+        const kalan = soruLatexBozuk(aday, sayisalAile)
+        if (kalan) {
+          logger.info(
+            { kazanim: spec.kazanim, neden: kalan },
+            'LaTeX onarımı tutmadı — soru elendi (öğrencide ham formül görünürdü)',
+          )
+          return null
+        }
+      }
+
+      if (celdiriciKusatmasi(aday) === 'tek-yanda') {
+        if (skipRepair) {
+          logger.info({ kazanim: spec.kazanim }, 'maliyet-optimizasyonu açık — çeldirici onarımı atlandı')
+          return null
+        }
+        aday = siklariDuzenle(
+          await repairQuestion(aday, KUSATMA_ELESTIRISI, grounding, priority),
+        )
+        if (celdiriciKusatmasi(aday) === 'tek-yanda') return null
+      }
+
+      if (sikUzunlukSizintisi(aday) === 'sizinti') {
+        if (skipRepair) {
+          logger.info({ kazanim: spec.kazanim }, 'maliyet-optimizasyonu açık — şık uzunluk onarımı atlandı')
+          return null
+        }
+        aday = siklariDuzenle(
+          await repairQuestion(aday, UZUNLUK_ELESTIRISI, grounding, priority),
+        )
+        if (sikUzunlukSizintisi(aday) === 'sizinti') return null
+      }
+
+      // ⚠️ BURADA SAHTE BİR HÜKÜM ÜRETİLİYORDU — KALDIRILDI.
+      // `skipRepair` açıkken hakem (verifyQuestion) HİÇ ÇAĞRILMADAN elle
+      // `{ matchesMarked:true, singleCorrect:true, verdict:'ACCEPT', osymStyleScore:4 }`
+      // kuruluyor ve aday kabul edilmiş sayılıyordu. Sonuç assembleSegment üzerinden
+      // ortak havuza `verified:true` yazılıyordu: cevap anahtarı hiç kontrol edilmemiş
+      // sorular "doğrulanmış" damgasıyla tüm öğrencilere servis ediliyordu. lib/answers.ts
+      // doğruluğu o satırdan okuduğu için öğrenci DOĞRU şıkkı işaretlediğinde yanlış sayılırdı.
+      //
+      // `skipRepair` artık adına sadık: yalnız ONARIM çağrılarını atlar (yukarıdaki üç kapı
+      // adayı onarmak yerine eler — gerçek maliyet tasarrufu). Hakem hiçbir koşulda atlanmaz.
       const v = await verifyQuestion(aday, grounding, priority, spec.difficulty)
       if (isAccepted(v)) return damgala(aday, v)
       if (v.verdict !== 'REPAIR') {
@@ -936,7 +999,9 @@ export async function generateVerifiedSet(
       exemplars,
       studentCtx,
       havuzKokleri,
+      konuGudumlu: spec.konuId != null,
       priority,
+      options: spec.options,
     })
     // Model hiç AYRIŞTIRILABİLİR soru vermedi. Bu SESSİZ bir arızaydı: çağıran yalnız
     // "0/5 geçti" görüyor ve bunu "denetçi eledi" sanıyordu — oysa hiç aday ÜRETİLMEMİŞTİ.

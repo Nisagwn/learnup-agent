@@ -5,13 +5,29 @@ import { Component, type ReactNode } from 'react'
  * kullanıcı gemiden atlamak zorunda kalmaz. Tailwind sınıfları tema-duyarlı.
  */
 export class ErrorBoundary extends Component<
-  { children: ReactNode },
+  { children: ReactNode; sifirlaAnahtari?: string },
   { error: Error | null }
 > {
   state = { error: null as Error | null }
 
   static getDerivedStateFromError(error: Error) {
     return { error }
+  }
+
+  /**
+   * ROTA DEĞİŞİNCE SIFIRLA.
+   *
+   * ⚠️ `error` hiçbir zaman temizlenmiyordu ve bu sınır Shell içinde <Outlet/>'i saran TEK
+   * kalıcı örnek — rota değişse de remount olmuyor. Bir ekran çöktüğünde kullanıcı nav'dan
+   * başka bir sayfaya tıklıyor, URL ve başlık değişiyor, ama ekranda hâlâ "Bir şeyler ters
+   * gitti" duruyordu: nav çalışıyor görünüyor, hiçbir sayfa açılmıyordu. Tek kurtuluş tam
+   * sayfa yenilemeydi. Yani "bir ekranın çökmesi diğerlerini korusun" diye yazılmış yapı,
+   * tam tersini yapıyordu.
+   */
+  componentDidUpdate(oncekiProps: { sifirlaAnahtari?: string }) {
+    if (this.state.error && oncekiProps.sifirlaAnahtari !== this.props.sifirlaAnahtari) {
+      this.setState({ error: null })
+    }
   }
 
   render() {

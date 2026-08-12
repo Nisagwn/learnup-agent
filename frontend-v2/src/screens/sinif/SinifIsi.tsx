@@ -15,35 +15,36 @@ import { Skeleton } from '../../components/ui'
 import { Reveal } from '../../components/fx'
 
 /**
- * KAZANIM ISI HARÄ°TASI â€” FÄ°DAN v1.2 inline desen (`si-*`), onaylÄ± Ã¶nizleme:
+ * KAZANIM ISI HARİTASI — FİDAN v1.2 inline desen (`si-*`), onaylı önizleme:
  * docs/design/onizleme/kazanim-isi-haritasi.html (GOREV-035).
  *
- * MOCK YASAK â€” Ã¼Ã§ GERÃ‡EK uÃ§:
- *   GET /teacher/sinif/isi-haritasi              â†’ ders Ã— ÃœNÄ°TE hÃ¼creleri (ltree ilk 2 seviye)
- *   GET /teacher/sinif/zayif-kazanimlar          â†’ sÄ±nÄ±fÄ±n kazanÄ±m-dÃ¼zeyi zayÄ±f listesi (panel kÃ¶prÃ¼sÃ¼)
- *   GET /teacher/sinif/isi-haritasi/ogrenciler   â†’ seÃ§ili hÃ¼crenin zayÄ±f Ã–ÄRENCÄ° kÄ±rÄ±lÄ±mÄ± (GOREV-049)
+ * MOCK YASAK — üç GERÇEK uç:
+ *   GET /teacher/sinif/isi-haritasi              → ders × ÜNİTE hücreleri (ltree ilk 2 seviye)
+ *   GET /teacher/sinif/zayif-kazanimlar          → sınıfın kazanım-düzeyi zayıf listesi (panel köprüsü)
+ *   GET /teacher/sinif/isi-haritasi/ogrenciler   → seçili hücrenin zayıf ÖĞRENCİ kırılımı (GOREV-049)
  *
- * Ã–nizlemeden BÄ°LÄ°NÃ‡LÄ° sapmalar (uÃ§ veriyi vermiyor â†’ parÃ§a GÄ°ZLENDÄ°, uydurulmadÄ±):
- *   Â· Matris granÃ¼lÃ¼ konuâ†’kazanÄ±m deÄŸil dersâ†’Ã¼nite: RPC ltree ilk 2 seviyeyi dÃ¶ndÃ¼rÃ¼r.
- *   Â· "Ã–lÃ§Ã¼m yok" kesikli hÃ¼cre YOK: RPC yalnÄ±z Ã¶lÃ§Ã¼len satÄ±rlarÄ± dÃ¶ndÃ¼rÃ¼r; Ã¶lÃ§Ã¼msÃ¼z
- *     Ã¼nitelerin tam listesi yanÄ±tsÄ±z. Lejanttaki "Ã¶lÃ§Ã¼m yok" Ã¶gesi de bu yÃ¼zden yok.
- *   Â· DaÄŸÄ±lÄ±m 4 bant deÄŸil 2 dÃ¼rÃ¼st bant (zayÄ±f eÅŸik altÄ± / eÅŸik Ã¼stÃ¼): uÃ§ yalnÄ±z
- *     weakStudentCount/studentCount verir; eÅŸik backend'den (esik.zayif) gelir.
- *   Â· [Ã‡Ã–ZÃœLDÃœ Â· GOREV-049] Ãœnite baÅŸÄ±na zayÄ±f Ã–ÄRENCÄ° kÄ±rÄ±lÄ±mÄ±: hÃ¼cre seÃ§ilince
- *     GET /teacher/sinif/isi-haritasi/ogrenciler ucundan en-zayÄ±f-baÅŸta Ã¶ÄŸrenci listesi
- *     gelir (kazanÄ±m paneliyle kardeÅŸ). TutarlÄ±lÄ±k: liste uzunluÄŸu = weakStudentCount.
- *   Â· [Ã‡Ã–ZÃœLDÃœ Â· GOREV-049] KarÅŸÄ±laÅŸtÄ±rma kÃ¶prÃ¼sÃ¼: her Ã¶ÄŸrenci satÄ±rÄ±
- *     /sinif/karsilastir?ogrenci=<studentId> ile KarÅŸÄ±laÅŸtÄ±r'Ä± aÃ§ar (Karsilastir ?ogrenci= okur).
- *   Kalan yapÄ±sal sapma (granÃ¼l dersâ†’Ã¼nite, "Ã¶lÃ§Ã¼m yok" hÃ¼creleri) RAPOR'da BACKEND kartÄ±
- *   Ã¶nerisiyle listelendi.
+ * Önizlemeden BİLİNÇLİ sapmalar (uç veriyi vermiyor → parça GİZLENDİ, uydurulmadı):
+ *   · Matris granülü konu→kazanım değil ders→ünite: RPC ltree ilk 2 seviyeyi döndürür.
+ *   · "Ölçüm yok" kesikli hücre YOK: RPC yalnız ölçülen satırları döndürür; ölçümsüz
+ *     ünitelerin tam listesi yanıtsız. Lejanttaki "ölçüm yok" ögesi de bu yüzden yok.
+ *   · Dağılım 4 bant değil 2 dürüst bant (zayıf eşik altı / eşik üstü): uç yalnız
+ *     weakStudentCount/studentCount verir; eşik backend'den (esik.zayif) gelir.
+ *   · [ÇÖZÜLDÜ · GOREV-049] Ünite başına zayıf ÖĞRENCİ kırılımı: hücre seçilince
+ *     GET /teacher/sinif/isi-haritasi/ogrenciler ucundan en-zayıf-başta öğrenci listesi
+ *     gelir (kazanım paneliyle kardeş). Tutarlılık: liste uzunluğu = weakStudentCount.
+ *   · Öğrenci satırı RÖNTGEN'e gider (/sinif/ogrenci/<id>). Eskiden Karşılaştır'ı tek
+ *     öğrenciyle açıyordu; Karşılaştır ikiden az seçimde ızgarayı çizmediği için satır
+ *     çıkmaz sokaktı. Karşılaştırma girişi Sınıf Panosu'ndaki çoklu seçim şerididir.
+ *   Kalan yapısal sapma (granül ders→ünite, "ölçüm yok" hücreleri) RAPOR'da BACKEND kartı
+ *   önerisiyle listelendi.
  *
- * Harita TEK istekte filtresiz Ã§ekilir; ders sÃ¼zgeci Ä°STEMCÄ°DE uygulanÄ±r. subject paramlÄ±
- * istek yalnÄ±z seÃ§ili dersin subjects listesini dÃ¶ndÃ¼rÃ¼r â†’ diÄŸer Ã§ipler kaybolurdu;
- * ayrÄ±ca Ã§ip baÅŸÄ±na refetch olmazdÄ± da olurdu. Veri Ã¶lÃ§eÄŸi kÃ¼Ã§Ã¼k (~40 hÃ¼cre).
+ * Harita TEK istekte filtresiz çekilir; ders süzgeci İSTEMCİDE uygulanır. subject paramlı
+ * istek yalnız seçili dersin subjects listesini döndürür → diğer çipler kaybolurdu;
+ * ayrıca çip başına refetch olmazdı da olurdu. Veri ölçeği küçük (~40 hücre).
  */
 
-/** avgMastery â†’ 4 adaÃ§ayÄ± tonu. SkalanÄ±n kÃ¶kÃ¼ backend eÅŸiÄŸi: v1 = zayÄ±f eÅŸiÄŸi ALTI,
-    kalan [esik..1] aralÄ±ÄŸÄ± Ã¼Ã§ eÅŸit banda bÃ¶lÃ¼nÃ¼r (renk skalasÄ± tek kaynaktan kurulur). */
+/** avgMastery → 4 adaçayı tonu. Skalanın kökü backend eşiği: v1 = zayıf eşiği ALTI,
+    kalan [esik..1] aralığı üç eşit banda bölünür (renk skalası tek kaynaktan kurulur). */
 function ton(ort: number, zayifEsik: number): 1 | 2 | 3 | 4 {
   if (ort < zayifEsik) return 1
   const adim = Math.max(0.0001, (1 - zayifEsik) / 3)
@@ -54,12 +55,12 @@ function ton(ort: number, zayifEsik: number): 1 | 2 | 3 | 4 {
 
 const yuzde = (x: number): number => Math.round(x * 100)
 
-/** "matematik" â†’ "Matematik" (tr). GÃ¶rsel baÅŸlÄ±k â€” anahtar deÄŸeri URL'de ham kalÄ±r. */
+/** "matematik" → "Matematik" (tr). Görsel başlık — anahtar değeri URL'de ham kalır. */
 const dersBaslik = (s: string): string =>
   s ? s.charAt(0).toLocaleUpperCase('tr-TR') + s.slice(1) : s
 
 const STIL = `
-  /* Ambiyans yaprak katmanÄ± bu ekranda KAPALI â€” yoÄŸun veri yÃ¼zeyi (Ã¶nizleme notu). */
+  /* Ambiyans yaprak katmanı bu ekranda KAPALI — yoğun veri yüzeyi (önizleme notu). */
   .amb-yprk { display: none !important; }
 
   .si-kart { background: var(--cam); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
@@ -149,8 +150,8 @@ const STIL = `
   .si-baglanti { border: none; background: none; padding: 0; cursor: pointer; font-size: 11.5px;
     font-weight: 600; color: var(--vurgu); text-decoration: underline; text-underline-offset: 2px; }
 
-  /* ZayÄ±f Ã¶ÄŸrenci kÄ±rÄ±lÄ±mÄ± â€” daÄŸÄ±lÄ±mÄ±n "eÅŸik altÄ±" sayÄ±sÄ±nÄ± isimli satÄ±rlara aÃ§ar.
-     Her satÄ±r KarÅŸÄ±laÅŸtÄ±r'a kÃ¶prÃ¼; en zayÄ±f baÅŸta (sunucu sÄ±rasÄ± korunur). */
+  /* Zayıf öğrenci kırılımı — dağılımın "eşik altı" sayısını isimli satırlara açar.
+     Her satır Karşılaştır'a köprü; en zayıf başta (sunucu sırası korunur). */
   .si-ogr-liste { margin-top: 14px; border-top: 1px solid var(--cam-kenar); padding-top: 12px; }
   .si-ogr-liste h4 { font-size: 12px; font-weight: 600; color: var(--metin2); margin-bottom: 9px; }
   .si-ogr { display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -178,7 +179,7 @@ const STIL = `
     transition: color .15s, border-color .15s; }
   .si-soluk-genis:hover { color: var(--metin1); border-color: var(--adacayi); }
 
-  /* Hareket yalnÄ±z tercih edene: hover kalkÄ±ÅŸlarÄ± gateli (kabul kriteri). */
+  /* Hareket yalnız tercih edene: hover kalkışları gateli (kabul kriteri). */
   @media (prefers-reduced-motion: no-preference) {
     .si-hucre:hover { transform: translateY(-2px) scale(1.02); }
     .si-cta:hover:not(:disabled) { transform: translateY(-1px); }
@@ -187,14 +188,14 @@ const STIL = `
 
 export function SinifIsi() {
   const nav = useSinifNav()
-  // Drill-down state URL'de (replace:true, varsayÄ±lan silinir) â€” paylaÅŸÄ±labilir baÄŸlantÄ±.
+  // Drill-down state URL'de (replace:true, varsayılan silinir) — paylaşılabilir bağlantı.
   const [ders, setDers] = useSorgu<string>('ders', '')
   const [unite, setUnite] = useSorgu<string>('unite', '')
-  // Panel iÃ§i kazanÄ±m seÃ§imi GEÃ‡Ä°CÄ° (akordeon tÃ¼rÃ¼) â€” URL'e yazÄ±lmaz.
+  // Panel içi kazanım seçimi GEÇİCİ (akordeon türü) — URL'e yazılmaz.
   const [kazanimSecim, setKazanimSecim] = useState<number | null>(null)
 
-  // âš ï¸ BaÄŸÄ±mlÄ±lÄ±klar Ä°LKEL (useAsync deps'i effect dizisine yayar) â€” burada sabit [].
-  const isi = useAsync<IsiHaritasiYaniti>(() => tGet('/teacher/sinif/isi-haritasi'), [])
+  // ⚠️ Bağımlılıklar İLKEL (useAsync deps'i effect dizisine yayar) — burada sabit [].
+  const isi = useAsync<IsiHaritasiYaniti>((signal) => tGet('/teacher/sinif/isi-haritasi', {}, { signal }), [])
   const zayif = useAsync<SinifZayifYaniti>(
     () => tGet('/teacher/sinif/zayif-kazanimlar', { limit: 100 }),
     [],
@@ -202,7 +203,7 @@ export function SinifIsi() {
 
   const veri = isi.data
 
-  // Ders bloklarÄ±: subjects sÄ±rasÄ± korunur, ders sÃ¼zgeci istemcide.
+  // Ders blokları: subjects sırası korunur, ders süzgeci istemcide.
   const bloklar = useMemo(() => {
     if (!veri) return []
     const grup = new Map<string, IsiHaritasiHucresi[]>()
@@ -219,7 +220,7 @@ export function SinifIsi() {
         return {
           ders: s,
           hucreler,
-          // GÃ¶rÃ¼nen hÃ¼crelerin dÃ¼z ortalamasÄ± â€” gerÃ§ek veriden tÃ¼retilir, Ã¶lÃ§Ã¼m uydurulmaz.
+          // Görünen hücrelerin düz ortalaması — gerçek veriden türetilir, ölçüm uydurulmaz.
           ort: hucreler.reduce((t, c) => t + c.avgMastery, 0) / hucreler.length,
         }
       })
@@ -231,13 +232,13 @@ export function SinifIsi() {
       const c = b.hucreler.find((h) => h.unitPath === unite)
       if (c) return c
     }
-    return null // sÃ¼zgeÃ§ deÄŸiÅŸti ya da baÄŸlantÄ± eski â€” panel gizlenir, sahte hÃ¼cre Ã§izilmez
+    return null // süzgeç değişti ya da bağlantı eski — panel gizlenir, sahte hücre çizilmez
   }, [bloklar, unite])
 
-  // SeÃ§ili hÃ¼crenin (ders Ã— Ã¼nite) zayÄ±f Ã–ÄRENCÄ° kÄ±rÄ±lÄ±mÄ± (GOREV-048 ucu, RPC 0023). SeÃ§im
-  // yoksa aÄŸ Ã§aÄŸrÄ±sÄ± YOK (fn null'a Ã§Ã¶zÃ¼lÃ¼r). Deps Ä°LKEL: subject + unitPath deÄŸiÅŸince yeniden
-  // Ã§ekilir. âš ï¸ Migration 0023 canlÄ±ya inene dek uÃ§ 500 isi_kirilim_okunamadi dÃ¶ner â€” beklenen;
-  // hata yolu (aÅŸaÄŸÄ±da "kÄ±rÄ±lÄ±m yÃ¼klenemedi" + tekrar dene) ekranÄ± Ã§Ã¶kertmeden karÅŸÄ±lar.
+  // Seçili hücrenin (ders × ünite) zayıf ÖĞRENCİ kırılımı (GOREV-048 ucu, RPC 0023). Seçim
+  // yoksa ağ çağrısı YOK (fn null'a çözülür). Deps İLKEL: subject + unitPath değişince yeniden
+  // çekilir. ⚠️ Migration 0023 canlıya inene dek uç 500 isi_kirilim_okunamadi döner — beklenen;
+  // hata yolu (aşağıda "kırılım yüklenemedi" + tekrar dene) ekranı çökertmeden karşılar.
   const kirilimSubject = seciliHucre?.subject ?? ''
   const kirilimUnite = seciliHucre?.unitPath ?? ''
   const kirilim = useAsync<IsiOgrenciKirilimiYaniti | null>(
@@ -250,18 +251,18 @@ export function SinifIsi() {
         : Promise.resolve(null),
     [kirilimSubject, kirilimUnite],
   )
-  // YanÄ±t yalnÄ±z SEÃ‡Ä°LÄ° Ã¼niteye aitse geÃ§erli â€” dep geÃ§iÅŸindeki bir kare bayat veri gÃ¶stermesin.
+  // Yanıt yalnız SEÇİLİ üniteye aitse geçerli — dep geçişindeki bir kare bayat veri göstermesin.
   const kirilimData =
     kirilim.data && kirilimUnite && kirilim.data.unitPath === kirilimUnite ? kirilim.data : null
 
-  // SÄ±nÄ±f zayÄ±f listesinin bu Ã¼niteye dÃ¼ÅŸen kesiÅŸimi (path Ã¶neki â€” ltree).
+  // Sınıf zayıf listesinin bu üniteye düşen kesişimi (path öneki — ltree).
   const uniteKazanimlari = useMemo(() => {
     if (!seciliHucre || !zayif.data) return []
     const kok = seciliHucre.unitPath
     return zayif.data.kazanimlar.filter((k) => k.path === kok || k.path.startsWith(kok + '.'))
   }, [seciliHucre, zayif.data])
 
-  // SeÃ§im listede yoksa (Ã¼nite deÄŸiÅŸti) listenin baÅŸÄ±na â€” RPC "en zayÄ±f Ã¶nce" dÃ¶ndÃ¼rÃ¼r.
+  // Seçim listede yoksa (ünite değişti) listenin başına — RPC "en zayıf önce" döndürür.
   const seciliKazanim =
     uniteKazanimlari.find((k) => k.kazanimId === kazanimSecim) ?? uniteKazanimlari[0] ?? null
 
@@ -270,9 +271,23 @@ export function SinifIsi() {
     setKazanimSecim(null)
   }
 
+  /**
+   * Ders çipi — seçili ÜNİTE de düşürülür.
+   *
+   * Eskiden yalnız `ders` yazılıyordu: `unite` URL'de kalıyordu ve artık görünmeyen bir
+   * bloğa ait oluyordu. Panel gizlendiği için ekran yanlış bir şey GÖSTERMİYORDU ama
+   * adres bayat kalıyor, öğretmen eski derse döndüğünde hiç seçmediği bir ünite açılmış
+   * geliyordu (ve paylaşılan bağlantı da o hâli taşıyordu).
+   */
+  const dersSec = (d: string | null): void => {
+    setDers(d)
+    setUnite(null)
+    setKazanimSecim(null)
+  }
+
   const odevDerle = (): void => {
     if (!seciliKazanim) return
-    // Mevcut derin-baÄŸlantÄ± sÃ¶zleÅŸmesi: Ã–dev AtÃ¶lyesi ?kazanim= & ?ders= Ã¶n-dolgusunu okur.
+    // Mevcut derin-bağlantı sözleşmesi: Ödev Atölyesi ?kazanim= & ?ders= ön-dolgusunu okur.
     nav(`/sinif/odev?kazanim=${seciliKazanim.kazanimId}&ders=${encodeURIComponent(seciliKazanim.subject)}`)
   }
 
@@ -290,7 +305,7 @@ export function SinifIsi() {
         </>
       ) : isi.error ? (
         <div className="si-kart mx-auto max-w-md px-6 py-8 text-center">
-          <p style={{ color: 'var(--metin2)', fontSize: 13 }}>IsÄ± haritasÄ± alÄ±namadÄ±: {isi.error}</p>
+          <p style={{ color: 'var(--metin2)', fontSize: 13 }}>Isı haritası alınamadı: {isi.error}</p>
           <button
             type="button"
             className="si-soluk-genis"
@@ -302,17 +317,17 @@ export function SinifIsi() {
         </div>
       ) : veri ? (
         <>
-          {/* â”€â”€ BaÅŸlÄ±k + ders Ã§ipleri (URL) + lejant â”€â”€ */}
+          {/* ── Başlık + ders çipleri (URL) + lejant ── */}
           <Reveal>
             <div className="si-arac">
-              <h1>KazanÄ±m IsÄ± HaritasÄ±</h1>
+              <h1>Kazanım Isı Haritası</h1>
               <button
                 type="button"
                 className={`si-cip${!ders ? ' aktif' : ''}`}
                 aria-pressed={!ders}
-                onClick={() => setDers(null)}
+                onClick={() => dersSec(null)}
               >
-                TÃ¼mÃ¼
+                Tümü
               </button>
               {veri.subjects.map((d) => (
                 <button
@@ -320,38 +335,38 @@ export function SinifIsi() {
                   type="button"
                   className={`si-cip${ders === d ? ' aktif' : ''}`}
                   aria-pressed={ders === d}
-                  onClick={() => setDers(ders === d ? null : d)}
+                  onClick={() => dersSec(ders === d ? null : d)}
                 >
                   {dersBaslik(d)}
                 </button>
               ))}
-              {/* DeÄŸer asla yalnÄ±z renkle verilmez â€” her hÃ¼cre sayÄ±sÄ±nÄ± da taÅŸÄ±r;
-                  lejant yalnÄ±z yÃ¶n okutur. "Ã–lÃ§Ã¼m yok" Ã¶gesi YOK: uÃ§ Ã¶lÃ§Ã¼msÃ¼z Ã¼nite
-                  listesi dÃ¶ndÃ¼rmÃ¼yor (bkz. dosya baÅŸÄ± envanter notu). */}
+              {/* Değer asla yalnız renkle verilmez — her hücre sayısını da taşır;
+                  lejant yalnız yön okutur. "Ölçüm yok" ögesi YOK: uç ölçümsüz ünite
+                  listesi döndürmüyor (bkz. dosya başı envanter notu). */}
               <div className="si-lejant">
-                <span>dÃ¼ÅŸÃ¼k</span>
+                <span>düşük</span>
                 <i aria-hidden style={{ background: 'var(--v1)' }} />
                 <i aria-hidden style={{ background: 'var(--v2)' }} />
                 <i aria-hidden style={{ background: 'var(--v3)' }} />
                 <i aria-hidden style={{ background: 'var(--v4)' }} />
-                <span>yÃ¼ksek</span>
+                <span>yüksek</span>
               </div>
             </div>
           </Reveal>
 
           <div className="si-izgara">
-            {/* â”€â”€ Matris: ders bloklarÄ± â†’ Ã¼nite hÃ¼creleri â”€â”€ */}
+            {/* ── Matris: ders blokları → ünite hücreleri ── */}
             <Reveal delay={0.06}>
-              <section className="si-kart si-matris" aria-label="SÄ±nÄ±f ustalÄ±k matrisi">
+              <section className="si-kart si-matris" aria-label="Sınıf ustalık matrisi">
                 {bloklar.length === 0 ? (
                   <div className="si-bos">
                     <p className="baslik">
                       {ders && veri.cells.length > 0
-                        ? `${dersBaslik(ders)} iÃ§in henÃ¼z Ã¶lÃ§Ã¼m yok.`
-                        : 'SÄ±nÄ±f henÃ¼z Ã¶lÃ§Ã¼m Ã¼retmedi.'}
+                        ? `${dersBaslik(ders)} için henüz ölçüm yok.`
+                        : 'Sınıf henüz ölçüm üretmedi.'}
                     </p>
                     <p className="alt">
-                      Ã–ÄŸrencilerin soru Ã§Ã¶zdÃ¼kÃ§e sÄ±nÄ±f haritasÄ± burada belirir â€” sahte hÃ¼cre Ã§izilmez.
+                      Öğrencilerin soru çözdükçe sınıf haritası burada belirir — sahte hücre çizilmez.
                     </p>
                   </div>
                 ) : (
@@ -361,7 +376,7 @@ export function SinifIsi() {
                         <div className="si-blok-baslik">
                           <h3>{dersBaslik(b.ders)}</h3>
                           <span className="ort">
-                            ders ort. %{yuzde(b.ort)} Â· {b.hucreler.length} Ã¼nite
+                            ders ort. %{yuzde(b.ort)} · {b.hucreler.length} ünite
                           </span>
                           <span className="cizgi" aria-hidden />
                         </div>
@@ -374,12 +389,12 @@ export function SinifIsi() {
                                 type="button"
                                 className={`si-hucre t${ton(c.avgMastery, veri.esik.zayif)}${seciliMi ? ' secili' : ''}`}
                                 aria-pressed={seciliMi}
-                                aria-label={`${dersBaslik(b.ders)} â€” ${c.unitTitle ?? c.unitPath}: sÄ±nÄ±f ortalamasÄ± yÃ¼zde ${yuzde(c.avgMastery)}, ${c.studentCount} Ã¶ÄŸrenci Ã¶lÃ§Ã¼ldÃ¼`}
+                                aria-label={`${dersBaslik(b.ders)} — ${c.unitTitle ?? c.unitPath}: sınıf ortalaması yüzde ${yuzde(c.avgMastery)}, ${c.studentCount} öğrenci ölçüldü`}
                                 onClick={() => hucreSec(c.unitPath, seciliMi)}
                               >
                                 <span className="ad">{c.unitTitle ?? c.unitPath}</span>
                                 <span className="deger">
-                                  %{yuzde(c.avgMastery)} Â· {c.studentCount} Ã¶ÄŸr.
+                                  %{yuzde(c.avgMastery)} · {c.studentCount} öğr.
                                 </span>
                               </button>
                             )
@@ -387,34 +402,39 @@ export function SinifIsi() {
                         </div>
                       </div>
                     ))}
+                    {/* ⚠️ KAPSAM AÇIKÇA YAZILIR. Eskiden buradaki tek sayı "en kalabalık
+                        hücrenin ölçüm sayısı"ydı ama "N öğrenci" diye okunuyordu: 30 kişilik
+                        sınıfta "9 öğrenci" yazıyor, öğretmen haritanın sınıfın tamamını
+                        gösterdiğini sanıyordu. İki sayı birlikte söylenir. */}
                     <p className="si-dipnot">
-                      Ã§Ã¼rÃ¼me uygulanmÄ±ÅŸ Â· {veri.ogrenciSayisi} Ã¶ÄŸrenci Â· zayÄ±f eÅŸiÄŸi %{yuzde(veri.esik.zayif)}
+                      çürüme uygulanmış · {veri.ogrenciSayisi} öğrencinin {veri.olculenOgrenci}'i
+                      ölçüldü · zayıf eşiği %{yuzde(veri.esik.zayif)}
                     </p>
                   </>
                 )}
               </section>
             </Reveal>
 
-            {/* â”€â”€ SeÃ§ili Ã¼nite paneli (yapÄ±ÅŸkan) â”€â”€ */}
+            {/* ── Seçili ünite paneli (yapışkan) ── */}
             <div className="si-yapiskan" style={{ top: NAV_H + 24 }}>
               <Reveal delay={0.1}>
-                <aside className="si-kart si-panel" aria-label="SeÃ§ili Ã¼nite paneli">
+                <aside className="si-kart si-panel" aria-label="Seçili ünite paneli">
                   {!seciliHucre ? (
                     <>
-                      <span className="si-mono">SeÃ§ili Ã¼nite</span>
+                      <span className="si-mono">Seçili ünite</span>
                       <p className="si-ipucu">
-                        Matristen bir hÃ¼cre seÃ§ â€” Ã¼nitenin sÄ±nÄ±f daÄŸÄ±lÄ±mÄ± ve zayÄ±f kazanÄ±mlarÄ±
-                        burada aÃ§Ä±lÄ±r.
+                        Matristen bir hücre seç — ünitenin sınıf dağılımı ve zayıf kazanımları
+                        burada açılır.
                       </p>
                     </>
                   ) : (
                     <>
                       <div className="si-panel-ust">
-                        <span className="si-mono">SeÃ§ili Ã¼nite</span>
+                        <span className="si-mono">Seçili ünite</span>
                         <button
                           type="button"
                           className="si-kapat"
-                          aria-label="Ãœnite seÃ§imini kapat"
+                          aria-label="Ünite seçimini kapat"
                           onClick={() => hucreSec(seciliHucre.unitPath, true)}
                         >
                           <Icon name="close" size={14} color="currentColor" />
@@ -422,66 +442,77 @@ export function SinifIsi() {
                       </div>
                       <h2>{seciliHucre.unitTitle ?? seciliHucre.unitPath}</h2>
                       <span className="si-ders-cip">
-                        {dersBaslik(seciliHucre.subject)} Â· sÄ±nÄ±f ort. %{yuzde(seciliHucre.avgMastery)} Â·{' '}
-                        {seciliHucre.studentCount} Ã¶ÄŸrenci Ã¶lÃ§Ã¼ldÃ¼
+                        {dersBaslik(seciliHucre.subject)} · sınıf ort. %{yuzde(seciliHucre.avgMastery)} ·{' '}
+                        {seciliHucre.studentCount} öğrenci ölçüldü
                       </span>
 
-                      {/* DaÄŸÄ±lÄ±m â€” uÃ§ yalnÄ±z zayÄ±f/toplam verir â†’ Ä°KÄ° kelimeli bant.
-                          4'lÃ¼ bant (baÅŸlangÄ±Ã§/geliÅŸiyor/oturuyor/gÃ¼Ã§lÃ¼) BACKEND iÅŸi ister. */}
+                      {/* Dağılım — uç yalnız zayıf/toplam verir → İKİ kelimeli bant.
+                          4'lü bant (başlangıç/gelişiyor/oturuyor/güçlü) BACKEND işi ister. */}
                       <div className="si-dagilim">
                         <DagSatir
-                          etiket="zayÄ±f â€” eÅŸik altÄ±"
+                          etiket="zayıf — eşik altı"
                           adet={seciliHucre.weakStudentCount}
                           toplam={seciliHucre.studentCount}
                         />
                         <DagSatir
-                          etiket="eÅŸik Ã¼stÃ¼"
+                          etiket="eşik üstü"
                           adet={Math.max(0, seciliHucre.studentCount - seciliHucre.weakStudentCount)}
                           toplam={seciliHucre.studentCount}
                         />
                       </div>
 
-                      {/* ZayÄ±f Ã¶ÄŸrenci kÄ±rÄ±lÄ±mÄ± â€” daÄŸÄ±lÄ±mÄ±n "eÅŸik altÄ±" sayÄ±sÄ±nÄ± isimli
-                          satÄ±rlara aÃ§ar; her satÄ±r KarÅŸÄ±laÅŸtÄ±r'a kÃ¶prÃ¼. Sunucu sÄ±rasÄ± (en
-                          zayÄ±f baÅŸta) KORUNUR; liste uzunluÄŸu = weakStudentCount (deÄŸiÅŸmez). */}
+                      {/* Zayıf öğrenci kırılımı — dağılımın "eşik altı" sayısını isimli
+                          satırlara açar; her satır Karşılaştır'a köprü. Sunucu sırası (en
+                          zayıf başta) KORUNUR; liste uzunluğu = weakStudentCount (değişmez). */}
                       <div className="si-ogr-liste">
-                        <h4>Bu Ã¼nitede eÅŸik altÄ± Ã¶ÄŸrenciler</h4>
+                        <h4>Bu ünitede eşik altı öğrenciler</h4>
                         {kirilim.loading || (!kirilim.error && !kirilimData) ? (
                           <Skeleton className="h-24" />
                         ) : kirilim.error ? (
                           <p className="si-not">
-                            Ã–ÄŸrenci kÄ±rÄ±lÄ±mÄ± yÃ¼klenemedi: {kirilim.error}{' '}
+                            Öğrenci kırılımı yüklenemedi: {kirilim.error}{' '}
                             <button type="button" className="si-baglanti" onClick={() => kirilim.reload()}>
                               tekrar dene
                             </button>
                           </p>
                         ) : kirilimData!.ogrenciler.length === 0 ? (
                           <p className="si-not">
-                            Bu Ã¼nitede eÅŸik altÄ± Ã¶ÄŸrenci yok â€” Ã¶lÃ§Ã¼m eÅŸiÄŸini aÅŸan Ã¶ÄŸrenci
-                            olmadÄ±kÃ§a satÄ±r uydurulmaz.
+                            Bu ünitede eşik altı öğrenci yok — ölçüm eşiğini aşan öğrenci
+                            olmadıkça satır uydurulmaz.
                           </p>
                         ) : (
                           kirilimData!.ogrenciler.map((o) => {
-                            const ad = o.ad ?? `Ã–ÄŸrenci ${o.studentId.slice(0, 4)}`
+                            const ad = o.ad ?? `Öğrenci ${o.studentId.slice(0, 4)}`
                             return (
                               <button
                                 key={o.studentId}
                                 type="button"
                                 className="si-ogr"
-                                aria-label={`${ad} â€” Ã¼nite ustalÄ±ÄŸÄ± yÃ¼zde ${yuzde(o.mastery)}, ${o.attempts} deneme. KarÅŸÄ±laÅŸtÄ±rmada aÃ§.`}
-                                onClick={() =>
-                                  nav(`/sinif/karsilastir?ogrenci=${encodeURIComponent(o.studentId)}`)
-                                }
+                                aria-label={`${ad} — ünite ustalığı yüzde ${yuzde(o.mastery)}, ${o.attempts} deneme. Röntgeni aç.`}
+                                /**
+                                 * ⚠️ RÖNTGEN, KARŞILAŞTIRMA DEĞİL. Satır tek öğrenciyle
+                                 * `/sinif/karsilastir?ogrenci=<id>` açıyordu; Karşılaştır ise
+                                 * ikiden az seçimde ızgarayı hiç çizmez ve "En az iki öğrenci
+                                 * seç" boş durumuna düşer. Yani eşik altı listede en zayıf
+                                 * öğrenciye tıklayan öğretmen, aradığı bilgiye (o öğrencinin
+                                 * durumu) ulaşamadan çıkmaz sokakta kalıyordu.
+                                 */
+                                onClick={() => nav(`/sinif/ogrenci/${o.studentId}`)}
                               >
                                 <span className="kim">
                                   <span className="ad">{ad}</span>
                                   <span className="alt">
-                                    %{yuzde(o.mastery)} ustalÄ±k Â· {o.attempts} deneme
+                                    %{yuzde(o.mastery)} ustalık · {o.attempts} deneme
                                   </span>
                                 </span>
+                                {/* ⚠️ ETİKET HEDEFLE AYNI ŞEYİ SÖYLER. Satırın gittiği yer
+                                    Röntgen'e çevrildi ama etiket "Karşılaştır" kalmıştı:
+                                    aria-label "Röntgeni aç" derken gözle okunan söz başka
+                                    bir ekran vaat ediyordu — ekran okuyucu kullanan ve
+                                    kullanmayan öğretmen farklı iki şey duyuyordu. */}
                                 <span className="git">
-                                  KarÅŸÄ±laÅŸtÄ±r
-                                  <Icon name="gauge" size={13} color="currentColor" />
+                                  Röntgen
+                                  <Icon name="scan" size={13} color="currentColor" />
                                 </span>
                               </button>
                             )
@@ -490,20 +521,20 @@ export function SinifIsi() {
                       </div>
 
                       <div className="si-kaz-liste">
-                        <h4>SÄ±nÄ±f zayÄ±f listesinde bu Ã¼niteden kazanÄ±mlar</h4>
+                        <h4>Sınıf zayıf listesinde bu üniteden kazanımlar</h4>
                         {zayif.loading ? (
                           <Skeleton className="h-16" />
                         ) : zayif.error ? (
                           <p className="si-not">
-                            ZayÄ±f kazanÄ±m listesi alÄ±namadÄ±: {zayif.error}{' '}
+                            Zayıf kazanım listesi alınamadı: {zayif.error}{' '}
                             <button type="button" className="si-baglanti" onClick={() => zayif.reload()}>
                               tekrar dene
                             </button>
                           </p>
                         ) : uniteKazanimlari.length === 0 ? (
                           <p className="si-not">
-                            Bu Ã¼niteden sÄ±nÄ±f zayÄ±f listesine dÃ¼ÅŸen kazanÄ±m yok â€” Ã¶lÃ§Ã¼m eÅŸiÄŸi
-                            aÅŸÄ±lmadÄ±ysa satÄ±r uydurulmaz.
+                            Bu üniteden sınıf zayıf listesine düşen kazanım yok — ölçüm eşiği
+                            aşılmadıysa satır uydurulmaz.
                           </p>
                         ) : (
                           uniteKazanimlari.map((k) => {
@@ -518,8 +549,8 @@ export function SinifIsi() {
                               >
                                 <span className="baslik">{k.title}</span>
                                 <span className="alt">
-                                  {k.code ? `${k.code} Â· ` : ''}%{yuzde(k.avgWrongRate)} yanlÄ±ÅŸ Â·{' '}
-                                  {k.weakStudentCount} zayÄ±f Ã¶ÄŸrenci Â· havuzda {k.havuzdaSoru.ai} soru
+                                  {k.code ? `${k.code} · ` : ''}%{yuzde(k.avgWrongRate)} yanlış ·{' '}
+                                  {k.weakStudentCount} zayıf öğrenci · havuzda {k.havuzdaSoru.ai} soru
                                 </span>
                               </button>
                             )
@@ -527,7 +558,7 @@ export function SinifIsi() {
                         )}
                       </div>
 
-                      {/* TEK birincil eylem â€” havuzda soru yoksa buton dÃ¼rÃ¼stÃ§e kapanÄ±r. */}
+                      {/* TEK birincil eylem — havuzda soru yoksa buton dürüstçe kapanır. */}
                       {seciliKazanim ? (
                         <>
                           <button
@@ -536,11 +567,11 @@ export function SinifIsi() {
                             disabled={seciliKazanim.havuzdaSoru.ai === 0}
                             onClick={odevDerle}
                           >
-                            Bu kazanÄ±mdan Ã¶dev derle
+                            Bu kazanımdan ödev derle
                           </button>
                           {seciliKazanim.havuzdaSoru.ai === 0 && (
                             <p className="si-not">
-                              Havuzda bu kazanÄ±m iÃ§in doÄŸrulanmÄ±ÅŸ soru yok â€” Ã¶dev derlenemez.
+                              Havuzda bu kazanım için doğrulanmış soru yok — ödev derlenemez.
                             </p>
                           )}
                         </>
@@ -553,7 +584,7 @@ export function SinifIsi() {
                               nav(`/sinif/odev?ders=${encodeURIComponent(seciliHucre.subject)}`)
                             }
                           >
-                            Ã–dev AtÃ¶lyesi'ni bu dersle aÃ§
+                            Ödev Atölyesi'ni bu dersle aç
                           </button>
                         )
                       )}
@@ -569,16 +600,16 @@ export function SinifIsi() {
   )
 }
 
-/** Kelimeli daÄŸÄ±lÄ±m bandÄ± â€” asla yalnÄ±z renk: etiket + Ã§ubuk + adet birlikte. */
+/** Kelimeli dağılım bandı — asla yalnız renk: etiket + çubuk + adet birlikte. */
 function DagSatir({ etiket, adet, toplam }: { etiket: string; adet: number; toplam: number }) {
   const oran = toplam > 0 ? Math.round((adet / toplam) * 100) : 0
   return (
     <div className="si-dag-satir">
       <span className="etiket">{etiket}</span>
-      <span className="cubuk" role="img" aria-label={`${etiket}: ${toplam} Ã¶ÄŸrencinin ${adet} tanesi`}>
+      <span className="cubuk" role="img" aria-label={`${etiket}: ${toplam} öğrencinin ${adet} tanesi`}>
         <i style={{ width: `${oran}%` }} />
       </span>
-      <span className="adet">{adet} Ã¶ÄŸrenci</span>
+      <span className="adet">{adet} öğrenci</span>
     </div>
   )
 }

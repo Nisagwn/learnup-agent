@@ -26,7 +26,7 @@ export type { AffectState }
 const EMOTION_RX =
   /yapamıyorum|yapamayacağım|bunaldım|sıkıldım|nefret|korkuyorum|kaygı|stres|bırakacağım|pes|yoruldum|üzgün|ağla|panik/i
 
-/** Sohbet duygu kapısı (async — kaptan.persistTurn çağırır; gecikme eklemez). */
+/** Sohbet duygu kapısı (async — kaptan.persistKullaniciMesaji çağırır; gecikme eklemez). */
 export async function chatGate(userId: string, text: string): Promise<void> {
   if (!EMOTION_RX.test(text)) return
   await enqueueTask({ userId, kind: 'affect', payload: { source: 'chat', text: text.slice(0, 300) } })

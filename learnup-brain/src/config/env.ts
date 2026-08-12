@@ -24,6 +24,25 @@ const envSchema = z.object({
   REDIS_URL: z.string().url().optional(),
 
   /**
+   * ── OTURUM YÖNETİMİ (Redis, AYRI DB) ──
+   *
+   * ⚠️ NEDEN REDIS_URL'DEN AYRI: REDIS_URL (db 1) cache + rate-limit + kuyruk taşır; bunlar
+   * ATILABİLİR veridir ve operasyonda `FLUSHDB` ile temizlenirler. Oturum kaydı atılabilir
+   * DEĞİLDİR: silinmesi "iptal edilmiş oturumun geri dirilmesi" demektir — çıkış yaptırdığın
+   * cihaz yeniden içeri girer. Ayrı DB (…/2) bu iki ömrü birbirine karıştırmaz.
+   *
+   * Verilmezse oturum katmanı KAPALI olur: kimlik doğrulama eskisi gibi salt-JWT yürür,
+   * yalnız oturum kaydı/iptali devre dışı kalır (fail-open — bkz. middleware/oturum.ts).
+   */
+  SESSION_REDIS_URL: z.string().url().optional(),
+  /**
+   * Oturum kaydının hareketsizlik ömrü (gün). Her istekte tazelenir; bu süre boyunca hiç
+   * istek gelmezse kayıt kendiliğinden düşer. Supabase refresh token ömründen KISA olması
+   * sorun değil: kullanıcı tekrar isteyince kayıt yeniden yazılır (aynı session_id ile).
+   */
+  SESSION_TTL_GUN: z.coerce.number().int().positive().max(365).default(30),
+
+  /**
    * GECE DEMİRHANESİ — VARSAYILAN KAPALI. Bilinçli olarak "opt-in".
    *
    * ⚠️ NEDEN KAPALI: demirhane P2 önceliğiyle çalışıyor ama P2 yalnız ÜCRETSİZ sağlayıcıların

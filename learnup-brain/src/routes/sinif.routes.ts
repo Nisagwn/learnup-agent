@@ -91,8 +91,8 @@ sinifRouter.post('/katil', async (req, res, next) => {
     // Önbellekleri düşür: kendi kimliği (teacherId değişti) + İKİ öğretmenin mevcudu.
     // Eski öğretmen unutulmazsa ayrılan öğrenci onun listesinde 60sn daha görünür.
     await kimligiUnut(userId)
-    sinifiUnut(ogretmen.id)
-    if (oncekiOgretmen) sinifiUnut(oncekiOgretmen)
+    await sinifiUnut(ogretmen.id)
+    if (oncekiOgretmen) await sinifiUnut(oncekiOgretmen)
 
     res.json({
       katildi: true,
@@ -122,7 +122,7 @@ sinifRouter.post('/ayril', async (req, res, next) => {
     if (error) throw new HttpHatasi(500, 'ayrilma_yazilamadi', 'Sınıftan ayrılma kaydedilemedi.')
 
     await kimligiUnut(userId)
-    sinifiUnut(kimlik.teacherId)
+    await sinifiUnut(kimlik.teacherId)
     res.json({ ayrildi: true })
   } catch (err) {
     next(err)

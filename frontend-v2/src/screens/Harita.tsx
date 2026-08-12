@@ -27,9 +27,19 @@ import {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const GUN_MS = 86_400_000
-/** Tarih-YALNIZ dizgiler için gün farkı (UTC kayması yemesin). */
+/**
+ * Tarih-YALNIZ dizgiler için gün farkı (UTC kayması yemesin). BUGÜN = 0.
+ *
+ * ⚠️ ÖĞLEN ÇIPASI BUGÜNÜ NEGATİFE DÜŞÜRÜYORDU. Çıpa 12:00 olduğu için, gün içinde saat
+ * 12:00'den ÖNCE bugünün farkı `floor(-0.125) === -1` oluyordu. Pencere kontrolleri
+ * `f >= 0 && f < 30` yazdığı için bugünün satırı hiçbir kovaya girmiyor, tamamen düşüyordu:
+ * sabah 09:00'da 20 soru çözen öğrenci "Bu Ay Çözülen"de o 20 soruyu GÖRMÜYOR, sayı ancak
+ * saat 12:00'den sonra aniden beliriyordu. Aynı ekrandaki `dogruluk7` ise `f < 7` yazdığı
+ * için bugünü SAYIYORDU — iki stat aynı günü farklı sayıyordu.
+ * Çözüm çıpayı değiştirmek değil (o UTC kaymasına karşı doğru), farkı TABANLAMAK.
+ */
 const gunF = (isoGun: string): number =>
-  Math.floor((Date.now() - +new Date(isoGun + 'T12:00:00')) / GUN_MS)
+  Math.max(0, Math.floor((Date.now() - +new Date(isoGun + 'T12:00:00')) / GUN_MS))
 
 /** Backend trend penceresi (mastery.routes: 84 günlük) — "Tümü" dönemi bu tavana oturur. */
 const TREND_PENCERE_GUN = 84
