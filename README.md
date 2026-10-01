@@ -7,6 +7,9 @@ Proje seti; React + Vite SPA mimarisine sahip frontend bileşenini, Bun/Express 
 ## İçindekiler
 
 - [Genel Bakış](#genel-bakış)
+- [Sistem Mimarisi](#sistem-mimarisi)
+- [Neler Yapıldı](#neler-yapıldı)
+- [Ekranlar](#ekranlar)
 - [Teknoloji Yığını](#teknoloji-yığını)
 - [Proje Yapısı](#proje-yapısı)
 - [Ön Koşullar](#ön-koşullar)
@@ -23,14 +26,70 @@ Proje seti; React + Vite SPA mimarisine sahip frontend bileşenini, Bun/Express 
 - `frontend-v2/` — React 19 + Vite 8 SPA. Build sonucu `nginx` tarafından sunulur.
 - `learnup-brain/` — Bun tabanlı API sunucusu ve arka plan worker'ı.
 - `supabase/` — Supabase projesine ait yapılandırma ve migration dosyaları.
-- `docker-compose.yml` — Tüm servisleri (frontend, brain, worker, redis) tek komutla ayağa kaldırmak için yapılandırma.
+- `docker-compose.yml` — Tüm servisleri (frontend, nginx, iki API düğümü, iki worker, Redis) tek komutla ayağa kaldırmak için yapılandırma.
+
+## Sistem Mimarisi
+
+![Sistem mimarisi](docs/gorseller/01-sistem-mimarisi.png)
+
+İstek akışı:
+
+1. Kullanıcı tarayıcıdan React/Vite SPA'ya erişir.
+2. Nginx statik dosyaları sunar ve `/api` isteklerini iki API düğümüne (`brain`, `brain2`) `least_conn` ile dağıtır. Bu strateji, uzun açık kalan SSE sohbet bağlantılarının tek düğümde birikmesini önler.
+3. Bun üzerinde çalışan Express API; kimlik doğrulama, yetkilendirme, iş mantığı, LLM çağrıları ve Supabase erişimini yönetir. API düğümleri durumsuzdur, bu yüzden yatay olarak çoğaltılabilir.
+4. Uzun süren yapay zeka görevleri Redis Streams kuyruğuna yazılır; iki worker aynı consumer group üzerinden görevleri paylaşır. Görev sahiplenme CAS benzeri bir kontrolle yapılır, zamanlanmış işler Redis leader lock ile tek worker'da koşar.
+5. Kalıcı veri Supabase Postgres'tedir (Auth, RLS, pgvector). Redis kalıcı veri deposu değildir; kuyruk, cache, hız sınırı ve oturum defteri için kullanılır.
+
+![Servis topolojisi](docs/gorseller/12-servis-topolojisi.png)
+
+### Backend katmanları (`learnup-brain/src`)
+
+- `routes/` — API uçları; hem `/api` hem kanonik `/api/v1` yolları desteklenir.
+- `middleware/` — `requireAuth` → `oturumKapisi` → `requireAktifHesap` → rol/kapsam kontrolü → hız sınırı zinciri.
+- `agents/` — ajan modülleri ve Redis bus katmanı.
+- `workers/` — arka plan worker süreci.
+- `lib/` — soru üretimi, RAG, model yönlendirici, ustalık (mastery), planlayıcı, oturum ve yetki servisleri.
+- `scripts/` — veri aktarımı, seed, eval, etiketleme ve bakım scriptleri.
+
+### Frontend yapısı (`frontend-v2/src`)
+
+- `App.tsx` — rol bazlı rota ağacı, lazy-loaded ekranlar.
+- `screens/` — öğrenci ekranları; `screens/sinif/` öğretmen, `screens/kule/` yönetici ekranları.
+- `lib/api.js` — Supabase oturumundan JWT alıp backend'e `Authorization: Bearer` ile gönderen API istemcisi.
+
+## Neler Yapıldı
+
+**Yapay zeka soru hattı.** Pratik soruları dil modeli üretiyor; ancak her soru öğrenciye ulaşmadan önce otomatik bir kalite hattından geçiyor: Zod şema kapısı, ikinci bir "hakem" modeliyle doğrulama, kök–şık–çözüm iç tutarlılık kontrolü ve benzerlik eşiğiyle çalışan özgünlük bariyeri. Doğrulanmayan soru havuza giremez, yalnız kayda geçer.
+
+![Soru üretim ve doğrulama hattı](docs/gorseller/07-soru-uretim-dogrulama.png)
+
+**RAG ve maliyet kontrolü.** pgvector ile bağlam getirme; hata durumunda sıradaki modele geçen model zinciri; zorluğa göre model seçimi (kolay/orta sorular ücretsiz modellere, zor sorular daha güçlü modele) ve günlük maliyet tavanı.
+
+**Veri hatları.** 14 ders ve 907 MEB kazanımlık müfredat aktarımı; 2.210 ham kayıttan tekilleştirilmiş 1.730 çıkmış soru ve 1.695 sorunun zorluk etiketlemesi (kolay / orta / zor). Çıkmış sorular arayüzde yayımlanmaz, yalnız RAG bağlamı olarak kullanılır.
+
+**Üç rol, üç panel.**
+- Öğrenci: günlük plan, uyarlanabilir soru çözme, rota, konu haritası, yapay zeka rehberi, 3B bahçe, ödevler.
+- Öğretmen: sınıf panosu, kazanım ısı haritası, öğrenci detay görünümü, ödev atölyesi, öğrenci karşılaştırma.
+- Yönetici: kullanıcı ve sınıf yönetimi, soru havuzu, özgünlük denetimi, değiştirilemez denetim kaydı.
+
+**Ölçeklenebilir altyapı.** Durumsuz iki API düğümü, nginx yük dengeleme, Redis Streams kuyruğu ve iki worker; toplam 7 servis Docker Compose ile ayağa kalkar.
+
+**Güvenlik.** JWT/JWKS doğrulama, Supabase RLS, rol ve öğretmen kapsam kontrolü, Redis destekli oturum iptali, Helmet ve CORS kısıtları, üç kademeli hız sınırı (nginx IP limiti + Express'te standart, sohbet ve LLM profilleri). Rol alanı üzerinden yetki yükseltme açığı bulunup kapatıldı.
+
+**Kalite.** GitHub Actions CI hattı (tip denetimi, lint, test, build) ve CI'da koşan 166 test. 84 bulguluk mantık hatası denetimi dört fazda kapatıldı. k6 ile katmanlı yük testi yapıldı (sağlık ucunda 600 istek/sn'de p95 5,8 ms, 0 hata).
+
+## Ekranlar
+
+| Öğrenci — günlük ekran | Öğretmen — kazanım ısı haritası |
+| --- | --- |
+| ![Öğrenci günlük ekranı](docs/gorseller/20-ogrenci-bugun.png) | ![Öğretmen kazanım ısı haritası](docs/gorseller/31-ogretmen-sinif-isi.png) |
 
 ## Teknoloji Yığını
 
-- Frontend: React 19, Vite 8, Tailwind CSS, Radix UI, Framer Motion, React Three Fiber
-- Backend: Bun, Express, Supabase JS, OpenRouter, Redis, Zod
-- Veri: Supabase Postgres, Supabase Auth, Supabase pgvector / embeddings
-- Dağıtım: Docker Compose (nginx, Bun, Redis)
+- Frontend: React 19, Vite 8, TypeScript, Tailwind CSS 4, Radix UI, Framer Motion, React Three Fiber, Recharts
+- Backend: Bun, Express, Zod, Supabase JS, OpenRouter, Redis (ioredis), jose, Pino
+- Veri: Supabase Postgres, Supabase Auth, RLS, pgvector / embeddings
+- Dağıtım ve kalite: Docker Compose (nginx, Bun, Redis), GitHub Actions, k6
 
 ## Proje Yapısı
 
